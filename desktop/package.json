@@ -1,0 +1,46 @@
+{
+  "name": "goodagent-desktop",
+  "version": "2.1.88",
+  "description": "GoodAgent Desktop — Electron GUI wrapper",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.goodagent.desktop",
+    "productName": "GoodAgent",
+    "asar": true,
+    "files": [
+      "main.mjs",
+      "preload.mjs",
+      "renderer/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "cli-dist"
+      }
+    ],
+    "icon": "icon.ico",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico",
+      "artifactName": "GoodAgent-${version}-Windows-${arch}.${ext}",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "directories": {
+      "output": "release"
+    }
+  },
+  "devDependencies": {
+    "electron": "^40.8.0",
+    "electron-builder": "^26.0.0"
+  }
+}

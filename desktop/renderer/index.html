@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; connect-src *" />
+  <title>GoodAgent</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Status Banner (shown when no API config) -->
+  <div id="config-banner" class="hidden">
+    <span>⚙️ 请先在设置中配置 API</span>
+    <button class="btn primary" id="banner-settings-btn">打开设置</button>
+  </div>
+
+  <!-- Permission Modal -->
+  <div id="perm-modal" class="modal">
+    <div class="modal-content" style="width: 500px;">
+      <div class="modal-header">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);">⚠️ 需要授权</h2>
+      </div>
+      <div class="modal-body">
+        <p class="hint">以下命令需要您的批准：</p>
+        <pre id="perm-command" style="background:var(--bg-tertiary);padding:12px;border-radius:var(--radius-sm);margin:8px 0 16px;font-family:var(--font-mono);font-size:13px;color:var(--text-primary);white-space:pre-wrap;border:1px solid var(--border);overflow-x:auto;"></pre>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button id="perm-deny" class="btn" style="border-color:var(--danger);color:var(--danger);">拒绝</button>
+          <button id="perm-allow" class="btn primary">允许</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal">
+    <div class="modal-content settings-modal-content">
+      <div class="modal-header">
+        <h2 style="font-size:18px;font-weight:600;color:var(--text-primary);">设置</h2>
+      </div>
+      <div class="settings-layout">
+        <!-- Left Tab Bar -->
+        <div class="settings-tabs" id="settings-tabs">
+          <div class="settings-tab active" data-tab="api">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span>API 配置</span>
+          </div>
+          <div class="settings-tab" data-tab="avatar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>头像</span>
+          </div>
+          <div class="settings-tab" data-tab="skills">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span>技能</span>
+          </div>
+        </div>
+
+        <!-- Right Content Area -->
+        <div class="settings-panels">
+
+          <!-- API 配置 Panel -->
+          <div class="settings-panel active" id="panel-api">
+            <div class="api-config-form">
+              <div class="form-row">
+                <label class="form-label">供应商</label>
+                <select id="settings-provider" class="form-select">
+                  <option value="">— 自定义 —</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="glm">GLM (智谱)</option>
+                  <option value="qwen">Qwen (通义千问)</option>
+                  <option value="claude">Claude (Anthropic)</option>
+                  <option value="lmstudio">LM Studio（本地）</option>
+                  <option value="ollama">Ollama（本地）</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label">API URL</label>
+                <input type="text" id="settings-url" class="form-input" placeholder="https://api.deepseek.com/chat/completions" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">Model</label>
+                <div class="form-row-inline-group">
+                  <select id="settings-model" class="form-select" style="flex:1;"></select>
+                  <button id="settings-fetch-models-btn" class="btn" style="white-space:nowrap;flex-shrink:0;" title="从 API 获取可用模型列表">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
+                    获取模型
+                  </button>
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="form-label">API Key</label>
+                <input type="password" id="settings-key" class="form-input" placeholder="sk-..." />
+              </div>
+              <div id="settings-status" class="settings-status hidden"></div>
+              <button id="settings-save-btn" class="btn primary" style="width:100%;margin-top:8px;">保存</button>
+            </div>
+          </div>
+
+          <!-- 头像 Panel -->
+          <div class="settings-panel" id="panel-avatar">
+            <div class="avatar-settings">
+              <img id="settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="current avatar" />
+              <div class="avatar-settings-actions">
+                <p class="hint" style="margin-bottom:8px;">选择一个图片文件作为头像</p>
+                <input type="file" id="avatar-file-input" accept="image/*" hidden />
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button id="change-avatar-btn" class="btn">选择图片</button>
+                  <button id="reset-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);">恢复默认</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 技能 Panel -->
+          <div class="settings-panel" id="panel-skills">
+            <div class="skills-settings">
+              <p class="hint" style="margin-bottom:12px;">启用后，AI 可以在对话中自动加载并使用这些技能（SKILL.md）。</p>
+              <div class="skills-toolbar">
+                <button id="skills-refresh-btn" class="btn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
+                  刷新
+                </button>
+                <span id="skills-count" class="skills-count">0 个技能</span>
+              </div>
+              <div id="skills-list" class="skills-list"></div>
+              <div id="skills-settings-status" class="settings-status hidden"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-close-btn" class="btn primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Chat -->
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo small">
+          <img id="sidebar-avatar" class="avatar avatar-sidebar" src="avatar.jpg" alt="avatar" />
+          <span class="brand">GoodAgent</span>
+        </div>
+      </div>
+      <div class="sidebar-body">
+        <button id="new-chat" class="btn sidebar-btn">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
+          新对话
+        </button>
+        <div id="session-list" class="session-list"></div>
+        <div class="sidebar-footer-actions">
+          <button id="settings-btn" class="btn sidebar-btn sidebar-settings-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            设置
+          </button>
+          <div class="sidebar-info">
+          <div class="info-item">
+            <span class="info-label">工作目录</span>
+            <span class="info-value" id="cwd-display">加载中...</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">会话</span>
+            <span class="info-value" id="session-display">—</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chat Area -->
+    <main id="chat-area">
+      <div id="message-list">
+        <div class="welcome">
+          <div class="welcome-icon">
+            <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="GoodAgent" />
+          </div>
+          <h1>GoodAgent</h1>
+          <p class="subtitle">桌面版</p>
+          <p class="description">向 GoodAgent 提问任何关于代码库的问题。<br />帮你编码、调试、重构。</p>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div id="input-area">
+        <div id="file-preview-area" class="hidden"></div>
+        <div id="input-wrapper">
+          <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.txt,.csv,.json,.md,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.doc,.docx" />
+          <button id="upload-btn" class="btn icon-btn" title="上传文件">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </button>
+          <textarea
+            id="prompt-input"
+            placeholder="向 GoodAgent 提问..."
+            rows="1"
+          ></textarea>
+          <div id="input-actions">
+            <button id="send-btn" class="btn icon-btn" title="发送" disabled>
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5L14.5 8L1.5 14.5V9.5L10 8L1.5 6.5V1.5Z"/></svg>
+            </button>
+            <button id="stop-btn" class="btn icon-btn hidden" title="停止">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="status-bar">
+          <span id="status-text">就绪</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

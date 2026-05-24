@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic:
+        - heading "⚠️ 需要授权" [level=2]
+      - generic:
+        - paragraph: 以下命令需要您的批准：
+        - generic:
+          - button "拒绝"
+          - button "允许"
+  - generic:
+    - generic:
+      - generic:
+        - heading "设置" [level=2]
+      - generic:
+        - generic:
+          - generic:
+            - img
+            - generic: API 配置
+          - generic:
+            - img
+            - generic: 头像
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: 供应商
+                - combobox:
+                  - option "— 自定义 —" [selected]
+                  - option "DeepSeek"
+                  - option "GLM (智谱)"
+                  - option "Qwen (通义千问)"
+                  - option "Claude (Anthropic)"
+              - generic:
+                - generic: API URL
+                - textbox "https://api.deepseek.com/chat/completions"
+              - generic:
+                - generic: Model
+                - combobox
+              - generic:
+                - generic: API Key
+                - textbox "sk-..."
+              - button "保存"
+      - generic:
+        - button "关闭"
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]:
+        - img "avatar" [ref=e6]
+        - generic [ref=e7]: GoodAgent
+      - generic [ref=e8]:
+        - button "新对话" [ref=e9] [cursor=pointer]:
+          - img [ref=e10]
+          - text: 新对话
+        - generic [ref=e13]:
+          - button "设置" [ref=e14] [cursor=pointer]:
+            - img [ref=e15]
+            - text: 设置
+          - generic [ref=e18]:
+            - generic [ref=e19]:
+              - generic [ref=e20]: 工作目录
+              - generic [ref=e21]: 加载中...
+            - generic [ref=e22]:
+              - generic [ref=e23]: 会话
+              - generic [ref=e24]: —
+    - main [ref=e25]:
+      - generic [ref=e27]:
+        - img "GoodAgent" [ref=e29]
+        - heading "GoodAgent" [level=1] [ref=e30]
+        - paragraph [ref=e31]: 桌面版
+        - paragraph [ref=e32]:
+          - text: 向 GoodAgent 提问任何关于代码库的问题。
+          - text: 帮你编码、调试、重构。
+      - generic [ref=e33]:
+        - generic [ref=e34]:
+          - textbox "向 GoodAgent 提问..." [ref=e35]
+          - button "发送" [disabled] [ref=e37]:
+            - img [ref=e38]
+        - generic [ref=e41]: 就绪
