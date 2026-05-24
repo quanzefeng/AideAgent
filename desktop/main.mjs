@@ -558,11 +558,17 @@ function toAnthropicMessages(msgs) {
 }
 
 // ── OpenAI-format streaming call ──
-async function openaiCall(msgs, apiUrl, apiKey, model, signal) {
+async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true) {
+  const body = { model: model || "deepseek-chat", messages: msgs, tools: TOOL_DEFS, stream: true, max_tokens: 8192 };
+  // Control reasoning behavior — DeepSeek supports reasoning_content param
+  if (reasoning === false) {
+    // Explicitly suppress reasoning_content in response
+    body.reasoning_content = null;
+  }
   const res = await fetch(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: model || "deepseek-chat", messages: msgs, tools: TOOL_DEFS, stream: true, max_tokens: 8192 }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
@@ -605,13 +611,25 @@ async function openaiCall(msgs, apiUrl, apiKey, model, signal) {
 }
 
 // ── Anthropic-format streaming call ──
-async function anthropicCall(msgs, apiUrl, apiKey, model, signal) {
+async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true) {
   const { messages, system } = toAnthropicMessages(msgs);
   // Normalize Anthropic endpoint URL
   const base = apiUrl.replace(/\/+$/, "");
   const endpoint = base.endsWith("/v1/messages") ? base
     : base.endsWith("/v1") ? base + "/messages"
     : base + "/v1/messages";
+  const body = {
+    model: model || "claude-sonnet-4-20250514",
+    max_tokens: 8192,
+    system: system || "",
+    messages,
+    tools: toAnthropicTools(),
+    stream: true,
+  };
+  // Enable extended thinking for Anthropic when deep reasoning is on
+  if (reasoning) {
+    body.thinking = { type: "enabled", budget_tokens: 4096 };
+  }
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -619,14 +637,7 @@ async function anthropicCall(msgs, apiUrl, apiKey, model, signal) {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model: model || "claude-sonnet-4-20250514",
-      max_tokens: 8192,
-      system: system || "",
-      messages,
-      tools: toAnthropicTools(),
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
@@ -721,7 +732,7 @@ If the user's request matches a skill's purpose, load it via the \`skill\` tool 
 }
 
 // ── Main agent loop ──
-async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills) {
+async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true) {
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   const { signal } = abortCtrl;
@@ -767,7 +778,7 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
     let content = "", reasoningContent = "", tcs = [];
     try {
       const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-      const result = await callFn(msgs, apiUrl, apiKey, model, signal);
+      const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning);
       content = result.content;
       reasoningContent = result.reasoningContent || "";
       allText += result.content;
@@ -821,9 +832,9 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
 
 // ── IPC Handlers ────────────────────────────────────────────
 
-ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills }) => {
+ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true }) => {
   sendToRenderer("stream:start", {});
-  try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills); }
+  try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning); }
   catch (err) { sendToRenderer("stream:error", { message: err.message }); }
   sendToRenderer("stream:done", {});
 });

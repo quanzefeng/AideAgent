@@ -43,7 +43,7 @@
   /* ── 布局 ── */
   --sidebar-width: 240px;
   /* 消息列表 + 输入框共用同一个宽度约束（ChatGPT / 豆包风格） */
-  --chat-max-width: 55rem;
+  --chat-max-width: 52rem;
 }
 
 /* ========================================
@@ -645,10 +645,11 @@ html, body {
   border: 1.5px solid var(--border);
 }
 .avatar-welcome {
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   border: 2px solid var(--accent-dim);
-  box-shadow: 0 0 0 3px var(--accent-light);
+  border-radius: 50%;
+  object-fit: cover;
 }
 .avatar-settings-preview {
   width: 80px;
@@ -847,8 +848,6 @@ html, body {
 
 .welcome-icon {
   margin-bottom: var(--space-sm);
-  animation: welcome-pulse 3s ease-in-out infinite;
-  opacity: 1;
 }
 
 .welcome-icon .avatar-welcome {
@@ -1230,14 +1229,13 @@ html, body {
 
 #input-wrapper {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-xs);
+  flex-direction: column;
   width: 100%;
   max-width: var(--chat-max-width);
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 6px 6px 6px 4px;
+  padding: 4px 6px 6px 4px;
   box-sizing: border-box;
   transition:
     border-color var(--duration-fast) var(--ease-out),
@@ -1247,6 +1245,12 @@ html, body {
 #input-wrapper:focus-within {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
 }
 
 #prompt-input {
@@ -1284,18 +1288,85 @@ html, body {
   color: var(--danger);
 }
 
-#status-bar {
+/* ── Info bar (model name + reasoning toggle) ── */
+#info-bar {
   display: flex;
   align-items: center;
-  padding: var(--space-xs) 4px 0;
-  width: 100%;
-  max-width: var(--chat-max-width);
+  justify-content: space-between;
+  padding: 2px 2px 0;
 }
 
-#status-text {
-  font-size: 14px;
+#info-model-name {
+  font-size: 13px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+/* Reasoning toggle */
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.reasoning-toggle-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.toggle-switch-sm {
+  position: relative;
+  display: inline-block;
+}
+
+.toggle-switch-sm input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-switch-sm .toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  background: var(--bg-tertiary, rgba(255,255,255,0.12));
+  border-radius: 9px;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.toggle-switch-sm .toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--text-muted, #888);
+  border-radius: 50%;
+  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.toggle-switch-sm input:checked + .toggle-slider {
+  background: var(--accent, #9178dc);
+}
+
+.toggle-switch-sm input:checked + .toggle-slider::after {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+.toggle-switch-sm input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent, #9178dc);
+  outline-offset: 2px;
 }
 
 /* ========================================
@@ -1443,8 +1514,8 @@ html, body {
 }
 
 .skills-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 

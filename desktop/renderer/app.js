@@ -19,6 +19,7 @@ const STORAGE_KEYS = {
   MODEL: "goodagent_model",
   API_KEY: "goodagent_api_key",
   API_FORMAT: "goodagent_api_format",
+  REASONING_ENABLED: "goodagent_reasoning_enabled",
 };
 
 const PROVIDER_PRESETS = {
@@ -54,6 +55,8 @@ const promptInput = $("#prompt-input");
 const sendBtn = $("#send-btn");
 const stopBtn = $("#stop-btn");
 const statusText = $("#status-text");
+const infoModelName = $("#info-model-name");
+const reasoningCheckbox = $("#reasoning-checkbox");
 const sessionDisplay = $("#session-display");
 const cwdDisplay = $("#cwd-display");
 const newChatBtn = $("#new-chat");
@@ -235,7 +238,36 @@ fileInput.addEventListener("change", () => {
 });
 
 function setStatus(text) {
-  statusText.textContent = text;
+  if (statusText) statusText.textContent = text;
+}
+
+/* ── Reasoning toggle ────────────────────────────── */
+function loadReasoningEnabled() {
+  const val = localStorage.getItem(STORAGE_KEYS.REASONING_ENABLED);
+  return val !== null ? val === "true" : true; // default true
+}
+
+function saveReasoningEnabled(enabled) {
+  localStorage.setItem(STORAGE_KEYS.REASONING_ENABLED, enabled);
+}
+
+/* ── Update info bar (model name + reasoning state) ── */
+function updateInfoBar() {
+  if (!infoModelName) return;
+  const cfg = loadApiConfig();
+  // Show model name (or provider label if no model)
+  const preset = cfg.provider ? PROVIDER_PRESETS[cfg.provider] : null;
+  const label = preset?.name || cfg.apiUrl?.replace(/https?:\/\//, "").split("/")[0] || "";
+  const model = cfg.model || "";
+  infoModelName.textContent = model ? `${label} · ${model}` : label;
+}
+
+/* ── Reasoning toggle event ──────────────────────── */
+if (reasoningCheckbox) {
+  reasoningCheckbox.checked = loadReasoningEnabled();
+  reasoningCheckbox.addEventListener("change", () => {
+    saveReasoningEnabled(reasoningCheckbox.checked);
+  });
 }
 
 function scrollToBottom() {
@@ -537,6 +569,7 @@ function saveSettingsForm() {
 
   saveApiConfig(provider, apiUrl, model, apiKey, apiFormat);
   updateConfigBanner();
+  updateInfoBar();
   if (settingsStatus) {
     settingsStatus.textContent = `✅ 已保存 — ${preset?.name || provider || "自定义"} API`;
     settingsStatus.className = "settings-status success";
@@ -703,7 +736,8 @@ async function submitQuery() {
   // Submit
   try {
     const enabledSkills = loadEnabledSkills();
-    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills);
+    const reasoning = loadReasoningEnabled();
+    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning);
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -1160,7 +1194,6 @@ async function loadAndRenderSkills() {
       return `<div class="skill-card">
         <div class="skill-card-info">
           <div class="skill-card-name">${sanitize(s.name)}</div>
-          <div class="skill-card-desc">${sanitize(s.description || "(无描述)")}</div>
           <div class="skill-card-meta">
             <span class="skill-card-source">${s.source === "agents" ? "🤖 .agents" : "📦 .claude"}</span>
             ${s.version ? `<span class="skill-card-version">v${sanitize(s.version)}</span>` : ""}
@@ -1299,8 +1332,8 @@ if (cfg.provider) {
 } else {
   cwdDisplay.textContent = "未配置";
 }
+updateInfoBar();
 if (hasApiConfig()) {
-  setStatus("就绪");
   promptInput.focus();
 }
 
