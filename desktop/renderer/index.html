@@ -54,6 +54,14 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             <span>技能</span>
           </div>
+          <div class="settings-tab" data-tab="prompt">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="12" y1="10" x2="12" y2="16"/></svg>
+            <span>系统提示词</span>
+          </div>
+          <div class="settings-tab" data-tab="mcp">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>MCP</span>
+          </div>
         </div>
 
         <!-- Right Content Area -->
@@ -110,6 +118,36 @@
                 </div>
               </div>
             </div>
+            <div class="agent-name-settings">
+              <label class="agent-name-label">Agent 名称</label>
+              <div class="agent-name-row">
+                <input type="text" id="agent-name-input" class="form-input" value="GoodAgent" maxlength="30" />
+                <button id="save-agent-name-btn" class="btn primary">保存</button>
+              </div>
+              <p class="hint">修改后在侧边栏、对话标签、页面标题等所有位置生效</p>
+            </div>
+            <div class="user-avatar-settings">
+              <label class="agent-name-label">我的头像和名称</label>
+              <div class="user-avatar-row">
+                <img id="user-settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="user avatar" />
+                <div class="user-avatar-actions">
+                  <p class="hint" style="margin-bottom:8px;">选择一个图片文件作为你的头像</p>
+                  <input type="file" id="user-avatar-file-input" accept="image/*" hidden />
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button id="change-user-avatar-btn" class="btn">选择图片</button>
+                    <button id="reset-user-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);">恢复默认</button>
+                  </div>
+                </div>
+              </div>
+              <div class="user-name-row">
+                <label class="agent-name-label" style="margin-bottom:6px;">你的名称</label>
+                <div class="agent-name-row">
+                  <input type="text" id="user-name-input" class="form-input" value="你" maxlength="30" />
+                  <button id="save-user-name-btn" class="btn primary">保存</button>
+                </div>
+                <p class="hint" style="margin-top:6px;">修改后在对话中你的消息标签上显示</p>
+              </div>
+            </div>
           </div>
 
           <!-- 技能 Panel -->
@@ -128,6 +166,101 @@
             </div>
           </div>
 
+          <!-- 系统提示词 Panel -->
+          <div class="settings-panel" id="panel-prompt">
+            <div class="prompt-settings">
+              <!-- Profile chips + 新建 -->
+              <div class="prompt-profile-bar">
+                <div id="prompt-profile-selector" class="prompt-profile-selector"></div>
+                <button id="prompt-add-profile-btn" class="btn prompt-add-btn">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
+                  新建
+                </button>
+              </div>
+
+              <!-- Section editor -->
+              <div id="prompt-editor" class="prompt-editor">
+                <div id="prompt-sections" class="prompt-sections"></div>
+              </div>
+              <div id="prompt-settings-status" class="settings-status hidden"></div>
+            </div>
+          </div>
+
+          <!-- MCP Panel -->
+          <div class="settings-panel" id="panel-mcp">
+            <div class="mcp-settings">
+              <p class="hint" style="margin-bottom:12px;">
+                配置 MCP（Model Context Protocol）服务器，让 AI 可以访问更多工具（数据库、文件系统、浏览器等）。
+                格式与 Claude Code 的 <code>.mcp.json</code> 兼容。
+              </p>
+
+              <!-- Quick Add SearXNG -->
+              <div class="mcp-quick-searxng" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">🔍 快速添加 SearXNG 搜索</div>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" id="mcp-searxng-url" class="form-input" placeholder="http://localhost:4000" style="flex:1;" />
+                  <button id="mcp-searxng-add-btn" class="btn primary" style="white-space:nowrap;">添加</button>
+                </div>
+                <div style="font-size:11px;color:var(--text-light);margin-top:4px;">输入你的 SearXNG 实例地址，自动配置 <code>npx mcp-searxng@latest</code></div>
+              </div>
+
+              <!-- Detect Local MCP Configs -->
+              <div class="mcp-detect" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <span style="font-size:13px;font-weight:600;">📡 检测本地 MCP 配置</span>
+                  <button id="mcp-detect-btn" class="btn" style="font-size:12px;padding:4px 12px;">扫描</button>
+                </div>
+                <div id="mcp-detect-results" style="font-size:12px;color:var(--text-light);">扫描 Claude Code CLI、OpenCode 等本机已配置的 MCP 服务器，一键导入。</div>
+              </div>
+
+              <div class="mcp-toolbar">
+                <button id="mcp-add-btn" class="btn primary">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle;margin-right:4px;"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
+                  手动添加服务器
+                </button>
+                <button id="mcp-save-all-btn" class="btn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  保存配置
+                </button>
+                <button id="mcp-refresh-btn" class="btn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
+                  刷新
+                </button>
+              </div>
+
+              <!-- Add form (hidden by default) -->
+              <div id="mcp-add-form" class="mcp-add-form hidden">
+                <div class="form-row">
+                  <label class="form-label">名称</label>
+                  <input type="text" id="mcp-name-input" class="form-input" placeholder="例如: filesystem" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label">命令 (command)</label>
+                  <input type="text" id="mcp-command-input" class="form-input" placeholder="例如: npx" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label">参数 (args)</label>
+                  <input type="text" id="mcp-args-input" class="form-input" placeholder='例如: -y @modelcontextprotocol/server-filesystem C:/Users/7' />
+                </div>
+                <div class="form-row">
+                  <label class="form-label">环境变量 (可选, JSON)</label>
+                  <input type="text" id="mcp-env-input" class="form-input" placeholder='{"API_KEY":"xxx"}' />
+                </div>
+                <div class="mcp-form-actions">
+                  <button id="mcp-save-btn" class="btn primary">保存并启动</button>
+                  <button id="mcp-cancel-btn" class="btn">取消</button>
+                </div>
+                <div id="mcp-form-status" class="settings-status hidden"></div>
+              </div>
+
+              <!-- Server list -->
+              <div id="mcp-server-list" class="mcp-server-list">
+                <p class="hint" style="padding:24px 0;text-align:center;">没有配置 MCP 服务器。点击"添加服务器"开始。</p>
+              </div>
+              <div id="mcp-settings-status" class="settings-status hidden"></div>
+            </div>
+          </div>
+
         </div>
       </div>
       <div class="modal-footer">
@@ -143,7 +276,7 @@
       <div class="sidebar-header">
         <div class="logo small">
           <img id="sidebar-avatar" class="avatar avatar-sidebar" src="avatar.jpg" alt="avatar" />
-          <span class="brand">GoodAgent</span>
+          <span class="brand" id="sidebar-brand">GoodAgent</span>
         </div>
       </div>
       <div class="sidebar-body">
@@ -178,8 +311,7 @@
             <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="GoodAgent" />
           </div>
           <h1>GoodAgent</h1>
-          <p class="subtitle">桌面版</p>
-          <p class="description">向 GoodAgent 提问任何关于代码库的问题。<br />帮你编码、调试、重构。</p>
+          <p class="description">任何事都可以找 GoodAgent</p>
         </div>
       </div>
 

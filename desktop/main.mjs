@@ -2,8 +2,10 @@ import { app, BrowserWindow, ipcMain, dialog, session, Menu } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import { readFile, writeFile, mkdir, readdir, unlink } from "node:fs/promises";
+import mcpManager from "./mcp-manager.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.commandLine.appendSwitch("no-sandbox");
@@ -77,7 +79,11 @@ function createWindow() {
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  createWindow();
+  // Start enabled MCP servers (async, non-blocking)
+  mcpManager.init().catch(e => console.error("[main] mcpManager.init error:", e.message));
+});
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (mainWindow === null) createWindow(); });
 
@@ -427,8 +433,21 @@ async function runTool(tc) {
         return { name: skill.name, description: skill.description, content };
       } catch (e) { return { error: e.message }; }
     }
-    default:
-      return { error: `Unknown tool: ${name}` };
+    default: {
+      // Try MCP dispatch
+      try {
+        const mcpResult = await mcpManager.callTool(name, args);
+        const contentText = (mcpResult.content || [])
+          .map(c => c.type === "text" ? c.text : JSON.stringify(c))
+          .join("\n");
+        const result = mcpResult.isError
+          ? { error: contentText }
+          : { output: contentText };
+        return result;
+      } catch (mcpErr) {
+        return { error: `Unknown tool: ${name} (MCP: ${mcpErr.message})` };
+      }
+    }
   }
 }
 
@@ -515,8 +534,14 @@ function genId() {
 // Format adapters — convert between OpenAI and Anthropic formats
 // ═══════════════════════════════════════════════════════════
 
+/** Merge static built-in tool defs with dynamic MCP tool defs. */
+function getAllToolDefs() {
+  const mcpDefs = mcpManager.listAllToolDefs();
+  return [...TOOL_DEFS, ...mcpDefs];
+}
+
 function toAnthropicTools() {
-  return TOOL_DEFS.map(t => ({
+  return getAllToolDefs().map(t => ({
     name: t.function.name,
     description: t.function.description,
     input_schema: t.function.parameters,
@@ -559,7 +584,7 @@ function toAnthropicMessages(msgs) {
 
 // ── OpenAI-format streaming call ──
 async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true) {
-  const body = { model: model || "deepseek-chat", messages: msgs, tools: TOOL_DEFS, stream: true, max_tokens: 8192 };
+  const body = { model: model || "deepseek-chat", messages: msgs, tools: getAllToolDefs(), stream: true, max_tokens: 8192 };
   // Control reasoning behavior — DeepSeek supports reasoning_content param
   if (reasoning === false) {
     // Explicitly suppress reasoning_content in response
@@ -691,7 +716,7 @@ async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = tr
   return { content, finishReason, tcs };
 }
 
-function buildSystemPrompt(enabledSkills) {
+function buildSystemPrompt(enabledSkills, agentName) {
   const allSkills = scanSkills();
   const filterSkills = enabledSkills && enabledSkills.length > 0
     ? allSkills.filter(s => enabledSkills.includes(s.name))
@@ -700,9 +725,34 @@ function buildSystemPrompt(enabledSkills) {
     ? filterSkills.map(s => `  - \`${s.name}\`: ${s.description || "(no description)"}`).join("\n")
     : "  (no skills enabled)";
 
-  return {
-    role: "system",
-    content: `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.
+  // ── Build prompt body from active profile ──
+  let content = "";
+  try {
+    const store = loadPromptProfiles();
+    const profileId = store.activeProfile || "default";
+    const profile = store.profiles[profileId];
+    if (profile && profile.enabled) {
+      const parts = [];
+      for (const [key, sec] of Object.entries(profile.sections)) {
+        if (sec.enabled && sec.content && sec.content.trim()) {
+          const label = SECTION_LABELS[key] || key;
+          let sectionContent = sec.content.trim();
+          // Replace runtime placeholders
+          sectionContent = sectionContent.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
+          parts.push(`## ${label}\n${sectionContent}`);
+        }
+      }
+      if (parts.length > 0) {
+        content = parts.join("\n\n");
+      }
+    }
+  } catch (e) {
+    console.error("[main] Failed to load prompt profiles:", e.message);
+  }
+
+  // ── Fallback if profile yielded no content ──
+  if (!content) {
+    content = `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.
 
 **Available tools:**
 - \`bash\` — Run PowerShell commands (dir, git, npm, etc.)
@@ -711,14 +761,9 @@ function buildSystemPrompt(enabledSkills) {
 - \`file_edit\` — Replace exact text in files
 - \`grep\` — Regex search in files
 - \`glob\` — Find files by name pattern
-- \`web_fetch\` — Fetch and extract text from any URL
+- \`web_fetch\` — Fetch and extract content from any URL
 - \`web_search\` — Search the internet for current information
 - \`skill\` — Load a user-installed skill (SKILL.md workflow)
-
-**Enabled skills (user-selected):**
-${skillList}
-
-If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
 
 **Rules:**
 1. USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
@@ -727,12 +772,40 @@ If the user's request matches a skill's purpose, load it via the \`skill\` tool 
 4. Show relevant code when explaining.
 5. Use \`file_edit\` or \`file_write\` for code changes.
 6. Keep responses concise with Markdown formatting.
-7. Working directory: ${WORKSPACE}`,
-  };
+7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).`;
+  }
+
+  // ── MCP servers info ──
+  const mcpServers = mcpManager.listServers().filter(s => s.status === "running");
+  let mcpSection = "";
+  if (mcpServers.length > 0) {
+    const lines = [];
+    for (const server of mcpServers) {
+      const toolNames = server.tools.map(t => `\`${t.name}\``).join(", ");
+      lines.push(`  - **${server.name}**: ${toolNames}`);
+    }
+    mcpSection = `\n\n**MCP servers:**
+${lines.join("\n")}\n
+You can use the MCP tools listed above just like any other tool.`;
+  }
+
+  // ── Always append dynamic infrastructure ──
+  content += `\n\n**Enabled skills (user-selected):**
+${skillList}
+${mcpSection}
+
+Working directory: ${WORKSPACE}`;
+
+  // ── Replace agent name if customized ──
+  if (agentName && agentName !== "GoodAgent") {
+    content = content.replace(/GoodAgent/g, agentName);
+  }
+
+  return { role: "system", content };
 }
 
 // ── Main agent loop ──
-async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true) {
+async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName) {
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   const { signal } = abortCtrl;
@@ -766,7 +839,7 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
     userMessage = { role: "user", content: prompt };
   }
 
-  const sysPrompt = buildSystemPrompt(enabledSkills);
+  const sysPrompt = buildSystemPrompt(enabledSkills, agentName);
   const msgs = [sysPrompt, ...history, userMessage];
   let turns = 0;
   let allText = "", allReasoning = "";
@@ -832,9 +905,9 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
 
 // ── IPC Handlers ────────────────────────────────────────────
 
-ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true }) => {
+ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName }) => {
   sendToRenderer("stream:start", {});
-  try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning); }
+  try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName); }
   catch (err) { sendToRenderer("stream:error", { message: err.message }); }
   sendToRenderer("stream:done", {});
 });
@@ -880,6 +953,158 @@ ipcMain.handle("skills:list", async () => {
   return scanSkills();
 });
 
+// ── System Prompt Profile Store ──────────────────────────────
+let _promptStorePath = null;
+function getPromptStorePath() {
+  if (!_promptStorePath) {
+    _promptStorePath = join(app.getPath("userData"), "system-prompt-profiles.json");
+  }
+  return _promptStorePath;
+}
+
+const DEFAULT_SECTIONS = {
+  identity: {
+    enabled: true,
+    content: `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.`,
+  },
+  workflow: {
+    enabled: true,
+    content: `1. First explore the project with \`dir\` or \`Get-ChildItem\`.
+2. Understand the user's request clearly before taking action.
+3. Plan your approach, then use the available tools to execute it.
+4. Show relevant code when explaining changes.
+5. Iterate based on user feedback to refine the result.`,
+  },
+  tools: {
+    enabled: true,
+    content: `**Available tools:**
+- \`bash\` — Run PowerShell commands (dir, git, npm, etc.)
+- \`file_read\` — Read file contents
+- \`file_write\` — Create or overwrite files
+- \`file_edit\` — Replace exact text in files
+- \`grep\` — Regex search in files
+- \`glob\` — Find files by name pattern
+- \`web_fetch\` — Fetch and extract content from any URL
+- \`web_search\` — Search the internet for current information
+- \`skill\` — Load a user-installed skill (SKILL.md workflow)
+
+USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.`,
+  },
+  behavior: {
+    enabled: true,
+    content: `1. USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
+2. First explore the project with \`dir\` or \`Get-ChildItem\`.
+3. When you need current information, news, or docs — use \`web_search\` and \`web_fetch\`.
+4. Show relevant code when explaining.
+5. Use \`file_edit\` or \`file_write\` for code changes.
+6. Keep responses concise with Markdown formatting.
+7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).`,
+  },
+  communication: {
+    enabled: false,
+    content: `Keep responses concise with Markdown formatting. Always respond in the same language the user uses. Show relevant code when explaining your changes.`,
+  },
+  skills: {
+    enabled: true,
+    content: `If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.`,
+  },
+  safety: {
+    enabled: true,
+    content: `(No additional safety constraints configured. Edit this section to add security rules.)`,
+  },
+  runtime: {
+    enabled: true,
+    content: `You are running on Windows as a desktop AI coding agent.`,
+  },
+  examples: {
+    enabled: false,
+    content: ``,
+  },
+};
+
+const SECTION_LABELS = {
+  identity:      "身份定义",
+  workflow:      "核心工作流",
+  tools:         "工具使用协议",
+  behavior:      "行为规范",
+  communication: "沟通风格",
+  skills:        "技能系统",
+  safety:        "安全边界",
+  runtime:       "运行时上下文",
+  examples:      "示例",
+};
+
+function loadPromptProfiles() {
+  try {
+    if (existsSync(getPromptStorePath())) {
+      const raw = readFileSync(getPromptStorePath(), "utf-8");
+      const store = JSON.parse(raw);
+      // ── Migration: populate empty default profile sections ──
+      const def = store.profiles && store.profiles["default"];
+      if (def && def.sections && def.sections.identity && !def.sections.identity.content) {
+        def.sections = JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+        savePromptProfiles(store);
+        console.log("[main] Migrated default profile to DEFAULT_SECTIONS");
+      }
+      return store;
+    }
+  } catch (e) {
+    console.error("[main] Failed to load prompt profiles:", e.message);
+  }
+  // Default: one profile with DEFAULT_SECTIONS
+  return {
+    activeProfile: "default",
+    profiles: {
+      default: {
+        id: "default",
+        name: "默认",
+        enabled: true,
+        sections: JSON.parse(JSON.stringify(DEFAULT_SECTIONS)),
+      },
+    },
+  };
+}
+
+function savePromptProfiles(data) {
+  try {
+    const dir = dirname(getPromptStorePath());
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(getPromptStorePath(), JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("[main] Failed to save prompt profiles:", e.message);
+  }
+}
+
+ipcMain.handle("prompt:list", async () => {
+  return loadPromptProfiles();
+});
+
+ipcMain.handle("prompt:save", async (_event, profile) => {
+  const store = loadPromptProfiles();
+  store.profiles[profile.id] = profile;
+  savePromptProfiles(store);
+  return { success: true };
+});
+
+ipcMain.handle("prompt:delete", async (_event, profileId) => {
+  const store = loadPromptProfiles();
+  if (profileId === "default") return { success: false, error: "Cannot delete default profile" };
+  if (store.activeProfile === profileId) {
+    store.activeProfile = "default";
+  }
+  delete store.profiles[profileId];
+  savePromptProfiles(store);
+  return { success: true };
+});
+
+ipcMain.handle("prompt:activate", async (_event, profileId) => {
+  const store = loadPromptProfiles();
+  if (!store.profiles[profileId]) return { success: false, error: "Profile not found" };
+  store.activeProfile = profileId;
+  savePromptProfiles(store);
+  return { success: true };
+});
+
 ipcMain.handle("skills:load", async (_event, name) => {
   const skills = scanSkills();
   const skill = skills.find(s => s.name === name);
@@ -888,6 +1113,194 @@ ipcMain.handle("skills:load", async (_event, name) => {
     const content = readFileSync(skill.path, "utf-8");
     return { ...skill, content };
   } catch { return null; }
+});
+
+// ── MCP IPC Handlers ──────────────────────────────────────────
+
+ipcMain.handle("mcp:list", async () => {
+  return mcpManager.listServers();
+});
+
+ipcMain.handle("mcp:config", async () => {
+  return mcpManager.loadConfig();
+});
+
+ipcMain.handle("mcp:add", async (_event, { name, config }) => {
+  try {
+    await mcpManager.addServer(name, config);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("mcp:add-remote", async (_event, { name, url, headers }) => {
+  try {
+    const config = {
+      type: "streamableHttp",
+      url,
+      headers: headers || {},
+    };
+    await mcpManager.addServer(name, config);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("mcp:save-all", async () => {
+  try {
+    mcpManager.saveAllServers();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("mcp:remove", async (_event, name) => {
+  try {
+    await mcpManager.removeServer(name);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("mcp:restart", async (_event, name) => {
+  try {
+    const tools = await mcpManager.restartServer(name);
+    return { success: true, tools };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+/**
+ * Detect MCP servers from local config files (OpenCode, Claude Code, etc.)
+ * Scans known locations for mcp.json / .mcp.json files and extracts server entries.
+ */
+ipcMain.handle("mcp:detect-local", async () => {
+  const HOME = process.env.USERPROFILE || os.homedir();
+  const APPDATA = process.env.APPDATA || join(HOME, "AppData", "Roaming");
+  const found = [];
+
+  /** Read MCP entries from a JSON file. Supports multiple key names and formats. */
+  function readMcpServers(filePath, source, opts = {}) {
+    if (!existsSync(filePath)) return [];
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const data = JSON.parse(raw);
+      // Try each possible key in order: mcpServers (standard), mcp (OpenCode opencode.json)
+      const keys = opts.keys || ["mcpServers"];
+      let servers = {};
+      for (const k of keys) {
+        if (data[k] && typeof data[k] === "object") {
+          servers = data[k];
+          break;
+        }
+      }
+      const entries = [];
+      for (const [name, cfg] of Object.entries(servers)) {
+        if (!cfg || typeof cfg !== "object") continue;
+        const normalized = {
+          source,
+          serverName: name,
+          kind: cfg.command ? "stdio" : "remote",
+          command: cfg.command || "",
+          args: cfg.args || [],
+          env: cfg.env || {},
+          url: cfg.baseUrl || cfg.url || "",
+          headers: cfg.headers || {},
+          description: cfg.description || "",
+        };
+        if (cfg.isActive === false || cfg.enabled === false) {
+          normalized.disabled = true;
+        }
+        entries.push(normalized);
+      }
+      return entries;
+    } catch (e) {
+      console.error(`[mcp] Failed to read ${filePath}:`, e.message);
+      return [];
+    }
+  }
+
+  // Claude Code CLI: ~/.claude/.mcp.json (mcpServers key) + ~/.claude/settings.json (mcpServers key)
+  for (const p of [join(HOME, ".claude", ".mcp.json"), join(HOME, ".claude", "settings.json")]) {
+    found.push(...readMcpServers(p, "Claude Code"));
+  }
+  // OpenCode: mcp.json (mcpServers key) + opencode.json (mcp key)
+  found.push(...readMcpServers(join(HOME, ".config", "opencode", "mcp.json"), "OpenCode"));
+  found.push(...readMcpServers(join(HOME, ".config", "opencode", "opencode.json"), "OpenCode", { keys: ["mcp"] }));
+  // Claude Desktop (App): %APPDATA%/Claude/*/mcp.json
+  for (const p of [join(APPDATA, "Claude", "claude_dotfiles", "mcp.json"), join(APPDATA, "Claude", "mcp.json")]) {
+    found.push(...readMcpServers(p, "Claude Desktop"));
+  }
+
+  // Deduplicate: keep the first occurrence per (source, serverName) pair
+  const seen = new Set();
+  const deduped = [];
+  for (const entry of found) {
+    const key = `${entry.source}||${entry.serverName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(entry);
+  }
+
+  return deduped;
+});
+
+/**
+ * Quick-add a SearXNG MCP server given just its URL.
+ * Configures npx mcp-searxng@latest with proper env.
+ */
+ipcMain.handle("mcp:quick-add-searxng", async (_event, searxngUrl) => {
+  try {
+    if (!searxngUrl || typeof searxngUrl !== "string") {
+      return { success: false, error: "请提供 SearXNG URL" };
+    }
+    // Validate URL
+    const u = new URL(searxngUrl);
+    if (!u.protocol.startsWith("http")) {
+      return { success: false, error: "URL 必须以 http:// 或 https:// 开头" };
+    }
+
+    const config = {
+      command: "npx",
+      args: ["-y", "mcp-searxng@latest"],
+      env: {
+        SEARXNG_URL: searxngUrl.replace(/\/+$/, ""),
+        SEARXNG_TIMEOUT: "15000",
+        SEARXNG_SAFE_SEARCH: "1",
+      },
+    };
+    await mcpManager.addServer("searxng", config);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("dialog:download-markdown", async (_event, content) => {
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return { success: false, error: "No focused window" };
+
+  const result = await dialog.showSaveDialog(win, {
+    title: "下载为 Markdown",
+    defaultPath: `agent-response-${Date.now()}.md`,
+    filters: [{ name: "Markdown", extensions: ["md"] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { success: false, canceled: true };
+  }
+
+  try {
+    writeFileSync(result.filePath, content, "utf-8");
+    return { success: true, filePath: result.filePath };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 

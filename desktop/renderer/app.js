@@ -84,6 +84,8 @@ const uploadBtn = $("#upload-btn");
 const fileInput = $("#file-input");
 const filePreviewArea = $("#file-preview-area");
 const AVATAR_KEY = "goodagent_avatar";
+const USER_AVATAR_KEY = "goodagent_user_avatar";
+const USER_NAME_KEY = "goodagent_user_name";
 
 /* ── Helpers ──────────────────────────────────────────── */
 function sanitize(html) {
@@ -278,8 +280,11 @@ function scrollToBottom() {
 function addUserMessage(text) {
   const div = document.createElement("div");
   div.className = "message user";
+  const userName = loadUserName();
+  const userAvatarSrc = loadUserAvatarSrc();
+  const avatarHtml = userAvatarSrc ? `<img class="avatar user-msg-avatar" src="${userAvatarSrc}" alt="" />` : "";
   div.innerHTML = `
-    <div class="message-label">你</div>
+    <div class="message-label">${userName}${avatarHtml}</div>
     <div class="message-bubble"><p>${sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}</p></div>
   `;
   messageList.appendChild(div);
@@ -290,8 +295,14 @@ function addUserMessage(text) {
 function addAssistantMessage() {
   const div = document.createElement("div");
   div.className = "message assistant streaming";
+  const agentName = loadAgentName();
+  const saved = localStorage.getItem(AVATAR_KEY);
+  const avatarSrc = saved || DEFAULT_AVATAR;
   div.innerHTML = `
-    <div class="message-label">GoodAgent</div>
+    <div class="message-label">
+      <img class="avatar msg-avatar" src="${avatarSrc}" alt="" />
+      ${agentName}
+    </div>
     <div class="message-content">
       <div class="message-text"></div>
     </div>
@@ -406,19 +417,71 @@ function finishAssistantMessage(msgEl) {
   // 思考过程折叠起来（移除 open 属性）
   const thinking = msgEl.querySelector(".thinking-collapsible");
   if (thinking) thinking.removeAttribute("open");
+
+  // 添加复制/下载操作栏（避免重复添加）
+  if (!msgEl.querySelector(".message-actions")) {
+    const actions = document.createElement("div");
+    actions.className = "message-actions";
+    actions.innerHTML = `
+      <button class="msg-action-btn" title="复制内容" data-action="copy">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button class="msg-action-btn" title="下载为 Markdown" data-action="download">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+    `;
+    msgEl.querySelector(".message-content").after(actions);
+
+    const textGetter = () => {
+      const textEl = msgEl.querySelector(".message-text");
+      return textEl ? textEl.textContent || "" : "";
+    };
+
+    actions.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".msg-action-btn");
+      if (!btn) return;
+      const text = textGetter();
+      if (!text) return;
+
+      if (btn.dataset.action === "copy") {
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<span style="color:#22c55e">已复制</span>';
+          setTimeout(() => { btn.innerHTML = orig; }, 2000);
+        } catch { /* ignore */ }
+      } else if (btn.dataset.action === "download") {
+        btn.disabled = true;
+        const orig = btn.innerHTML;
+        btn.innerHTML = "保存中...";
+        const result = await window.goodAgent.downloadMarkdown(text);
+        if (result.success) {
+          btn.innerHTML = '<span style="color:#22c55e">已保存</span>';
+          setTimeout(() => { btn.innerHTML = orig; }, 2000);
+        } else if (!result.canceled) {
+          btn.innerHTML = '<span style="color:#ef4444">失败</span>';
+          setTimeout(() => { btn.innerHTML = orig; }, 2000);
+        } else {
+          btn.innerHTML = orig;
+        }
+        btn.disabled = false;
+      }
+    });
+  }
+
   scrollToBottom();
 }
 
 /* ── Show welcome ─────────────────────────────────────── */
 function showWelcome() {
+  const agentName = loadAgentName();
   messageList.innerHTML = `
     <div class="welcome">
       <div class="welcome-icon">
-        <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="GoodAgent" />
+        <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="${agentName}" />
       </div>
-      <h1>GoodAgent</h1>
-      <p class="subtitle">桌面版</p>
-      <p class="description">向 GoodAgent 提问任何关于代码库的问题。<br />帮你编码、调试、重构。</p>
+      <h1>${agentName}</h1>
+      <p class="description">任何事都可以找 ${agentName}</p>
     </div>
   `;
   // Re-apply avatar after DOM replacement (DEFAULT_AVATAR fallback if none saved)
@@ -737,7 +800,8 @@ async function submitQuery() {
   try {
     const enabledSkills = loadEnabledSkills();
     const reasoning = loadReasoningEnabled();
-    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning);
+    const agentName = loadAgentName();
+    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName);
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -1065,6 +1129,8 @@ function loadAvatar() {
   const src = saved || DEFAULT_AVATAR;
   const imgs = [sidebarAvatar, settingsPreview, document.getElementById("welcome-avatar")].filter(Boolean);
   imgs.forEach((img) => { img.src = src; });
+  // Update avatars in existing assistant messages too
+  document.querySelectorAll(".msg-avatar").forEach((img) => { img.src = src; });
 }
 
 function saveAvatar(src) {
@@ -1171,6 +1237,213 @@ changeAvatarBtn.addEventListener("click", () => {
 
 resetAvatarBtn.addEventListener("click", resetAvatar);
 
+/* ── Agent Name ──────────────────────────────────────── */
+const AGENT_NAME_KEY = "goodagent_name";
+
+function loadAgentName() {
+  return localStorage.getItem(AGENT_NAME_KEY) || "GoodAgent";
+}
+
+function saveAgentName(name) {
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  localStorage.setItem(AGENT_NAME_KEY, name);
+  applyAgentName(name);
+  showToast(`名称已改为 "${name}"`, "info");
+}
+
+function applyAgentName(name) {
+  // Sidebar brand
+  const brand = document.getElementById("sidebar-brand");
+  if (brand) brand.textContent = name;
+
+  // Page title
+  document.title = name;
+
+  // Input placeholder
+  const input = document.getElementById("prompt-input");
+  if (input) input.placeholder = `向 ${name} 提问...`;
+
+  // Welcome page (if visible)
+  const welcomeTitle = document.querySelector(".welcome h1");
+  if (welcomeTitle) welcomeTitle.textContent = name;
+  const welcomeDesc = document.querySelector(".welcome .description");
+  if (welcomeDesc) welcomeDesc.innerHTML = `任何事都可以找 ${name}`;
+  const welcomeAvatar = document.getElementById("welcome-avatar");
+  if (welcomeAvatar) welcomeAvatar.alt = name;
+
+  // Existing assistant message labels (preserve avatar img)
+  document.querySelectorAll(".message.assistant .message-label").forEach(el => {
+    const img = el.querySelector(".msg-avatar");
+    const imgSrc = img ? img.src : "";
+    el.innerHTML = imgSrc
+      ? `<img class="avatar msg-avatar" src="${imgSrc}" alt="" />${name}`
+      : name;
+  });
+}
+
+// Name input save
+const agentNameInput = document.getElementById("agent-name-input");
+const saveAgentNameBtn = document.getElementById("save-agent-name-btn");
+
+function initAgentNameUI() {
+  const saved = loadAgentName();
+  if (agentNameInput) agentNameInput.value = saved;
+}
+
+if (saveAgentNameBtn && agentNameInput) {
+  saveAgentNameBtn.addEventListener("click", () => {
+    saveAgentName(agentNameInput.value);
+  });
+  agentNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveAgentName(agentNameInput.value);
+  });
+}
+
+/* ── User Name ──────────────────────────────────────── */
+function loadUserName() {
+  return localStorage.getItem(USER_NAME_KEY) || "你";
+}
+
+function saveUserName(name) {
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  localStorage.setItem(USER_NAME_KEY, name);
+  applyUserName(name);
+  const input = document.getElementById("user-name-input");
+  if (input) input.value = name;
+  showToast(`你的名称已改为 "${name}"`, "info");
+}
+
+function applyUserName(name) {
+  // Update existing user message labels
+  document.querySelectorAll(".message.user .message-label").forEach(el => {
+    const img = el.querySelector(".user-msg-avatar");
+    const imgSrc = img ? img.src : "";
+    if (imgSrc) {
+      el.innerHTML = `${name}<img class="avatar user-msg-avatar" src="${imgSrc}" alt="" />`;
+    } else {
+      el.textContent = name;
+    }
+  });
+}
+
+const userNameInput = document.getElementById("user-name-input");
+const saveUserNameBtn = document.getElementById("save-user-name-btn");
+if (saveUserNameBtn && userNameInput) {
+  saveUserNameBtn.addEventListener("click", () => saveUserName(userNameInput.value));
+  userNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveUserName(userNameInput.value);
+  });
+}
+
+/* ── User Avatar ─────────────────────────────────────── */
+const userAvatarFileInput = document.getElementById("user-avatar-file-input");
+const changeUserAvatarBtn = document.getElementById("change-user-avatar-btn");
+const resetUserAvatarBtn = document.getElementById("reset-user-avatar-btn");
+
+function loadUserAvatarSrc() {
+  return localStorage.getItem(USER_AVATAR_KEY) || "";
+}
+
+function loadUserAvatar() {
+  const src = loadUserAvatarSrc();
+  const preview = document.getElementById("user-settings-preview");
+  if (preview) preview.src = src || "avatar.jpg";
+  // Inject or update avatar in all existing user message labels
+  document.querySelectorAll(".message.user .message-label").forEach(el => {
+    const existing = el.querySelector(".user-msg-avatar");
+    if (src) {
+      if (existing) {
+        existing.src = src;
+      } else {
+        const img = document.createElement("img");
+        img.className = "avatar user-msg-avatar";
+        img.src = src;
+        img.alt = "";
+        el.appendChild(img);
+      }
+    } else {
+      if (existing) existing.remove();
+    }
+  });
+}
+
+function saveUserAvatar(src) {
+  try {
+    localStorage.setItem(USER_AVATAR_KEY, src);
+    loadUserAvatar();
+  } catch (e) {
+    console.error("[user avatar] save failed:", e.message);
+    showToast("头像保存失败：图片过大，请选择较小的图片", "error");
+  }
+}
+
+function resetUserAvatar() {
+  localStorage.removeItem(USER_AVATAR_KEY);
+  loadUserAvatar();
+}
+
+function initUserAvatarUI() {
+  const src = loadUserAvatarSrc();
+  const preview = document.getElementById("user-settings-preview");
+  if (preview) preview.src = src || "avatar.jpg";
+  const input = document.getElementById("user-name-input");
+  if (input) input.value = loadUserName();
+}
+
+// User avatar file upload
+userAvatarFileInput.addEventListener("change", async () => {
+  const file = userAvatarFileInput.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    showToast("请选择图片文件", "error");
+    userAvatarFileInput.value = "";
+    return;
+  }
+  let realType;
+  try {
+    const header = await file.slice(0, 12).arrayBuffer();
+    realType = detectMimeFromHeader(header);
+  } catch (e) {
+    realType = file.type;
+  }
+  const mimeType = realType || file.type;
+  const MAX_PX = 200;
+  const correctedBlob = new Blob([file], { type: mimeType });
+  const blobUrl = URL.createObjectURL(correctedBlob);
+  const img = new Image();
+  img.onload = () => {
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (w > MAX_PX || h > MAX_PX) {
+      const scale = MAX_PX / Math.max(w, h);
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    const compressed = canvas.toDataURL("image/jpeg", 0.85);
+    URL.revokeObjectURL(blobUrl);
+    saveUserAvatar(compressed);
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(blobUrl);
+    showToast(`图片解码失败，请换一张图`, "error");
+  };
+  img.src = blobUrl;
+  userAvatarFileInput.value = "";
+});
+
+if (changeUserAvatarBtn) {
+  changeUserAvatarBtn.addEventListener("click", () => userAvatarFileInput.click());
+}
+if (resetUserAvatarBtn) {
+  resetUserAvatarBtn.addEventListener("click", resetUserAvatar);
+}
+
 /* ── Skills ──────────────────────────────────────────── */
 const SKILLS_KEY = "goodagent_enabled_skills";
 
@@ -1250,6 +1523,692 @@ document.querySelector('.settings-tab[data-tab="skills"]')?.addEventListener("cl
   }
 });
 
+/* ── MCP Servers ──────────────────────────────────────── */
+
+async function loadMcpServers() {
+  const listEl = document.getElementById("mcp-server-list");
+  if (!listEl) return;
+  try {
+    const servers = await window.goodAgent.mcpList();
+    if (!servers || servers.length === 0) {
+      listEl.innerHTML = '<p class="hint" style="padding:24px 0;text-align:center;">没有配置 MCP 服务器。点击"添加服务器"开始。</p>';
+      return;
+    }
+    listEl.innerHTML = servers.map(s => {
+      const statusIcon = s.status === "running" ? "🟢" : s.status === "error" ? "🔴" : "🟡";
+      const toolList = s.tools.length > 0
+        ? s.tools.map(t => `<code style="font-size:12px;background:var(--bg-tertiary);padding:1px 6px;border-radius:4px;white-space:nowrap;">${sanitize(t.name)}</code>`).join(" ")
+        : '<span class="hint" style="font-size:12px;">(无工具)</span>';
+      const errMsg = s.error ? `<div class="mcp-server-error">${sanitize(s.error)}</div>` : "";
+      return `<div class="mcp-server-card">
+        <div class="mcp-server-header">
+          <div class="mcp-server-name">
+            <span class="mcp-server-status-dot" style="color:${s.status === "running" ? "#22c55e" : s.status === "error" ? "#ef4444" : "#eab308"}">●</span>
+            <strong>${sanitize(s.name)}</strong>
+            <span class="mcp-server-status-label">${statusIcon} ${s.status === "running" ? "运行中" : s.status === "error" ? "错误" : "启动中..."}</span>
+          </div>
+          <div class="mcp-server-actions">
+            <button class="btn mcp-restart-btn" data-name="${sanitize(s.name)}" style="font-size:12px;padding:4px 10px;" ${s.status === "starting" ? "disabled" : ""}>
+              ${s.status === "running" ? "重启" : s.status === "error" ? "重试" : "重启"}
+            </button>
+            <button class="btn mcp-remove-btn" data-name="${sanitize(s.name)}" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:rgba(208,49,45,0.3);">移除</button>
+          </div>
+        </div>
+        ${errMsg}
+        <div class="mcp-server-tools">
+          <span class="hint" style="font-size:12px;margin-right:6px;">工具:</span>
+          ${toolList}
+        </div>
+      </div>`;
+    }).join("");
+
+    // Bind restart buttons
+    listEl.querySelectorAll(".mcp-restart-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        btn.disabled = true;
+        btn.textContent = "重启中...";
+        const result = await window.goodAgent.mcpRestart(name);
+        if (!result.success) {
+          showMcpStatus(`重启 "${name}" 失败: ${result.error}`, "error");
+        }
+        await loadMcpServers();
+        btn.disabled = false;
+        btn.textContent = "重启";
+      });
+    });
+
+    // Bind remove buttons
+    listEl.querySelectorAll(".mcp-remove-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        if (!confirm(`确定移除 MCP 服务器 "${name}"？`)) return;
+        btn.disabled = true;
+        const result = await window.goodAgent.mcpRemove(name);
+        if (!result.success) {
+          showMcpStatus(`移除 "${name}" 失败: ${result.error}`, "error");
+        }
+        await loadMcpServers();
+      });
+    });
+  } catch (err) {
+    console.error("[mcp] load error:", err);
+    if (listEl) listEl.innerHTML = '<div class="hint" style="padding:24px 0;text-align:center;color:var(--danger);">加载 MCP 服务器失败</div>';
+  }
+}
+
+function showMcpStatus(msg, type = "info") {
+  const el = document.getElementById("mcp-settings-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `settings-status ${type === "info" ? "hidden" : ""}`;
+  if (type !== "info") {
+    el.classList.remove("hidden");
+    setTimeout(() => { el.classList.add("hidden"); }, 5000);
+  }
+}
+
+// Refresh button
+document.getElementById("mcp-refresh-btn")?.addEventListener("click", loadMcpServers);
+
+// Save all button
+document.getElementById("mcp-save-all-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("mcp-save-all-btn");
+  btn.disabled = true;
+  btn.textContent = "保存中...";
+  const result = await window.goodAgent.mcpSaveAll();
+  if (result.success) {
+    showMcpStatus("✅ MCP 配置已保存", "success");
+  } else {
+    showMcpStatus(`保存失败: ${result.error}`, "error");
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> 保存配置';
+});
+
+// Add form toggle
+document.getElementById("mcp-add-btn")?.addEventListener("click", () => {
+  const form = document.getElementById("mcp-add-form");
+  if (form) {
+    form.classList.toggle("hidden");
+    if (!form.classList.contains("hidden")) {
+      document.getElementById("mcp-name-input")?.focus();
+    }
+  }
+});
+
+document.getElementById("mcp-cancel-btn")?.addEventListener("click", () => {
+  const form = document.getElementById("mcp-add-form");
+  if (form) form.classList.add("hidden");
+  document.getElementById("mcp-form-status")?.classList.add("hidden");
+});
+
+// Save new server
+document.getElementById("mcp-save-btn")?.addEventListener("click", async () => {
+  const name = document.getElementById("mcp-name-input")?.value.trim();
+  const command = document.getElementById("mcp-command-input")?.value.trim();
+  const argsStr = document.getElementById("mcp-args-input")?.value.trim();
+  const envStr = document.getElementById("mcp-env-input")?.value.trim();
+
+  if (!name || !command) {
+    document.getElementById("mcp-form-status").textContent = "名称和命令不能为空";
+    document.getElementById("mcp-form-status").classList.remove("hidden");
+    return;
+  }
+
+  const args = argsStr ? argsStr.split(" ").filter(Boolean) : [];
+  let env = {};
+  if (envStr) {
+    try { env = JSON.parse(envStr); } catch {
+      document.getElementById("mcp-form-status").textContent = "环境变量格式错误，请输入有效 JSON";
+      document.getElementById("mcp-form-status").classList.remove("hidden");
+      return;
+    }
+  }
+
+  const config = { command, args };
+  if (Object.keys(env).length > 0) config.env = env;
+
+  const saveBtn = document.getElementById("mcp-save-btn");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "启动中...";
+
+  const result = await window.goodAgent.mcpAdd(name, config);
+  if (result.success) {
+    // Clear form
+    document.getElementById("mcp-name-input").value = "";
+    document.getElementById("mcp-command-input").value = "";
+    document.getElementById("mcp-args-input").value = "";
+    document.getElementById("mcp-env-input").value = "";
+    document.getElementById("mcp-add-form").classList.add("hidden");
+    document.getElementById("mcp-form-status").classList.add("hidden");
+    await loadMcpServers();
+  } else {
+    document.getElementById("mcp-form-status").textContent = `启动失败: ${result.error}`;
+    document.getElementById("mcp-form-status").classList.remove("hidden");
+  }
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = "保存并启动";
+});
+
+// Load MCP servers + auto-detect when the MCP tab is opened
+let _mcpTabLoaded = false;
+document.querySelector('.settings-tab[data-tab="mcp"]')?.addEventListener("click", () => {
+  if (_mcpTabLoaded) return;
+  _mcpTabLoaded = true;
+  const listEl = document.getElementById("mcp-server-list");
+  if (listEl) loadMcpServers();
+  detectLocalMcp();
+});
+
+// ── Quick Add SearXNG ──────────────────────────────────────
+document.getElementById("mcp-searxng-add-btn")?.addEventListener("click", async () => {
+  const url = document.getElementById("mcp-searxng-url")?.value.trim();
+  if (!url) {
+    showMcpStatus("请填写 SearXNG URL", "error");
+    return;
+  }
+  const btn = document.getElementById("mcp-searxng-add-btn");
+  btn.disabled = true;
+  btn.textContent = "添加中...";
+  try {
+    const result = await window.goodAgent.mcpQuickAddSearxng(url);
+    if (result.success) {
+      showMcpStatus("✅ SearXNG 已添加并启动", "success");
+      document.getElementById("mcp-searxng-url").value = "";
+      await loadMcpServers();
+      // Refresh detect results in case they're showing
+      await detectLocalMcp();
+    } else {
+      showMcpStatus(`添加失败: ${result.error}`, "error");
+    }
+  } catch (e) {
+    showMcpStatus(`添加失败: ${e.message}`, "error");
+  }
+  btn.disabled = false;
+  btn.textContent = "添加";
+});
+
+// Enter key to submit SearXNG URL
+document.getElementById("mcp-searxng-url")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("mcp-searxng-add-btn")?.click();
+  }
+});
+
+// ── Detect Local MCP ────────────────────────────────────────
+async function detectLocalMcp() {
+  const resultsEl = document.getElementById("mcp-detect-results");
+  if (!resultsEl) return;
+  try {
+    const servers = await window.goodAgent.mcpDetectLocal();
+    if (!servers || servers.length === 0) {
+      resultsEl.innerHTML = '<span style="color:var(--text-light);">未找到本地 MCP 配置。已扫描 Claude Code CLI (~/.claude/)、OpenCode 等位置。</span>';
+      return;
+    }
+    // Group by source
+    const bySource = {};
+    for (const s of servers) {
+      if (!bySource[s.source]) bySource[s.source] = [];
+      bySource[s.source].push(s);
+    }
+    const html = Object.entries(bySource).map(([source, items]) => {
+      const itemsHtml = items.map(s => {
+        if (s.kind === "stdio") {
+          const label = `<code>${sanitize(s.command)} ${sanitize(s.args.join(" "))}</code>`;
+          const note = s.disabled ? ' <span style="color:var(--text-light);font-size:11px;">(已禁用)</span>' : "";
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+              <strong style="font-size:13px;">${sanitize(s.serverName)}</strong>${note}
+              <div style="font-size:11px;color:var(--text-light);">${label}</div>
+            </div>
+            <button class="btn mcp-import-btn" style="font-size:11px;padding:2px 8px;" data-name="${sanitize(s.serverName)}" data-command="${sanitize(s.command)}" data-args='${sanitize(JSON.stringify(s.args))}' data-env='${sanitize(JSON.stringify(s.env))}'>导入</button>
+          </div>`;
+        }
+        // ── Remote (HTTP) MCP ──
+        const url = s.url || "";
+        const note = s.disabled ? ' <span style="color:var(--text-light);font-size:11px;">(已禁用)</span>' : "";
+        return `<div style="padding:4px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <strong style="font-size:13px;">${sanitize(s.serverName)}</strong>${note}
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;"><code style="word-break:break-all;">${sanitize(url)}</code></div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="password" class="form-input mcp-remote-key" style="flex:1;font-size:12px;padding:4px 8px;" placeholder="API Key (Bearer token)" />
+            <button class="btn mcp-remote-connect-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-name="${sanitize(s.serverName)}" data-url="${sanitize(url)}">连接</button>
+          </div>
+        </div>`;
+      }).join("");
+      return `<div style="margin-bottom:6px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text-light);margin-bottom:2px;">📁 ${sanitize(source)}</div>
+        ${itemsHtml}
+      </div>`;
+    }).join("");
+    resultsEl.innerHTML = html;
+
+    // Bind stdio import buttons
+    resultsEl.querySelectorAll(".mcp-import-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        const command = btn.dataset.command;
+        let args = [];
+        try { args = JSON.parse(btn.dataset.args || "[]"); } catch {}
+        let env = {};
+        try { env = JSON.parse(btn.dataset.env || "{}"); } catch {}
+        btn.disabled = true;
+        btn.textContent = "导入中...";
+        const result = await window.goodAgent.mcpAdd(name, { command, args, env });
+        if (result.success) {
+          showMcpStatus(`✅ "${name}" 已导入`, "success");
+          btn.textContent = "✅ 已导入";
+          await loadMcpServers();
+        } else {
+          showMcpStatus(`导入 "${name}" 失败: ${result.error}`, "error");
+          btn.textContent = "重试";
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // Bind remote connect buttons
+    resultsEl.querySelectorAll(".mcp-remote-connect-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        const url = btn.dataset.url;
+        const keyInput = btn.parentElement.querySelector(".mcp-remote-key");
+        const apiKey = keyInput?.value?.trim() || "";
+        btn.disabled = true;
+        btn.textContent = "连接中...";
+        const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+        const result = await window.goodAgent.mcpAddRemote(name, url, headers);
+        if (result.success) {
+          showMcpStatus(`✅ "${name}" 已连接`, "success");
+          btn.textContent = "✅ 已连接";
+          await loadMcpServers();
+        } else {
+          showMcpStatus(`连接 "${name}" 失败: ${result.error}`, "error");
+          btn.textContent = "连接";
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (e) {
+    resultsEl.innerHTML = `<span style="color:var(--danger);font-size:12px;">检测失败: ${sanitize(e.message)}</span>`;
+  }
+}
+
+document.getElementById("mcp-detect-btn")?.addEventListener("click", () => {
+  const btn = document.getElementById("mcp-detect-btn");
+  btn.disabled = true;
+  btn.textContent = "扫描中...";
+  detectLocalMcp().finally(() => {
+    btn.disabled = false;
+    btn.textContent = "扫描";
+  });
+});
+
+/* ── System Prompt Profile Management ─────────────────── */
+const SECTION_LABELS = {
+  identity:      { label: "身份定义",      hint: "定义 AI 的角色、名称和核心定位" },
+  workflow:      { label: "核心工作流",    hint: "定义 AI 处理任务的通用工作流程" },
+  tools:         { label: "工具使用协议",  hint: "定义 AI 使用工具的约束和偏好" },
+  behavior:      { label: "行为规范",      hint: "定义 AI 的行为准则和禁忌" },
+  communication: { label: "沟通风格",      hint: "定义 AI 的语言风格、语气和格式" },
+  skills:        { label: "技能系统",      hint: "定义 AI 如何发现和使用技能" },
+  safety:        { label: "安全边界",      hint: "定义 AI 的安全约束和权限范围" },
+  runtime:       { label: "运行时上下文",  hint: "定义 AI 的工作目录、环境等信息" },
+  examples:      { label: "示例",          hint: "提供交互示例格式供 AI 参考" },
+};
+
+let promptStore = null;
+let currentProfileId = null;
+let _promptDirty = false;
+
+function getNextProfileName() {
+  if (!promptStore) return "系统提示词1";
+  const ids = Object.keys(promptStore.profiles);
+  let max = 0;
+  for (const id of ids) {
+    const p = promptStore.profiles[id];
+    const m = p.name && p.name.match(/^系统提示词(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > max) max = n;
+    }
+  }
+  return "系统提示词" + (max + 1);
+}
+
+async function loadPromptStore() {
+  try {
+    promptStore = await window.goodAgent.listPromptProfiles();
+    if (!promptStore || !promptStore.profiles) {
+      promptStore = { activeProfile: "default", profiles: {} };
+    }
+    currentProfileId = promptStore.activeProfile || "default";
+    // Ensure default profile exists
+    if (!promptStore.profiles["default"]) {
+      promptStore.profiles["default"] = {
+        id: "default", name: "默认", enabled: true,
+        sections: {
+          identity: {
+            enabled: true,
+            content: "You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek \u2014 you are a desktop AI coding agent called GoodAgent.",
+          },
+          workflow: {
+            enabled: true,
+            content: "1. First explore the project with `dir` or `Get-ChildItem`.\n2. Understand the user's request clearly before taking action.\n3. Plan your approach, then use the available tools to execute it.\n4. Show relevant code when explaining changes.\n5. Iterate based on user feedback to refine the result.",
+          },
+          tools: {
+            enabled: true,
+            content: "**Available tools:**\n- `bash` \u2014 Run PowerShell commands (dir, git, npm, etc.)\n- `file_read` \u2014 Read file contents\n- `file_write` \u2014 Create or overwrite files\n- `file_edit` \u2014 Replace exact text in files\n- `grep` \u2014 Regex search in files\n- `glob` \u2014 Find files by name pattern\n- `web_fetch` \u2014 Fetch and extract content from any URL\n- `web_search` \u2014 Search the internet for current information\n- `skill` \u2014 Load a user-installed skill (SKILL.md workflow)\n\nUSE THE TOOLS. Don't just suggest \u2014 actually run commands, read files, make changes.",
+          },
+          behavior: {
+            enabled: true,
+            content: "1. USE THE TOOLS. Don't just suggest \u2014 actually run commands, read files, make changes.\n2. First explore the project with `dir` or `Get-ChildItem`.\n3. When you need current information, news, or docs \u2014 use `web_search` and `web_fetch`.\n4. Show relevant code when explaining.\n5. Use `file_edit` or `file_write` for code changes.\n6. Keep responses concise with Markdown formatting.\n7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).",
+          },
+          communication: {
+            enabled: false,
+            content: "Keep responses concise with Markdown formatting. Always respond in the same language the user uses. Show relevant code when explaining your changes.",
+          },
+          skills: {
+            enabled: true,
+            content: "If the user's request matches a skill's purpose, load it via the `skill` tool and follow its instructions.",
+          },
+          safety: {
+            enabled: true,
+            content: "(No additional safety constraints configured. Edit this section to add security rules.)",
+          },
+          runtime: {
+            enabled: true,
+            content: "You are running on Windows as a desktop AI coding agent.",
+          },
+          examples: {
+            enabled: false,
+            content: "",
+          },
+        },
+      };
+    }
+    return promptStore;
+  } catch (e) {
+    console.error("[prompt] Failed to load profiles:", e);
+    return null;
+  }
+}
+
+function getCurrentProfile() {
+  if (!promptStore || !promptStore.profiles) return null;
+  return promptStore.profiles[currentProfileId] || null;
+}
+
+function renderProfileSelector() {
+  const container = document.getElementById("prompt-profile-selector");
+  if (!container || !promptStore) return;
+  const ids = Object.keys(promptStore.profiles);
+  container.innerHTML = ids.map(id => {
+    const p = promptStore.profiles[id];
+    const active = id === currentProfileId ? " active" : "";
+    return `<button class="prompt-profile-chip${active}" data-profile-id="${id}">
+      ${sanitize(p.name)}
+    </button>`;
+  }).join("");
+
+  // Bind click
+  container.querySelectorAll(".prompt-profile-chip").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.profileId;
+      if (id === currentProfileId) return;
+      if (_promptDirty) await saveCurrentProfile();
+      currentProfileId = id;
+      promptStore.activeProfile = id;
+      await window.goodAgent.activatePromptProfile(id);
+      renderProfileSelector();
+      renderPromptEditor();
+    });
+  });
+}
+
+async function saveCurrentProfile() {
+  const profile = getCurrentProfile();
+  if (!profile) return;
+  // Read name input
+  const nameInput = document.getElementById("prompt-name-input");
+  if (nameInput && nameInput.value.trim()) {
+    profile.name = nameInput.value.trim();
+  }
+  await window.goodAgent.savePromptProfile(profile);
+  _promptDirty = false;
+  // Re-render selector to reflect any name change
+  renderProfileSelector();
+  showPromptStatus("已保存", "success");
+}
+
+function htmlEncode(str) {
+  const div = document.createElement("div");
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function renderPromptEditor() {
+  const container = document.getElementById("prompt-sections");
+  const profile = getCurrentProfile();
+  if (!container || !profile) {
+    if (container) container.innerHTML = '<p class="hint" style="margin:24px 0;">点击上方「新建」创建系统提示词配置</p>';
+    return;
+  }
+
+  // Build sections HTML
+  const sectionsHtml = Object.entries(SECTION_LABELS).map(([key, meta]) => {
+    const sec = profile.sections[key];
+    const isEnabled = sec && sec.enabled !== false;
+    const content = sec ? sec.content : "";
+    return `<div class="prompt-section ${isEnabled ? "" : "prompt-section-disabled"}">
+      <div class="prompt-section-header" data-section="${key}">
+        <div class="prompt-section-title-group">
+          <label class="prompt-section-toggle" onclick="event.stopPropagation()">
+            <input type="checkbox" class="prompt-section-cb" data-section="${key}" ${isEnabled ? "checked" : ""} />
+            <span class="toggle-slider toggle-slider-sm"></span>
+          </label>
+          <span class="prompt-section-title">${meta.label}</span>
+        </div>
+        <div class="prompt-section-actions">
+          <span class="prompt-section-hint">${meta.hint}</span>
+          <svg class="prompt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
+        </div>
+      </div>
+      <div class="prompt-section-body">
+        <textarea class="prompt-section-textarea" data-section="${key}" placeholder="输入 ${meta.label} 内容... 该内容将被注入到系统提示词的对应章节。">${htmlEncode(content)}</textarea>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Build full editor: name input + sections + bottom bar
+  container.innerHTML = `
+    <div class="prompt-editor-name">
+      <label class="prompt-editor-name-label">配置名称</label>
+      <input type="text" id="prompt-name-input" class="form-input prompt-name-input" value="${htmlEncode(profile.name)}" placeholder="配置名称" />
+    </div>
+    ${sectionsHtml}
+    <div class="prompt-editor-bottom">
+      <button id="prompt-enable-btn" class="btn prompt-enable-btn ${profile.enabled ? "prompt-enable-btn--on" : "prompt-enable-btn--off"}">
+        ${profile.enabled ? "已启用" : "启用"}
+      </button>
+      <div class="prompt-editor-right">
+        <button id="prompt-delete-btn" class="btn prompt-delete-btn" ${currentProfileId === "default" ? "disabled" : ""}>删除</button>
+        <button id="prompt-save-btn" class="btn primary">保存</button>
+      </div>
+    </div>
+  `;
+
+  // ── Bind events ──
+
+  // Name input
+  const nameInput = document.getElementById("prompt-name-input");
+  if (nameInput) {
+    nameInput.addEventListener("input", () => {
+      _promptDirty = true;
+    });
+  }
+
+  // Enable button
+  const enableBtn = document.getElementById("prompt-enable-btn");
+  if (enableBtn) {
+    enableBtn.addEventListener("click", async () => {
+      const p = getCurrentProfile();
+      if (!p) return;
+      // Save current name first
+      if (nameInput && nameInput.value.trim()) {
+        p.name = nameInput.value.trim();
+      }
+      // Enable this profile, disable all others
+      p.enabled = true;
+      for (const id of Object.keys(promptStore.profiles)) {
+        if (id !== currentProfileId) {
+          promptStore.profiles[id].enabled = false;
+        }
+      }
+      // Persist all profiles
+      for (const id of Object.keys(promptStore.profiles)) {
+        await window.goodAgent.savePromptProfile(promptStore.profiles[id]);
+      }
+      _promptDirty = false;
+      renderProfileSelector();
+      renderPromptEditor();
+      showPromptStatus("已启用当前配置", "success");
+    });
+  }
+
+  // Delete button
+  const deleteBtn = document.getElementById("prompt-delete-btn");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      if (currentProfileId === "default") return;
+      const p = getCurrentProfile();
+      if (!p) return;
+      if (!confirm(`确定要删除配置「${p.name}」吗？`)) return;
+      await window.goodAgent.deletePromptProfile(currentProfileId);
+      delete promptStore.profiles[currentProfileId];
+      // If deleted was the enabled one, nothing is enabled anymore
+      currentProfileId = "default";
+      promptStore.activeProfile = "default";
+      await window.goodAgent.activatePromptProfile("default");
+      renderProfileSelector();
+      renderPromptEditor();
+      showPromptStatus(`配置「${p.name}」已删除`, "success");
+    });
+  }
+
+  // Save button
+  const saveBtn = document.getElementById("prompt-save-btn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      const p = getCurrentProfile();
+      if (p && nameInput && nameInput.value.trim()) {
+        p.name = nameInput.value.trim();
+      }
+      await saveCurrentProfile();
+    });
+  }
+
+  // Section header toggle (collapse)
+  container.querySelectorAll(".prompt-section-header").forEach(hdr => {
+    hdr.addEventListener("click", () => {
+      const section = hdr.closest(".prompt-section");
+      section.classList.toggle("prompt-section-collapsed");
+    });
+  });
+
+  // Section enable checkboxes
+  container.querySelectorAll(".prompt-section-cb").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const p = getCurrentProfile();
+      if (!p) return;
+      const key = cb.dataset.section;
+      if (p.sections[key]) {
+        p.sections[key].enabled = cb.checked;
+      }
+      const section = cb.closest(".prompt-section");
+      section.classList.toggle("prompt-section-disabled", !cb.checked);
+      _promptDirty = true;
+    });
+  });
+
+  // Section textareas
+  container.querySelectorAll(".prompt-section-textarea").forEach(ta => {
+    ta.addEventListener("input", () => {
+      const p = getCurrentProfile();
+      if (!p) return;
+      const key = ta.dataset.section;
+      if (p.sections[key]) {
+        p.sections[key].content = ta.value;
+      }
+      _promptDirty = true;
+    });
+  });
+}
+
+function showPromptStatus(msg, type) {
+  const el = document.getElementById("prompt-settings-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "settings-status";
+  if (type) el.classList.add(`settings-status--${type}`);
+  setTimeout(() => { if (el.textContent === msg) el.className = "settings-status hidden"; }, 3000);
+}
+
+// ── Prompt profile actions ──
+
+async function addNewProfile() {
+  // Auto-name: 系统提示词1, 系统提示词2, ...
+  const name = getNextProfileName();
+  const id = "profile_" + Date.now();
+  const newProfile = {
+    id,
+    name,
+    enabled: true,
+    sections: Object.fromEntries(
+      Object.keys(SECTION_LABELS).map(k => [k, { enabled: true, content: "" }])
+    ),
+  };
+  promptStore.profiles[id] = newProfile;
+  currentProfileId = id;
+  promptStore.activeProfile = id;
+  // Disable all other profiles to maintain single-enabled invariant
+  for (const pid of Object.keys(promptStore.profiles)) {
+    if (pid !== id) {
+      promptStore.profiles[pid].enabled = false;
+    }
+  }
+  // Persist all changed profiles
+  await window.goodAgent.savePromptProfile(newProfile);
+  await window.goodAgent.activatePromptProfile(id);
+  // Persist disabled states of other profiles
+  for (const pid of Object.keys(promptStore.profiles)) {
+    if (pid !== id) {
+      await window.goodAgent.savePromptProfile(promptStore.profiles[pid]);
+    }
+  }
+  renderProfileSelector();
+  renderPromptEditor();
+}
+
+// ── Prompt event bindings ──
+
+document.getElementById("prompt-add-profile-btn")?.addEventListener("click", addNewProfile);
+
+// Load prompt profiles when the prompt tab is opened
+document.querySelector('.settings-tab[data-tab="prompt"]')?.addEventListener("click", async () => {
+  const container = document.getElementById("prompt-sections");
+  if (!container || container.children.length === 0) {
+    await loadPromptStore();
+    renderProfileSelector();
+    renderPromptEditor();
+  }
+});
+
 /* ── Settings tab switching ──────────────────────────── */
 function switchSettingsTab(tabName) {
   document.querySelectorAll(".settings-tab").forEach(t => t.classList.remove("active"));
@@ -1321,6 +2280,10 @@ newChatBtn.addEventListener("click", resetChat);
 /* ── Init ──────────────────────────────────────────────── */
 setupIPC();
 loadAvatar();
+initAgentNameUI();
+applyAgentName(loadAgentName());
+initUserAvatarUI();
+applyUserName(loadUserName());
 updateConfigBanner();
 
 // Apply saved API config status
