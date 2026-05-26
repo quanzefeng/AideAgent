@@ -92,6 +92,8 @@
   --bg-tertiary:   var(--bg-surface);
   --text-primary:  var(--text);
   --text-secondary: var(--text-light);
+  --bg-dim:        rgba(0,0,0,0.08);
+  --danger-color:  #ef4444;
 }
 
 /* ========================================
@@ -2206,14 +2208,14 @@ html, body {
 }
 .wechat-badge.connected { background: rgba(34,197,94,0.15); color: #22c55e; }
 .wechat-badge.disconnected { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
-.wechat-badge.error { background: rgba(239,68,68,0.15); color: var(--danger-color); }
+.wechat-badge.error { background: rgba(239,68,68,0.15); color: #ef4444; }
 
 .wechat-login-status {
   font-size: 12px; margin-top: 6px; padding: 6px 10px; border-radius: 6px;
 }
 .wechat-login-status.info { background: rgba(79,142,247,0.1); color: var(--accent); }
 .wechat-login-status.success { background: rgba(34,197,94,0.1); color: #22c55e; }
-.wechat-login-status.error { background: rgba(239,68,68,0.1); color: var(--danger-color); }
+.wechat-login-status.error { background: rgba(239,68,68,0.1); color: #ef4444; }
 .hidden { display: none !important; }
 
 .social-settings { padding: 8px 0; }
