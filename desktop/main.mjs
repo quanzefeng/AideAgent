@@ -9,6 +9,7 @@ import os from "node:os";
 import { readFile, writeFile, mkdir, readdir, unlink } from "node:fs/promises";
 import mcpManager from "./mcp-manager.mjs";
 import sessionDb from "./session-db.mjs";
+import * as memory from "./memory-store.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.commandLine.appendSwitch("no-sandbox");
@@ -285,6 +286,19 @@ const TOOL_DEFS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "write_memory",
+      description: "Save an important fact or piece of information to your permanent memory. Use when the user teaches you something, shares preferences, or you learn something that should be remembered across all future conversations. There are two memory stores: 'user' (about the user — name, preferences, tech stack, projects) and 'project' (about the project — architecture decisions, conventions, todo items). If similar content already exists, update it instead.",
+      parameters: {
+        type: "object", properties: {
+          type: { type: "string", enum: ["user", "project"], description: "Which memory store: 'user' (about the person) or 'project' (about the work/project)" },
+          content: { type: "string", description: "The information to remember, in markdown format. Be concise and factual." },
+        }, required: ["type", "content"],
+      },
+    },
+  },
 ];
 
 // ── Tool Executor ──────────────────────────────────────────
@@ -435,6 +449,17 @@ async function runTool(tc) {
         if (!skill) return { error: `Skill "${args.name}" not found. Available: ${skills.map(s => s.name).join(", ")}` };
         const content = readFileSync(skill.path, "utf-8");
         return { name: skill.name, description: skill.description, content };
+      } catch (e) { return { error: e.message }; }
+    }
+    case "write_memory": {
+      try {
+        const { type, content } = args;
+        if (!type || !content) return { error: "type and content required" };
+        if (memory.checkDuplicate(type, content)) return { note: "Similar memory already exists — nothing new added" };
+        const result = type === "user" ? memory.appendUserMemory(content) : memory.appendProjectMemory(content);
+        memory.indexMemory(type === "user" ? "USER.md" : "MEMORY.md",
+          type === "user" ? memory.readUserMemory() : memory.readProjectMemory());
+        return { saved: true, type, detail: result };
       } catch (e) { return { error: e.message }; }
     }
     default: {
@@ -772,7 +797,7 @@ Working directory: ${WORKSPACE}`;
   }
 
   // ── Always inject memory awareness ──
-  content += `\n\n**Memory:** You have episodic memory — you recall past conversations across sessions. You remember who the user is, what you've worked on together, and past decisions. When the user references earlier discussions, acknowledge and build on what you already know.`;
+  content += `\n\n**Memory:** You have episodic memory — you recall past conversations across sessions. You also have the \`write_memory\` tool to save important facts to your permanent memory. Use it when the user teaches you something about themselves or the project — preferences, tech stack, architecture decisions, conventions, and todo items. This memory persists across all future conversations.`;
 
   // ── Inject episodic memory (once per session) ──
   try {
@@ -1007,6 +1032,16 @@ ipcMain.handle("session:last", async (_event, limit) => {
 ipcMain.handle("session:status", async () => {
   try { return sessionDb.getStatus(); } catch { return { error: "unavailable" }; }
 });
+
+// ── Memory Store IPC ──────────────────────────────────────────
+
+ipcMain.handle("memory:read-user", async () => memory.readUserMemory());
+ipcMain.handle("memory:write-user", async (_e, content) => memory.writeUserMemory(content));
+ipcMain.handle("memory:read-project", async () => memory.readProjectMemory());
+ipcMain.handle("memory:write-project", async (_e, content) => memory.writeProjectMemory(content));
+ipcMain.handle("memory:search", async (_e, query) => memory.searchMemory(query || "", 10));
+ipcMain.handle("memory:check-dup", async (_e, type, text) => memory.checkDuplicate(type, text));
+ipcMain.handle("memory:index", async (_e, source, content) => { memory.indexMemory(source, content); return { ok: true }; });
 
 ipcMain.handle("permission:respond", (event, { id, allow }) => {
   const resolve = pendingPerms.get(id);

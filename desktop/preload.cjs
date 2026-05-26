@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld("goodAgent", {
   searchSessions: (query, limit) => ipcRenderer.invoke("session:search", query, limit),
   getLastSession: (limit) => ipcRenderer.invoke("session:last", limit),
   getSessionStatus: () => ipcRenderer.invoke("session:status"),
+  // Memory Store
+  memoryReadUser: () => ipcRenderer.invoke("memory:read-user"),
+  memoryWriteUser: (content) => ipcRenderer.invoke("memory:write-user", content),
+  memoryReadProject: () => ipcRenderer.invoke("memory:read-project"),
+  memoryWriteProject: (content) => ipcRenderer.invoke("memory:write-project", content),
+  memorySearch: (query) => ipcRenderer.invoke("memory:search", query),
   listSkills: () => ipcRenderer.invoke("skills:list"),
   loadSkill: (name) => ipcRenderer.invoke("skills:load", name),
   onStreamStart: (cb) => ipcRenderer.on("stream:start", () => cb()),

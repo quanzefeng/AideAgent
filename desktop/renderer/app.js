@@ -2477,7 +2477,52 @@ window.goodAgent.onWechatIncoming?.((data) => {
 
 // Social tab click
 document.querySelector('.settings-tab[data-tab="social"]')?.addEventListener("click", () => {
-  initWechatStatus();
+initWechatStatus();
+
+/* ════════════════════════════════════════════════
+   Memory Panel (USER.md / MEMORY.md)
+   ════════════════════════════════════════════════ */
+
+let _memoryPanelLoaded = false;
+
+async function loadMemoryPanel() {
+  if (_memoryPanelLoaded) return;
+  _memoryPanelLoaded = true;
+
+  const userEl = document.getElementById("memory-user-editor");
+  const projectEl = document.getElementById("memory-project-editor");
+
+  try {
+    const user = await window.goodAgent.memoryReadUser();
+    const project = await window.goodAgent.memoryReadProject();
+    if (userEl) userEl.value = user;
+    if (projectEl) projectEl.value = project;
+  } catch (e) { console.warn("[memory] load:", e.message); }
+
+  document.getElementById("memory-user-save")?.addEventListener("click", async () => {
+    const btn = document.getElementById("memory-user-save");
+    btn.disabled = true; btn.textContent = "保存中...";
+    try {
+      await window.goodAgent.memoryWriteUser(userEl.value);
+      document.getElementById("memory-user-status").textContent = "✅ 已保存";
+      setTimeout(() => { document.getElementById("memory-user-status").textContent = ""; }, 2000);
+    } catch (e) { document.getElementById("memory-user-status").textContent = "❌ 保存失败"; }
+    btn.disabled = false; btn.textContent = "保存";
+  });
+
+  document.getElementById("memory-project-save")?.addEventListener("click", async () => {
+    const btn = document.getElementById("memory-project-save");
+    btn.disabled = true; btn.textContent = "保存中...";
+    try {
+      await window.goodAgent.memoryWriteProject(projectEl.value);
+      document.getElementById("memory-project-status").textContent = "✅ 已保存";
+      setTimeout(() => { document.getElementById("memory-project-status").textContent = ""; }, 2000);
+    } catch (e) { document.getElementById("memory-project-status").textContent = "❌ 保存失败"; }
+    btn.disabled = false; btn.textContent = "保存";
+  });
+}
+
+document.querySelector('.settings-tab[data-tab="memory"]')?.addEventListener("click", loadMemoryPanel);
 });
 
 initWechatStatus();

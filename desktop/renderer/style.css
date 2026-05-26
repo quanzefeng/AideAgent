@@ -822,6 +822,33 @@ html, body {
   background: rgba(239,68,68,0.1);
 }
 
+/* Memory Editor */
+.memory-editor {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+.memory-editor:focus {
+  border-color: var(--accent);
+}
+.memory-editor-section {
+  background: var(--bg-secondary, #1e1e2e);
+  border-radius: 8px;
+  padding: 14px;
+}
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
 .sidebar-info {
   display: flex;
   flex-direction: column;
