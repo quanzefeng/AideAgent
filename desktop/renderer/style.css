@@ -774,6 +774,54 @@ html, body {
   color: #fff;
 }
 
+.session-search-box {
+  padding: 4px 0;
+}
+.session-search-field {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.session-search-field:focus {
+  border-color: var(--accent);
+}
+.session-search-field::placeholder {
+  color: var(--text-muted);
+}
+
+/* Message delete button */
+.message .msg-delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.message:hover .msg-delete-btn {
+  opacity: 1;
+}
+.message .msg-delete-btn:hover {
+  color: var(--danger-color, #ef4444);
+  background: rgba(239,68,68,0.1);
+}
+
 .sidebar-info {
   display: flex;
   flex-direction: column;

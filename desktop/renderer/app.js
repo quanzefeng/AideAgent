@@ -873,6 +873,26 @@ function refreshSessionList() {
   }).catch(() => {});
 }
 
+// Session search
+document.getElementById("session-search-input")?.addEventListener("input", function () {
+  const query = this.value.trim();
+  if (!query) { refreshSessionList(); return; }
+  window.goodAgent.searchSessions(query, 30).then(results => {
+    const container = document.getElementById("session-list");
+    if (!container) return;
+    if (!results?.length) {
+      container.innerHTML = '<div class="session-list-empty">未找到匹配</div>';
+      return;
+    }
+    container.innerHTML = results.map(r => `
+      <div class="session-item" data-session-id="${r.sessionId}">
+        <div class="session-item-title">${sanitize(r.snippet || r.sessionTitle)}</div>
+        <span style="font-size:10px;color:var(--text-muted)">${sanitize(r.sessionTitle || "")}</span>
+      </div>
+    `).join("");
+  }).catch(() => {});
+});
+
 function loadChat(sessionId) {
   if (state.isStreaming) {
     window.goodAgent.abortQuery();
@@ -896,11 +916,12 @@ function loadChat(sessionId) {
     const hist = data.history || [];
     for (const m of hist) {
       if (m.role === "user") {
-        addUserMessage(m.content);
+        const el = addUserMessage(m.content);
+        if (m.id) el.dataset.msgId = m.id;
       } else if (m.role === "assistant") {
         const el = addAssistantMessage();
+        if (m.id) el.dataset.msgId = m.id;
         state.currentAssistantMsg = el;
-        // Defer content rendering for timing
         requestAnimationFrame(() => {
           updateAssistantContent(el, m.content || "");
           finishAssistantMessage(el);

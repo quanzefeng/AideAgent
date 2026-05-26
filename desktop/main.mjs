@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import os from "node:os";
 import { readFile, writeFile, mkdir, readdir, unlink } from "node:fs/promises";
 import mcpManager from "./mcp-manager.mjs";
+import sessionDb from "./session-db.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.commandLine.appendSwitch("no-sandbox");
@@ -83,8 +84,9 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   createWindow();
-  // Start enabled MCP servers (async, non-blocking)
   mcpManager.init().catch(e => console.error("[main] mcpManager.init error:", e.message));
+  // Migrate old JSON sessions to SQLite
+  try { sessionDb.migrateFromJson(join(app.getPath("userData"), "sessions")); } catch {}
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (mainWindow === null) createWindow(); });
@@ -453,60 +455,24 @@ async function runTool(tc) {
   }
 }
 
-// ── Session Persistence ──────────────────────────────────────
-const SESSION_DIR = join(app.getPath("userData"), "sessions");
-
-async function ensureSessionDir() {
-  try { await mkdir(SESSION_DIR, { recursive: true }); } catch {}
-}
-
-function sessionFilePath(id) {
-  return join(SESSION_DIR, `${id}.json`);
-}
+// ── Session Persistence (SQLite) ─────────────────────────────
+// Old JSON files: app.getPath("userData")/sessions/*.json
+// New DB: ~/.goodagent/sessions.db
 
 async function saveSession(id, hist, title) {
-  await ensureSessionDir();
-  const file = sessionFilePath(id);
-  let data;
-  try {
-    const raw = await readFile(file, "utf8");
-    data = JSON.parse(raw);
-  } catch { data = {}; }
-  data.id = id;
-  data.title = title || data.title || (hist.length > 0 ? hist[0].content?.slice(0, 30) : "(空对话)");
-  data.updatedAt = Date.now();
-  if (!data.createdAt) data.createdAt = Date.now();
-  data.history = hist;
-  await writeFile(file, JSON.stringify(data, null, 2), "utf8");
+  try { sessionDb.saveSession(id, hist, title); } catch (e) { console.error("[session] save:", e.message); }
 }
 
 async function listSessions() {
-  await ensureSessionDir();
-  try {
-    const files = await readdir(SESSION_DIR);
-    const sessions = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        const raw = await readFile(join(SESSION_DIR, f), "utf8");
-        const data = JSON.parse(raw);
-        sessions.push({ id: data.id, title: data.title, createdAt: data.createdAt, updatedAt: data.updatedAt });
-      } catch {}
-    }
-    sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    return sessions;
-  } catch { return []; }
+  try { return sessionDb.listSessions(50); } catch { return []; }
 }
 
 async function loadSession(id) {
-  try {
-    const raw = await readFile(sessionFilePath(id), "utf8");
-    return JSON.parse(raw);
-  } catch { return null; }
+  try { return sessionDb.loadSession(id); } catch { return null; }
 }
 
 async function deleteSession(id) {
-  try { await unlink(sessionFilePath(id)); } catch {}
+  try { sessionDb.deleteSession(id); } catch {}
 }
 
 function getHistoryTitle(hist) {
@@ -525,6 +491,7 @@ const MAX_TURNS = 25;
 let abortCtrl = null;
 let sessionId = null;
 let history = [];
+let _episodicSearched = false;  // only search once per session
 
 // SYSTEM prompt is built dynamically in buildSystemPrompt(enabledSkills)
 
@@ -718,7 +685,7 @@ async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = tr
   return { content, finishReason, tcs };
 }
 
-function buildSystemPrompt(enabledSkills, agentName) {
+function buildSystemPrompt(enabledSkills, agentName, userPrompt = "") {
   const allSkills = scanSkills();
   const filterSkills = enabledSkills && enabledSkills.length > 0
     ? allSkills.filter(s => enabledSkills.includes(s.name))
@@ -774,7 +741,8 @@ function buildSystemPrompt(enabledSkills, agentName) {
 4. Show relevant code when explaining.
 5. Use \`file_edit\` or \`file_write\` for code changes.
 6. Keep responses concise with Markdown formatting.
-7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).`;
+7. **You have episodic memory.** You can recall past conversations across sessions. When the user references something you've discussed before, acknowledge it and build on what you already know. You remember who the user is, what you've worked on together, and past decisions.
+8. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).`;
   }
 
   // ── MCP servers info ──
@@ -802,6 +770,39 @@ Working directory: ${WORKSPACE}`;
   if (agentName && agentName !== "GoodAgent") {
     content = content.replace(/GoodAgent/g, agentName);
   }
+
+  // ── Always inject memory awareness ──
+  content += `\n\n**Memory:** You have episodic memory — you recall past conversations across sessions. You remember who the user is, what you've worked on together, and past decisions. When the user references earlier discussions, acknowledge and build on what you already know.`;
+
+  // ── Inject episodic memory (once per session) ──
+  try {
+    if (userPrompt && !_episodicSearched) {
+      _episodicSearched = true;
+      const results = sessionDb.searchMessages(userPrompt, 8);
+      if (results.length > 0) {
+        const lines = results.map(r =>
+          `- [${r.sessionTitle}] ${(r.snippet || "").replace(/<\/?mark>/g, "")}`
+        ).join("\n");
+        content += `\n\n<memory-context>\n**以下是你的记忆——你过去与用户的对话中与此问题相关的部分：**\n${lines}\n</memory-context>`;
+      }
+    }
+    // Always include PREVIOUS session for continuity (exclude current)
+    const last = sessionDb.getLastSession(4, sessionId);
+    if (last?.messages?.length) {
+      const lines = last.messages.map(m => `- ${m.role}: ${(m.content || "").slice(0, 200)}`).join("\n");
+      content += `\n\n<memory-context>\n**上一段对话的延续——你的记忆：** [${last.title}]\n${lines}\n</memory-context>`;
+    }
+    // Inject permanent memory (USER.md + MEMORY.md)
+    try {
+      const HOME = os.homedir();
+      for (const [label, path] of [["USER.md", join(HOME, ".goodagent", "memories", "USER.md")], ["MEMORY.md", join(HOME, ".goodagent", "memories", "MEMORY.md")]]) {
+        try {
+          const text = readFileSync(path, "utf8").trim();
+          if (text) content += `\n\n<memory-context>\n**${label} — 你的永久记忆：**\n${text.slice(0, 2000)}\n</memory-context>`;
+        } catch {}
+      }
+    } catch {}
+  } catch {}
 
   return { role: "system", content };
 }
@@ -841,7 +842,7 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
     userMessage = { role: "user", content: prompt };
   }
 
-  const sysPrompt = buildSystemPrompt(enabledSkills, agentName);
+  const sysPrompt = buildSystemPrompt(enabledSkills, agentName, prompt);
   const msgs = [sysPrompt, ...history, userMessage];
   let turns = 0;
   let allText = "", allReasoning = "";
@@ -894,7 +895,49 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
   // For history, store text-only version of the user message
   const historyUser = { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") };
   history.push(historyUser, historyAsst);
-  if (history.length > 40) history = history.slice(-40);
+
+  // ── Session Compression ──
+  if (history.length > 40) {
+    const oldHistory = history.slice(0, history.length - 20); // keep last 20 turns
+    const recent = history.slice(history.length - 20);
+    
+    // Build compressed summary from old messages
+    const summaryLines = ["## 早期对话摘要\n"];
+    let lastRole = "";
+    for (const m of oldHistory) {
+      const role = m.role === "user" ? "用户" : "助手";
+      const text = (m.content || "").replace(/[\r\n\t]+/g, " ").trim();
+      const snippet = text.slice(0, 180);
+      if (!snippet) continue;
+      if (role === lastRole) {
+        summaryLines.push(`  ...${snippet}`);
+      } else {
+        summaryLines.push(`- **${role}：** ${snippet}`);
+      }
+      lastRole = role;
+    }
+    const summary = summaryLines.join("\n");
+
+    // Save compressed version to session DB with parent chaining
+    if (sessionId) {
+      try {
+        const parentId = sessionId;
+        const compressedId = parentId + "_c" + Date.now().toString(36);
+        // Save full compressed history as a chained session
+        sessionDb.saveSession(
+          compressedId,
+          [{ role: "system", content: summary }, ...recent],
+          getHistoryTitle(recent)
+        );
+        // Update current session title in DB
+        sessionDb.updateTitle(parentId, getHistoryTitle(recent));
+        // Inject summary at start of history (for current conversation context)
+        recent.unshift({ role: "system", content: summary });
+      } catch (e) { console.error("[compress]", e.message); }
+    }
+    
+    history = recent;
+  }
 
   // Auto-save after each turn
   if (sessionId) {
@@ -926,8 +969,9 @@ ipcMain.handle("session:reset", async () => {
     const title = getHistoryTitle(history);
     await saveSession(sessionId, history, title);
   }
-  sessionId = null; history = [];
-});
+    sessionId = null; history = [];
+    _episodicSearched = false;
+  });
 
 ipcMain.handle("session:list", async () => {
   return await listSessions();
@@ -946,6 +990,22 @@ ipcMain.handle("session:load", async (_event, id) => {
 
 ipcMain.handle("session:delete", async (_event, id) => {
   await deleteSession(id);
+});
+
+ipcMain.handle("session:delete-message", async (_event, messageId) => {
+  try { return sessionDb.deleteMessage(messageId); } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle("session:search", async (_event, query, limit) => {
+  try { return sessionDb.searchMessages(query, limit); } catch (err) { return []; }
+});
+
+ipcMain.handle("session:last", async (_event, limit) => {
+  try { return sessionDb.getLastSession(limit); } catch { return null; }
+});
+
+ipcMain.handle("session:status", async () => {
+  try { return sessionDb.getStatus(); } catch { return { error: "unavailable" }; }
 });
 
 ipcMain.handle("permission:respond", (event, { id, allow }) => {
