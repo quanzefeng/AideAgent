@@ -682,7 +682,27 @@ html, body {
 
 .sidebar-header {
   padding: var(--space-md);
-  border-bottom: 1px solid var(--border);
+}
+
+.workspace-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  margin: -2px var(--space-md) 0;
+  transition: background 0.15s;
+  overflow: hidden;
+}
+.workspace-bar:hover { background: #dce2ed; }
+.workspace-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logo {
@@ -728,6 +748,8 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-btn {

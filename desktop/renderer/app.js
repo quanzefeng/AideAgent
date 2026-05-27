@@ -3250,3 +3250,24 @@ async function refreshSkillsList() {
 document.querySelector('.settings-tab[data-tab="agent-skills"]')?.addEventListener("click", loadSkillsPanel);
 
 initWechatStatus();
+
+/* ── Workspace ────────────────────────────────────────── */
+async function initWorkspace() {
+  try {
+    const ws = await window.goodAgent.workspaceGet();
+    const el = document.getElementById("workspace-path");
+    if (el) el.textContent = ws || "未设置";
+  } catch {}
+}
+
+document.getElementById("workspace-bar")?.addEventListener("click", async () => {
+  try {
+    const result = await window.goodAgent.workspacePick();
+    if (result?.ok && result.workspace) {
+      const el = document.getElementById("workspace-path");
+      if (el) el.textContent = result.workspace;
+    }
+  } catch {}
+});
+
+initWorkspace();

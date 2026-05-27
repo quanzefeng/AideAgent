@@ -84,4 +84,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   memoryCreate: (name, description, type, content) => ipcRenderer.invoke("memory:create", { name, description, type, content }),
   memoryUpdate: (filename, content, name, description, type) => ipcRenderer.invoke("memory:update", { filename, content, name, description, type }),
   memoryDelete: (filename) => ipcRenderer.invoke("memory:delete", filename),
+  workspaceGet: () => ipcRenderer.invoke("workspace:get"),
+  workspaceSet: (path) => ipcRenderer.invoke("workspace:set", path),
+  workspacePick: () => ipcRenderer.invoke("workspace:pick"),
 });

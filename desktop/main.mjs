@@ -466,7 +466,7 @@ const TOOL_DEFS = [
 
 // ── Tool Executor ──────────────────────────────────────────
 
-const WORKSPACE = process.cwd();
+let WORKSPACE = process.cwd();
 const MAX_OUTPUT = 12000;
 const DANGEROUS = [/rm\s+-rf/i, /Remove-Item.*-Recurse/i, /del\s+\/f/i, /rd\s+\/s/i, /format\s+\w:/i, /diskpart/i];
 
@@ -1806,6 +1806,30 @@ ipcMain.handle("memory:append-project", async (_e, content) => {
 ipcMain.handle("memory:search", async (_e, query) => memory.searchMemory(query || "", 10));
 ipcMain.handle("memory:check-dup", async (_e, type, text) => memory.checkDuplicate(type, text));
 ipcMain.handle("memory:index", async (_e, source, content) => { memory.rebuildIndex(); return { ok: true }; });
+
+// ── Workspace IPC ──────────────────────────────────────────
+ipcMain.handle("workspace:get", async () => WORKSPACE);
+ipcMain.handle("workspace:set", async (_e, newPath) => {
+  if (!newPath || typeof newPath !== "string") return { error: "invalid path" };
+  try {
+    const { statSync } = await import("node:fs");
+    const st = statSync(newPath);
+    if (!st.isDirectory()) return { error: "not a directory" };
+  } catch { return { error: "path does not exist" }; }
+  WORKSPACE = newPath;
+  return { ok: true, workspace: WORKSPACE };
+});
+ipcMain.handle("workspace:pick", async () => {
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const result = await dialog.showOpenDialog(win, {
+    properties: ["openDirectory"],
+    title: "选择工作区间",
+    defaultPath: WORKSPACE,
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  WORKSPACE = result.filePaths[0];
+  return { ok: true, workspace: WORKSPACE };
+});
 
 // Multi-file memory API
 ipcMain.handle("memory:list-all", async () => {
