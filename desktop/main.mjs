@@ -97,6 +97,11 @@ app.whenReady().then(async () => {
   mcpManager.init().catch(e => console.error("[main] mcpManager.init error:", e.message));
   // Migrate old JSON sessions to SQLite
   try { sessionDb.migrateFromJson(join(app.getPath("userData"), "sessions")); } catch {}
+  // Log session count on startup
+  try {
+    const count = sessionDb.listSessions(1000).length;
+    console.log("[startup] sessions in DB:", count);
+  } catch {}
   // Run skill curator on startup
   try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch {}
   // Rebuild SQLite skills index on startup
@@ -111,6 +116,8 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (mainWindow === null) createWindow(); });
 app.on("will-quit", () => {
+  // Checkpoint and close session DB to persist WAL changes
+  try { sessionDb.close(); } catch {}
   // Shutdown LSP servers if they were started
   try {
     import("./lsp-manager.mjs").then(m => m.default.shutdown()).catch(() => {});
@@ -2185,6 +2192,20 @@ ipcMain.handle("session:load", async (_event, id) => {
 
 ipcMain.handle("session:delete", async (_event, id) => {
   await deleteSession(id);
+});
+
+ipcMain.handle("session:delete-all", async () => {
+  try {
+    console.log("[session:delete-all] starting...");
+    const result = sessionDb.deleteAllSessions();
+    sessionDb.forceCheckpoint();
+    console.log("[session:delete-all] result:", result, "checkpoint done");
+    sessionId = null; history = [];
+    return result;
+  } catch (e) {
+    console.error("[session:delete-all] error:", e);
+    return { error: e.message };
+  }
 });
 
 ipcMain.handle("session:delete-message", async (_event, messageId) => {

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   listSessions: () => ipcRenderer.invoke("session:list"),
   loadSession: (id) => ipcRenderer.invoke("session:load", id),
   deleteSession: (id) => ipcRenderer.invoke("session:delete", id),
+  deleteAllSessions: () => ipcRenderer.invoke("session:delete-all"),
   deleteMessage: (messageId) => ipcRenderer.invoke("session:delete-message", messageId),
   searchSessions: (query, limit) => ipcRenderer.invoke("session:search", query, limit),
   getLastSession: (limit) => ipcRenderer.invoke("session:last", limit),

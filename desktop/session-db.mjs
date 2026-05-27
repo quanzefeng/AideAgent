@@ -74,9 +74,15 @@ class SessionDB {
   }
 
   close() {
-    if (this.#db) { 
+    if (this.#db) {
       try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
-      this.#db.close(); this.#db = null; this.#ready = false; 
+      this.#db.close(); this.#db = null; this.#ready = false;
+    }
+  }
+
+  forceCheckpoint() {
+    if (this.#db) {
+      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
     }
   }
 
@@ -176,8 +182,27 @@ class SessionDB {
   deleteSession(id) {
     this.#ensureOpen();
     this.#db.prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
+    this.#db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
     this.#db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return { deleted: true };
+  }
+
+  deleteAllSessions() {
+    this.#ensureOpen();
+    const count = this.#db.prepare("SELECT COUNT(*) as c FROM sessions").get().c;
+    this.#db.exec("BEGIN");
+    try {
+      this.#db.prepare("DELETE FROM messages_fts").run();
+      this.#db.prepare("DELETE FROM messages").run();
+      this.#db.prepare("DELETE FROM sessions").run();
+      this.#db.exec("COMMIT");
+      // Force WAL checkpoint to persist changes to main DB file
+      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+    } catch (e) {
+      this.#db.exec("ROLLBACK");
+      throw e;
+    }
+    return { deleted: count };
   }
 
   deleteMessage(messageId) {
@@ -373,10 +398,12 @@ class SessionDB {
 
         // Don't overwrite if already migrated
         const exists = this.#db.prepare("SELECT id FROM sessions WHERE id = ?").get(data.id);
-        if (exists) continue;
+        if (exists) { try { unlinkSync(join(jsonDir, f)); } catch {} continue; }
 
         this.saveSession(data.id, data.history, data.title);
         count++;
+        // Delete old JSON file after successful migration
+        try { unlinkSync(join(jsonDir, f)); } catch {}
       } catch (err) {
         console.error(`[session-db] migration error ${f}:`, err.message);
       }

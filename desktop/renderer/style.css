@@ -805,6 +805,23 @@ html, body {
   height: 14px;
 }
 
+.sidebar-icon-btn {
+  width: auto;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  opacity: 0.5;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.sidebar-icon-btn:hover {
+  opacity: 1;
+  background: transparent;
+}
+.sidebar-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 #new-chat {
   color: var(--accent);
   border-color: var(--accent);

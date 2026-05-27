@@ -27,6 +27,7 @@ const PROVIDER_PRESETS = {
   deepseek:  { name: "DeepSeek",          url: "https://api.deepseek.com",      model: "deepseek-v4-flash",                  models: [{id:"deepseek-v4-flash",label:"DeepSeek-V4-Flash（快速，默认）"},{id:"deepseek-v4-pro",label:"DeepSeek-V4-Pro（旗舰，强大）"}], format: "openai" },
   glm:       { name: "GLM (智谱)",        url: "https://open.bigmodel.cn/api/paas/v4", model: "GLM-4.7-Flash",                  models: [{id:"GLM-4.7-Flash",label:"GLM-4.7-Flash（免费，推荐）"},{id:"GLM-4-Plus",label:"GLM-4-Plus（旗舰）"},{id:"GLM-4-Air",label:"GLM-4-Air（轻量经济）"}], format: "openai" },
   qwen:      { name: "Qwen (通义千问)",   url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",          models: [{id:"qwen3.7-max",label:"Qwen3.7-Max（最新旗舰）"},{id:"qwen-plus",label:"Qwen-Plus（均衡，默认）"},{id:"qwen-turbo",label:"Qwen-Turbo（快速经济）"}], format: "openai" },
+  mimo:      { name: "MiMo (小米)",       url: "https://api.mimo.xiaomi.com/v1", model: "MiMo-7B-RL",         models: [{id:"MiMo-7B-RL",label:"MiMo-7B-RL（推理，默认）"},{id:"MiMo-7B-SFT",label:"MiMo-7B-SFT（通用）"}], format: "openai" },
   claude:    { name: "Claude (Anthropic)", url: "https://api.anthropic.com",     model: "claude-sonnet-4-20250514",            models: [{id:"claude-sonnet-4-20250514",label:"Claude Sonnet 4.6（均衡，推荐）"},{id:"claude-opus-4-20250514",label:"Claude Opus 4.6（旗舰）"},{id:"claude-haiku-4.5-20250514",label:"Claude Haiku 4.5（快速）"}], format: "anthropic" },
   lmstudio:  { name: "LM Studio（本地）", url: "http://localhost:1234/v1",      model: "",                                   models: [], format: "openai" },
   ollama:    { name: "Ollama（本地）",     url: "http://localhost:11434/v1",     model: "",                                   models: [], format: "openai" },
@@ -525,20 +526,22 @@ function showWelcome() {
 /* ── Settings Persistence ─────────────────────────────── */
 function loadApiConfig() {
   const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
+  const prefix = provider ? `goodagent_${provider}_` : "goodagent_";
   const apiKey = localStorage.getItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key") || "";
   return {
     provider,
-    apiUrl: localStorage.getItem(STORAGE_KEYS.API_URL) || "",
-    model: localStorage.getItem(STORAGE_KEYS.MODEL) || "",
+    apiUrl: localStorage.getItem(`${prefix}api_url`) || "",
+    model: localStorage.getItem(`${prefix}model`) || "",
     apiKey,
     apiFormat: localStorage.getItem(STORAGE_KEYS.API_FORMAT) || "openai",
   };
 }
 
 function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat) {
-  if (apiUrl) localStorage.setItem(STORAGE_KEYS.API_URL, apiUrl);
+  const prefix = provider ? `goodagent_${provider}_` : "goodagent_";
+  if (apiUrl) localStorage.setItem(`${prefix}api_url`, apiUrl);
   localStorage.setItem(STORAGE_KEYS.PROVIDER, provider);
-  if (model) localStorage.setItem(STORAGE_KEYS.MODEL, model);
+  if (model) localStorage.setItem(`${prefix}model`, model);
   if (apiFormat) localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
   if (apiKey) localStorage.setItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key", apiKey);
 }
@@ -599,32 +602,38 @@ function populateModelDropdown(preset, selectedModel) {
 }
 
 function fillSettingsForm() {
-  const cfg = loadApiConfig();
-  if (settingsProvider) settingsProvider.value = cfg.provider;
-  // If provider has a preset, use its URL; otherwise use saved raw values
-  const preset = PROVIDER_PRESETS[cfg.provider];
-  if (settingsUrl) settingsUrl.value = preset && cfg.provider ? preset.url : cfg.apiUrl;
-  // Populate model dropdown with preset models, selecting the saved model
-  if (settingsModel) {
-    const selectedModel = preset && cfg.provider ? (preset.model || cfg.model) : cfg.model;
-    populateModelDropdown(preset, selectedModel);
+  _fillingForm = true;
+  try {
+    const cfg = loadApiConfig();
+    if (settingsProvider) settingsProvider.value = cfg.provider;
+    const preset = PROVIDER_PRESETS[cfg.provider];
+    if (settingsUrl) settingsUrl.value = cfg.apiUrl || (preset?.url ?? "");
+    if (settingsModel) {
+      const selectedModel = cfg.model || preset?.model || "";
+      populateModelDropdown(preset, selectedModel);
+    }
+    if (settingsKey) settingsKey.value = cfg.apiKey;
+  } finally {
+    _fillingForm = false;
   }
-  if (settingsKey) settingsKey.value = cfg.apiKey;
 }
 
 function onProviderChange() {
   const key = settingsProvider?.value || "";
   const preset = PROVIDER_PRESETS[key];
+  const prefix = key ? `goodagent_${key}_` : "goodagent_";
+  const savedUrl = localStorage.getItem(`${prefix}api_url`) || "";
+  const savedModel = localStorage.getItem(`${prefix}model`) || "";
   if (preset && key) {
-    settingsUrl.value = preset.url;
-    populateModelDropdown(preset, preset.model);
+    settingsUrl.value = savedUrl || preset.url;
+    populateModelDropdown(preset, savedModel || preset.model);
     if (preset.models.length === 0 && preset.url) {
       setTimeout(fetchModels, 300);
     }
   } else {
-    populateModelDropdown(null, "");
+    settingsUrl.value = savedUrl;
+    populateModelDropdown(null, savedModel);
   }
-  // Load provider-specific API key
   const savedKey = localStorage.getItem(key ? `goodagent_api_key_${key}` : "goodagent_api_key") || "";
   if (settingsKey) settingsKey.value = savedKey;
 }
@@ -2707,14 +2716,37 @@ settingsModal.addEventListener("click", (e) => {
 
 /* ── Event Listeners ──────────────────────────────────── */
 
-// Provider dropdown change — auto-fill URL + model
-settingsProvider?.addEventListener("change", onProviderChange);
+// Provider dropdown change — auto-fill URL + model (skip during programmatic fill)
+let _fillingForm = false;
+settingsProvider?.addEventListener("change", () => { if (!_fillingForm) onProviderChange(); });
 
 // Fetch models button
 document.getElementById("settings-fetch-models-btn")?.addEventListener("click", fetchModels);
 
 // Settings save
 settingsSaveBtn?.addEventListener("click", saveSettingsForm);
+
+// Delete all sessions
+const deleteAllBtn = $("#delete-all-sessions-btn");
+deleteAllBtn?.addEventListener("click", async () => {
+  if (!confirm("确定要清空所有会话记录吗？此操作不可撤销。")) return;
+  try {
+    const result = await window.goodAgent.deleteAllSessions();
+    if (result && result.error) {
+      showToast("删除失败: " + result.error);
+      return;
+    }
+    currentSessionId = null;
+    _loadedSessionId = null;
+    messageList.innerHTML = "";
+    showWelcome();
+    refreshSessionList();
+    showToast("已清空所有会话 (" + (result?.deleted || 0) + "条)");
+  } catch (e) {
+    console.error("deleteAllSessions error:", e);
+    showToast("删除失败: " + e.message);
+  }
+});
 
 // Settings modal: fill form when opened
 settingsBtn?.addEventListener("click", () => {
