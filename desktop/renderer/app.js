@@ -1357,6 +1357,27 @@ function setupIPC() {
     }
   });
 
+  // Sub-agent progress: show turn status in thinking section
+  try {
+    window.goodAgent.onSubagentProgress?.((data) => {
+      if (data.done) return;
+      // Find the running Agent tool entry and update its status
+      const thinkingContent = state.currentAssistantMsg?.querySelector?.(".thinking-content");
+      if (!thinkingContent) return;
+      const entries = thinkingContent.querySelectorAll(".tool-entry");
+      for (const entry of entries) {
+        const nameEl = entry.querySelector(".tool-entry-name");
+        if (nameEl && nameEl.textContent.includes("agent") && entry.querySelector(".tool-entry-status")?.textContent?.includes("running")) {
+          const statusEl = entry.querySelector(".tool-entry-status");
+          if (statusEl && data.description) {
+            statusEl.textContent = `${data.description} (turn ${data.turn + 1})`;
+          }
+          break;
+        }
+      }
+    });
+  } catch (e) { /* preload may not be updated yet */ }
+
   try {
     window.goodAgent.onTaskClear?.(() => {
       _taskCache.clear();
@@ -1402,6 +1423,28 @@ function setupIPC() {
       el.title = "系统提示词的估算 token 数（含记忆/任务/技能等上下文）";
     }
   });
+
+  // Context usage indicator
+  try {
+    window.goodAgent.onContextUsage?.((data) => {
+      const el = document.getElementById("context-usage");
+      if (!el) return;
+      el.classList.remove("hidden", "ok", "warn", "danger");
+      if (data.usagePct >= 90) {
+        el.textContent = `⚠️ 上下文 ${data.usagePct}%`;
+        el.classList.add("danger");
+      } else if (data.usagePct >= 80) {
+        el.textContent = `⚡ 上下文 ${data.usagePct}%`;
+        el.classList.add("warn");
+      } else if (data.totalTokens > 5000) {
+        el.textContent = `上下文 ${data.usagePct}%`;
+        el.classList.add("ok");
+      } else {
+        el.classList.add("hidden");
+      }
+      el.title = `${data.totalTokens.toLocaleString()} / ${data.windowSize.toLocaleString()} tokens`;
+    });
+  } catch (e) { /* preload may not be updated yet */ }
 }
 
 /* ── Avatar ──────────────────────────────────────────── */

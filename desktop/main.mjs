@@ -909,14 +909,15 @@ async function runTool(tc) {
     }
     // ── Sub-agent ──
     case "Agent": {
-      sendToRenderer("tool:start", { name: "Agent", args: { description: args.description } });
+      const subAgentId = `sub_${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+      sendToRenderer("subagent:start", { id: subAgentId, description: args.description });
       try {
-        const result = await runSubAgent(args.description, args.prompt);
+        const result = await runSubAgent(args.description, args.prompt, subAgentId);
         const output = result.text || "(no result)";
-        sendToRenderer("tool:result", { name: "Agent", result: { output } });
+        sendToRenderer("subagent:done", { id: subAgentId, description: args.description, output });
         return { output, aborted: result.aborted || false };
       } catch (e) {
-        sendToRenderer("tool:result", { name: "Agent", result: { error: e.message } });
+        sendToRenderer("subagent:done", { id: subAgentId, description: args.description, error: e.message });
         return { error: e.message };
       }
     }
@@ -1196,6 +1197,10 @@ function getHistoryTitle(hist) {
 
 // ── Agent Loop ─────────────────────────────────────────────
 const MAX_TURNS = 25;
+const CONTEXT_WINDOW = 128000;
+const CONTEXT_WARN_PCT = 0.80;
+const CONTEXT_COMPRESS_PCT = 0.90;
+const TOOL_RESULT_KEEP_CHARS = 500;
 
 let abortCtrl = null;
 let sessionId = null;
@@ -1281,7 +1286,7 @@ function toAnthropicMessages(msgs) {
 async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true) {
   const toolDefs = getAllToolDefs(kbEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
-  const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 8192 };
+  const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   // Control reasoning behavior — DeepSeek uses reasoning_effort param
   // "none" disables thinking, "high" enables full reasoning (default)
   body.reasoning_effort = reasoning ? "high" : "none";
@@ -1342,7 +1347,7 @@ async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = tr
     : base + "/v1/messages";
   const body = {
     model: model || "claude-sonnet-4-20250514",
-    max_tokens: 8192,
+    max_tokens: 65536,
     system: system || "",
     messages,
     tools: toolDefs,
@@ -1435,6 +1440,66 @@ function trimToBudget(text, budget) {
   const maxChars = budget * 3.5;
   const half = Math.floor(maxChars * 0.6);
   return text.slice(0, half) + `\n\n...(truncated ${Math.ceil(estimateTokens(text) - budget)} tokens)...\n\n` + text.slice(-Math.floor(maxChars * 0.3));
+}
+
+// ── Context Compression ─────────────────────────────────────
+
+function estimateMessageTokens(msgs) {
+  let systemTokens = 0, historyTokens = 0, toolResultTokens = 0;
+  for (const m of msgs) {
+    const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
+    if (m.role === "system") systemTokens += estimateTokens(c);
+    else if (m.role === "tool") toolResultTokens += estimateTokens(c);
+    else {
+      historyTokens += estimateTokens(c);
+      if (m.tool_calls) {
+        for (const tc of m.tool_calls) historyTokens += estimateTokens(tc.function?.arguments || "");
+      }
+    }
+  }
+  return { totalTokens: systemTokens + historyTokens + toolResultTokens, systemTokens, historyTokens, toolResultTokens };
+}
+
+function compressContext(msgs, budget) {
+  if (!budget) budget = Math.floor(CONTEXT_WINDOW * CONTEXT_COMPRESS_PCT);
+  const before = estimateMessageTokens(msgs);
+  if (before.totalTokens <= budget) return { estimatedTokens: before.totalTokens, compressed: false, removedMessages: 0 };
+
+  let removedMessages = 0;
+
+  // Strategy 1: Truncate old tool results (keep recent 6 intact)
+  for (let i = 1; i < msgs.length - 6; i++) {
+    const m = msgs[i];
+    if (m.role === "tool" && m.content && m.content.length > TOOL_RESULT_KEEP_CHARS + 100) {
+      const origLen = m.content.length;
+      m.content = m.content.slice(0, TOOL_RESULT_KEEP_CHARS) + `\n...[truncated ${origLen - TOOL_RESULT_KEEP_CHARS} chars]`;
+    }
+  }
+
+  const afterTruncation = estimateMessageTokens(msgs);
+  if (afterTruncation.totalTokens <= budget) return { estimatedTokens: afterTruncation.totalTokens, compressed: true, removedMessages: 0 };
+
+  // Strategy 2: Remove oldest non-system messages (keep last 10)
+  const systemEnd = msgs.findIndex(m => m.role !== "system") || 1;
+  while (msgs.length > systemEnd + 10) {
+    msgs.splice(systemEnd, 1);
+    removedMessages++;
+  }
+
+  const afterPruning = estimateMessageTokens(msgs);
+  return { estimatedTokens: afterPruning.totalTokens, compressed: true, removedMessages };
+}
+
+function sendContextUsage(msgs) {
+  const usage = estimateMessageTokens(msgs);
+  sendToRenderer("context:usage", {
+    totalTokens: usage.totalTokens,
+    systemTokens: usage.systemTokens,
+    historyTokens: usage.historyTokens,
+    toolResultTokens: usage.toolResultTokens,
+    windowSize: CONTEXT_WINDOW,
+    usagePct: Math.round((usage.totalTokens / CONTEXT_WINDOW) * 100),
+  });
 }
 
 async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false) {
@@ -1636,52 +1701,56 @@ Working directory: ${WORKSPACE}`;
 
 // ── Sub-Agent Launcher ──────────────────────────────────────
 
-/** Read-only tools for sub-agents */
-const SUB_AGENT_TOOL_NAMES = new Set(["file_read", "grep", "glob", "web_search", "web_fetch", "TaskList"]);
-const SUB_AGENT_MAX_TURNS = 8;
+/** Full tool set for sub-agents */
+const SUB_AGENT_TOOL_NAMES = new Set([
+  "bash", "file_read", "file_write", "file_edit", "grep", "glob",
+  "web_fetch", "web_search", "skill", "write_memory", "invoke_skill",
+  "create_skill", "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite",
+  "AskUserQuestion", "kb_write", "lsp", "git_diff", "git_commit",
+  "git_branch", "gh_pr", "gh_issue", "gh_repo",
+  "kb_search", "kb_get_note", "memory_search",
+]);
+const SUB_AGENT_MAX_TURNS = 12;
 
-// Sub-agent uses its own abort controller (don't touch the main one)
-let _subAbortCtrl = null;
+// Each sub-agent gets its own abort controller
+const _subAgentCtrls = new Map(); // subAgentId -> AbortController
 
-async function runSubAgent(description, prompt) {
+async function runSubAgent(description, prompt, subAgentId = null) {
   const cfg = _lastApiConfig;
   if (!cfg.apiKey || !cfg.apiUrl) return { text: "(子代理不可用：请先在主对话中发送一条消息激活 API)" };
 
-  if (_subAbortCtrl) _subAbortCtrl.abort();
-  _subAbortCtrl = new AbortController();
-  const { signal } = _subAbortCtrl;
+  const id = subAgentId || `sub_${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+  const ctrl = new AbortController();
+  _subAgentCtrls.set(id, ctrl);
+  const { signal } = ctrl;
 
   const subTools = getAllToolDefs().filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
 
-  // Build a minimal system prompt for the sub-agent
-  const sysContent = `你是 GoodAgent 的子代理。你只能使用以下只读工具: file_read, grep, glob, web_search, web_fetch。
+  const sysContent = `你是 GoodAgent 的子代理，拥有完整工具集。
+可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, memory_search, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
 你的任务是: ${prompt}
-完成后直接返回文本结果。如果需要搜索，使用 web_search。`;
+完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。`;
   const msgs = [
     { role: "system", content: sysContent },
     { role: "user", content: prompt },
   ];
 
-  console.error("[sub-agent] starting:", description);
-  console.error("[sub-agent] cfg:", { hasKey: !!cfg.apiKey, url: cfg.apiUrl?.slice(0, 40), model: cfg.model, format: cfg.apiFormat });
-
+  console.error("[sub-agent] starting:", id, description);
   let allText = "";
 
-  for (let turns = 0; turns < SUB_AGENT_MAX_TURNS; turns++) {
-    try {
+  try {
+    for (let turns = 0; turns < SUB_AGENT_MAX_TURNS; turns++) {
       const { apiKey, apiUrl, model, apiFormat } = cfg;
       const isAnthropic = apiFormat === "anthropic";
 
-      // Use a non-reasoning model for sub-agents (reasoning is wasteful for search/read tasks)
       let subModel = model || "deepseek-chat";
       if (!isAnthropic && (subModel.includes("reasoner") || subModel.includes("-pro") || subModel.includes("v4"))) {
-        subModel = "deepseek-chat"; // fallback to non-reasoning variant
+        subModel = "deepseek-chat";
       }
       if (isAnthropic) {
         subModel = model || "claude-haiku-4.5-20250514";
       }
 
-      // Strip reasoning_content from messages (DeepSeek requires it be echoed back if present)
       const cleanMsgs = isAnthropic ? msgs : msgs.map(m => {
         if (m.role === "assistant" && m.reasoning_content !== undefined) {
           const { reasoning_content, ...rest } = m;
@@ -1696,7 +1765,8 @@ async function runSubAgent(description, prompt) {
         tools: isAnthropic
           ? subTools.map(t => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }))
           : subTools,
-        max_tokens: 4096,
+        max_tokens: 65536,
+        stream: true,
       };
       const endpoint = isAnthropic
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "") + "/v1/messages"
@@ -1711,8 +1781,6 @@ async function runSubAgent(description, prompt) {
         body.messages = cleanMsgs.filter(m => m.role !== "system");
       }
 
-      console.error("[sub-agent] calling API:", endpoint.slice(0, 60), "model:", body.model);
-
       const res = await fetch(endpoint, {
         method: "POST", headers,
         body: JSON.stringify(body),
@@ -1721,34 +1789,72 @@ async function runSubAgent(description, prompt) {
 
       if (!res.ok) {
         const errText = (await res.text().catch(() => "")).slice(0, 300);
-        console.error("[sub-agent] API error:", res.status, errText);
         throw new Error(`API ${res.status}: ${errText}`);
       }
 
-      const data = await res.json();
+      // Stream the response
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
       let content = "";
-      let tcs = [];
+      const tcAccum = {};
 
-      if (isAnthropic) {
-        for (const block of data.content || []) {
-          if (block.type === "text") content += block.text;
-          else if (block.type === "tool_use") {
-            tcs.push({
-              id: block.id, type: "function",
-              function: { name: block.name, arguments: JSON.stringify(block.input) },
-            });
-          }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") continue;
+          try {
+            const data = JSON.parse(payload);
+            if (isAnthropic) {
+              // Anthropic SSE
+              if (data.type === "content_block_delta") {
+                if (data.delta?.type === "text_delta") {
+                  content += data.delta.text;
+                  sendToRenderer("subagent:chunk", { id, text: data.delta.text });
+                } else if (data.delta?.type === "input_json_delta") {
+                  const idx = data.index ?? 0;
+                  if (!tcAccum[idx]) tcAccum[idx] = { id: "", name: "", args: "" };
+                  tcAccum[idx].args += data.delta.partial_json;
+                }
+              } else if (data.type === "content_block_start") {
+                if (data.content_block?.type === "tool_use") {
+                  const idx = data.index ?? 0;
+                  tcAccum[idx] = { id: data.content_block.id, name: data.content_block.name, args: "" };
+                }
+              }
+            } else {
+              // OpenAI SSE
+              const delta = data.choices?.[0]?.delta;
+              if (delta?.content) {
+                content += delta.content;
+                sendToRenderer("subagent:chunk", { id, text: delta.content });
+              }
+              if (delta?.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index ?? 0;
+                  if (!tcAccum[idx]) tcAccum[idx] = { id: tc.id || "", name: "", args: "" };
+                  if (tc.id) tcAccum[idx].id = tc.id;
+                  if (tc.function?.name) tcAccum[idx].name = tc.function.name;
+                  if (tc.function?.arguments) tcAccum[idx].args += tc.function.arguments;
+                }
+              }
+            }
+          } catch {}
         }
-      } else {
-        const choice = data.choices?.[0];
-        content = choice?.message?.content || "";
-        tcs = (choice?.message?.tool_calls || []).map(tc => ({
-          id: tc.id, type: "function",
-          function: { name: tc.function?.name || "", arguments: tc.function?.arguments || "{}" },
-        }));
       }
 
-      console.error("[sub-agent] turn", turns, "content:", content?.slice(0, 80), "tcs:", tcs.length);
+      const tcs = Object.values(tcAccum).filter(tc => tc.name).map(tc => ({
+        id: tc.id, type: "function",
+        function: { name: tc.name, arguments: tc.args || "{}" },
+      }));
+
+      sendToRenderer("subagent:progress", { id, description, turn: turns, content: content.slice(-200), tcsCount: tcs.length, done: false });
 
       allText += content || "";
       const asst = { role: "assistant", content: content || null };
@@ -1764,21 +1870,20 @@ async function runSubAgent(description, prompt) {
           msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: `Tool "${toolName}" not available to sub-agent` }) });
           continue;
         }
-        let args;
-        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
         let result;
         try { result = await runTool(tc); } catch (e) { result = { error: e.message }; }
-        const resultStr = JSON.stringify(result).slice(0, 8000);
+        const resultStr = JSON.stringify(result).slice(0, 16000);
         msgs.push({ role: "tool", tool_call_id: tc.id, content: resultStr });
       }
-    } catch (err) {
-      console.error("[sub-agent] error:", err.name, err.message);
-      if (err.name === "AbortError") return { text: allText || "(aborted)", aborted: true };
-      return { text: allText || `(子代理错误: ${err.message})` };
     }
+  } catch (err) {
+    if (err.name === "AbortError") return { text: allText || "(aborted)", aborted: true };
+    return { text: allText || `(子代理错误: ${err.message})` };
+  } finally {
+    _subAgentCtrls.delete(id);
   }
 
-  console.error("[sub-agent] done, text length:", allText.length);
+  sendToRenderer("subagent:progress", { id, description, turn: -1, content: "", tcsCount: 0, done: true });
   return { text: allText || "(no result)" };
 }
 
@@ -1993,12 +2098,20 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
     }
   }
 
-  const msgs = [{ role: "system", content: sysContent }, ...history, userMessage];
+  const msgs = [{ role: "system", content: sysContent }, ...history.map(m => ({ ...m })), userMessage];
   let turns = 0;
   let allText = "", allReasoning = "";
 
+  // Initial context compression
+  compressContext(msgs);
+  sendContextUsage(msgs);
+
   while (turns < MAX_TURNS) {
     turns++;
+
+    // Compress context before API call
+    compressContext(msgs);
+    sendContextUsage(msgs);
 
     // ── API call (format-dispatch) ──
     let content = "", reasoningContent = "", tcs = [];
@@ -2023,8 +2136,37 @@ async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", fi
 
     if (tcs.length === 0) break;
 
-    // ── Execute tools ──
-    for (const tc of tcs) {
+    // ── Execute tools (Agent calls in parallel, others sequential) ──
+    const agentCalls = tcs.filter(tc => tc.function?.name === "Agent");
+    const otherCalls = tcs.filter(tc => tc.function?.name !== "Agent");
+
+    // Run Agent calls in parallel
+    if (agentCalls.length > 0) {
+      for (const tc of agentCalls) {
+        let args;
+        try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
+        sendToRenderer("tool:start", { name: "Agent", args });
+      }
+
+      const agentResults = await Promise.allSettled(
+        agentCalls.map(tc => runTool(tc))
+      );
+
+      for (let i = 0; i < agentCalls.length; i++) {
+        const tc = agentCalls[i];
+        const settled = agentResults[i];
+        const result = settled.status === "fulfilled"
+          ? settled.value
+          : { error: settled.reason?.message || "Sub-agent failed" };
+        let rStr = JSON.stringify(result);
+        if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
+        sendToRenderer("tool:result", { name: "Agent", result });
+        msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
+      }
+    }
+
+    // Run non-Agent tools sequentially
+    for (const tc of otherCalls) {
       let args;
       try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
       sendToRenderer("tool:start", { name: tc.function.name, args });
@@ -2158,6 +2300,8 @@ ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, ap
 
 ipcMain.handle("query:abort", () => {
   if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+  for (const [id, ctrl] of _subAgentCtrls) { ctrl.abort(); }
+  _subAgentCtrls.clear();
 });
 
 ipcMain.handle("session:reset", async () => {
@@ -2171,6 +2315,8 @@ ipcMain.handle("session:reset", async () => {
     taskStore.clear();
     _todoList = [];
     _surfacedMemories.clear();
+    for (const [id, ctrl] of _subAgentCtrls) { ctrl.abort(); }
+    _subAgentCtrls.clear();
     // Notify renderer to clear task indicator too
     sendToRenderer("task:clear", {});
   });

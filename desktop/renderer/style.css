@@ -2672,6 +2672,19 @@ html, body {
 .token-budget.warn { color: #f59e0b; background: rgba(245,158,11,0.1); }
 .token-budget.danger { color: #ef4444; background: rgba(239,68,68,0.12); font-weight: 600; }
 
+.context-usage {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+}
+.context-usage.hidden { display: none; }
+.context-usage.ok { color: var(--text-muted, #888); }
+.context-usage.warn { color: #f59e0b; background: rgba(245,158,11,0.1); }
+.context-usage.danger { color: #ef4444; background: rgba(239,68,68,0.12); }
+
 /* ── Skill Card Actions ── */
 .skill-card { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .skill-card-info { flex:1; min-width:0; }

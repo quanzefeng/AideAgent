@@ -50,8 +50,13 @@ contextBridge.exposeInMainWorld("goodAgent", {
   onStreamError: (cb) => ipcRenderer.on("stream:error", (_event, d) => cb(d)),
   onToolStart: (cb) => ipcRenderer.on("tool:start", (_event, d) => cb(d)),
   onToolResult: (cb) => ipcRenderer.on("tool:result", (_event, d) => cb(d)),
+  onSubagentStart: (cb) => ipcRenderer.on("subagent:start", (_event, d) => cb(d)),
+  onSubagentChunk: (cb) => ipcRenderer.on("subagent:chunk", (_event, d) => cb(d)),
+  onSubagentProgress: (cb) => ipcRenderer.on("subagent:progress", (_event, d) => cb(d)),
+  onSubagentDone: (cb) => ipcRenderer.on("subagent:done", (_event, d) => cb(d)),
   onSessionUpdate: (cb) => ipcRenderer.on("session:update", (_event, d) => cb(d)),
   onL0Budget: (cb) => ipcRenderer.on("l0:budget", (_event, d) => cb(d)),
+  onContextUsage: (cb) => ipcRenderer.on("context:usage", (_event, d) => cb(d)),
   onTaskClear: (cb) => ipcRenderer.on("task:clear", () => cb()),
   // System prompt profiles
   listPromptProfiles: () => ipcRenderer.invoke("prompt:list"),
