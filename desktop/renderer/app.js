@@ -2372,18 +2372,6 @@ document.getElementById("mcp-detect-btn")?.addEventListener("click", () => {
 });
 
 /* ── System Prompt Profile Management ─────────────────── */
-const SECTION_LABELS = {
-  identity:      { label: "身份定义",      hint: "定义 AI 的角色、名称和核心定位" },
-  workflow:      { label: "核心工作流",    hint: "定义 AI 处理任务的通用工作流程" },
-  tools:         { label: "工具使用协议",  hint: "定义 AI 使用工具的约束和偏好" },
-  behavior:      { label: "行为规范",      hint: "定义 AI 的行为准则和禁忌" },
-  communication: { label: "沟通风格",      hint: "定义 AI 的语言风格、语气和格式" },
-  skills:        { label: "技能系统",      hint: "定义 AI 如何发现和使用技能" },
-  safety:        { label: "安全边界",      hint: "定义 AI 的安全约束和权限范围" },
-  runtime:       { label: "运行时上下文",  hint: "定义 AI 的工作目录、环境等信息" },
-  examples:      { label: "示例",          hint: "提供交互示例格式供 AI 参考" },
-};
-
 let promptStore = null;
 let currentProfileId = null;
 let _promptDirty = false;
@@ -2414,44 +2402,7 @@ async function loadPromptStore() {
     if (!promptStore.profiles["default"]) {
       promptStore.profiles["default"] = {
         id: "default", name: "默认", enabled: true,
-        sections: {
-          identity: {
-            enabled: true,
-            content: "You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek \u2014 you are a desktop AI coding agent called GoodAgent.",
-          },
-          workflow: {
-            enabled: true,
-            content: "1. First explore the project with `dir` or `Get-ChildItem`.\n2. Understand the user's request clearly before taking action.\n3. Plan your approach, then use the available tools to execute it.\n4. Show relevant code when explaining changes.\n5. Iterate based on user feedback to refine the result.",
-          },
-          tools: {
-            enabled: true,
-            content: "**Available tools:**\n- `bash` \u2014 Run PowerShell commands (dir, git, npm, etc.)\n- `file_read` \u2014 Read file contents\n- `file_write` \u2014 Create or overwrite files\n- `file_edit` \u2014 Replace exact text in files\n- `grep` \u2014 Regex search in files\n- `glob` \u2014 Find files by name pattern\n- `web_fetch` \u2014 Fetch and extract content from any URL\n- `web_search` \u2014 Search the internet for current information\n- `skill` \u2014 Load a user-installed skill (SKILL.md workflow)\n\nUSE THE TOOLS. Don't just suggest \u2014 actually run commands, read files, make changes.",
-          },
-          behavior: {
-            enabled: true,
-            content: "1. USE THE TOOLS. Don't just suggest \u2014 actually run commands, read files, make changes.\n2. First explore the project with `dir` or `Get-ChildItem`.\n3. When you need current information, news, or docs \u2014 use `web_search` and `web_fetch`.\n4. Show relevant code when explaining.\n5. Use `file_edit` or `file_write` for code changes.\n6. Keep responses concise with Markdown formatting.\n7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).",
-          },
-          communication: {
-            enabled: false,
-            content: "Keep responses concise with Markdown formatting. Always respond in the same language the user uses. Show relevant code when explaining your changes.",
-          },
-          skills: {
-            enabled: true,
-            content: "If the user's request matches a skill's purpose, load it via the `skill` tool and follow its instructions.",
-          },
-          safety: {
-            enabled: true,
-            content: "(No additional safety constraints configured. Edit this section to add security rules.)",
-          },
-          runtime: {
-            enabled: true,
-            content: "You are running on Windows as a desktop AI coding agent.",
-          },
-          examples: {
-            enabled: false,
-            content: "",
-          },
-        },
+        content: await window.goodAgent.getDefaultPrompt(),
       };
     }
     return promptStore;
@@ -2522,38 +2473,14 @@ function renderPromptEditor() {
     return;
   }
 
-  // Build sections HTML
-  const sectionsHtml = Object.entries(SECTION_LABELS).map(([key, meta]) => {
-    const sec = profile.sections[key];
-    const isEnabled = sec && sec.enabled !== false;
-    const content = sec ? sec.content : "";
-    return `<div class="prompt-section ${isEnabled ? "" : "prompt-section-disabled"}">
-      <div class="prompt-section-header" data-section="${key}">
-        <div class="prompt-section-title-group">
-          <label class="prompt-section-toggle" onclick="event.stopPropagation()">
-            <input type="checkbox" class="prompt-section-cb" data-section="${key}" ${isEnabled ? "checked" : ""} />
-            <span class="toggle-slider toggle-slider-sm"></span>
-          </label>
-          <span class="prompt-section-title">${meta.label}</span>
-        </div>
-        <div class="prompt-section-actions">
-          <span class="prompt-section-hint">${meta.hint}</span>
-          <svg class="prompt-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
-        </div>
-      </div>
-      <div class="prompt-section-body">
-        <textarea class="prompt-section-textarea" data-section="${key}" placeholder="输入 ${meta.label} 内容... 该内容将被注入到系统提示词的对应章节。">${htmlEncode(content)}</textarea>
-      </div>
-    </div>`;
-  }).join("");
-
-  // Build full editor: name input + sections + bottom bar
   container.innerHTML = `
     <div class="prompt-editor-name">
       <label class="prompt-editor-name-label">配置名称</label>
       <input type="text" id="prompt-name-input" class="form-input prompt-name-input" value="${htmlEncode(profile.name)}" placeholder="配置名称" />
     </div>
-    ${sectionsHtml}
+    <div class="prompt-single-box">
+      <textarea id="prompt-content-area" class="prompt-content-textarea" placeholder="在此输入系统提示词...">${htmlEncode(profile.content || "")}</textarea>
+    </div>
     <div class="prompt-editor-bottom">
       <button id="prompt-enable-btn" class="btn prompt-enable-btn ${profile.enabled ? "prompt-enable-btn--on" : "prompt-enable-btn--off"}">
         ${profile.enabled ? "已启用" : "启用"}
@@ -2570,7 +2497,15 @@ function renderPromptEditor() {
   // Name input
   const nameInput = document.getElementById("prompt-name-input");
   if (nameInput) {
-    nameInput.addEventListener("input", () => {
+    nameInput.addEventListener("input", () => { _promptDirty = true; });
+  }
+
+  // Content textarea
+  const contentArea = document.getElementById("prompt-content-area");
+  if (contentArea) {
+    contentArea.addEventListener("input", () => {
+      const p = getCurrentProfile();
+      if (p) p.content = contentArea.value;
       _promptDirty = true;
     });
   }
@@ -2581,18 +2516,11 @@ function renderPromptEditor() {
     enableBtn.addEventListener("click", async () => {
       const p = getCurrentProfile();
       if (!p) return;
-      // Save current name first
-      if (nameInput && nameInput.value.trim()) {
-        p.name = nameInput.value.trim();
-      }
-      // Enable this profile, disable all others
+      if (nameInput && nameInput.value.trim()) p.name = nameInput.value.trim();
       p.enabled = true;
       for (const id of Object.keys(promptStore.profiles)) {
-        if (id !== currentProfileId) {
-          promptStore.profiles[id].enabled = false;
-        }
+        if (id !== currentProfileId) promptStore.profiles[id].enabled = false;
       }
-      // Persist all profiles
       for (const id of Object.keys(promptStore.profiles)) {
         await window.goodAgent.savePromptProfile(promptStore.profiles[id]);
       }
@@ -2613,7 +2541,6 @@ function renderPromptEditor() {
       if (!confirm(`确定要删除配置「${p.name}」吗？`)) return;
       await window.goodAgent.deletePromptProfile(currentProfileId);
       delete promptStore.profiles[currentProfileId];
-      // If deleted was the enabled one, nothing is enabled anymore
       currentProfileId = "default";
       promptStore.activeProfile = "default";
       await window.goodAgent.activatePromptProfile("default");
@@ -2628,48 +2555,10 @@ function renderPromptEditor() {
   if (saveBtn) {
     saveBtn.addEventListener("click", async () => {
       const p = getCurrentProfile();
-      if (p && nameInput && nameInput.value.trim()) {
-        p.name = nameInput.value.trim();
-      }
+      if (p && nameInput && nameInput.value.trim()) p.name = nameInput.value.trim();
       await saveCurrentProfile();
     });
   }
-
-  // Section header toggle (collapse)
-  container.querySelectorAll(".prompt-section-header").forEach(hdr => {
-    hdr.addEventListener("click", () => {
-      const section = hdr.closest(".prompt-section");
-      section.classList.toggle("prompt-section-collapsed");
-    });
-  });
-
-  // Section enable checkboxes
-  container.querySelectorAll(".prompt-section-cb").forEach(cb => {
-    cb.addEventListener("change", () => {
-      const p = getCurrentProfile();
-      if (!p) return;
-      const key = cb.dataset.section;
-      if (p.sections[key]) {
-        p.sections[key].enabled = cb.checked;
-      }
-      const section = cb.closest(".prompt-section");
-      section.classList.toggle("prompt-section-disabled", !cb.checked);
-      _promptDirty = true;
-    });
-  });
-
-  // Section textareas
-  container.querySelectorAll(".prompt-section-textarea").forEach(ta => {
-    ta.addEventListener("input", () => {
-      const p = getCurrentProfile();
-      if (!p) return;
-      const key = ta.dataset.section;
-      if (p.sections[key]) {
-        p.sections[key].content = ta.value;
-      }
-      _promptDirty = true;
-    });
-  });
 }
 
 function showPromptStatus(msg, type) {
@@ -2684,34 +2573,24 @@ function showPromptStatus(msg, type) {
 // ── Prompt profile actions ──
 
 async function addNewProfile() {
-  // Auto-name: 系统提示词1, 系统提示词2, ...
   const name = getNextProfileName();
   const id = "profile_" + Date.now();
   const newProfile = {
     id,
     name,
     enabled: true,
-    sections: Object.fromEntries(
-      Object.keys(SECTION_LABELS).map(k => [k, { enabled: true, content: "" }])
-    ),
+    content: "",
   };
   promptStore.profiles[id] = newProfile;
   currentProfileId = id;
   promptStore.activeProfile = id;
-  // Disable all other profiles to maintain single-enabled invariant
   for (const pid of Object.keys(promptStore.profiles)) {
-    if (pid !== id) {
-      promptStore.profiles[pid].enabled = false;
-    }
+    if (pid !== id) promptStore.profiles[pid].enabled = false;
   }
-  // Persist all changed profiles
   await window.goodAgent.savePromptProfile(newProfile);
   await window.goodAgent.activatePromptProfile(id);
-  // Persist disabled states of other profiles
   for (const pid of Object.keys(promptStore.profiles)) {
-    if (pid !== id) {
-      await window.goodAgent.savePromptProfile(promptStore.profiles[pid]);
-    }
+    if (pid !== id) await window.goodAgent.savePromptProfile(promptStore.profiles[pid]);
   }
   renderProfileSelector();
   renderPromptEditor();

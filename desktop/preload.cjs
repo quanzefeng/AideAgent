@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   onTaskClear: (cb) => ipcRenderer.on("task:clear", () => cb()),
   // System prompt profiles
   listPromptProfiles: () => ipcRenderer.invoke("prompt:list"),
+  getDefaultPrompt: () => ipcRenderer.invoke("prompt:default"),
   savePromptProfile: (profile) => ipcRenderer.invoke("prompt:save", profile),
   deletePromptProfile: (profileId) => ipcRenderer.invoke("prompt:delete", profileId),
   activatePromptProfile: (profileId) => ipcRenderer.invoke("prompt:activate", profileId),

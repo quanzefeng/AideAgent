@@ -65,9 +65,9 @@
   /* ── 强调色（琥珀） ── */
   --accent:       #6366f1;
   --accent-hover: #4f46e5;
-  --accent-dim:   rgba(217, 119, 6, 0.10);
-  --accent-light: rgba(217, 119, 6, 0.06);
-  --accent-rgb:   217, 119, 6;
+  --accent-dim:   rgba(99, 102, 241, 0.10);
+  --accent-light: rgba(99, 102, 241, 0.06);
+  --accent-rgb:   99, 102, 241;
 
   /* ── 语义色 ── */
   --danger:  #d0312d;
@@ -400,7 +400,7 @@ html, body {
   gap: var(--space-md);
   padding: 10px 16px;
   background: var(--accent-dim);
-  border-bottom: 1px solid rgba(217, 119, 6, 0.2);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
   z-index: 50;
   font-size: 13px;
   color: var(--text);
@@ -1693,7 +1693,7 @@ html, body {
 .message-text a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px solid rgba(217, 119, 6, 0.3);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.3);
   transition: border-color var(--duration-instant);
 }
 
@@ -2330,146 +2330,33 @@ html, body {
   min-height: 0;
 }
 
-.prompt-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.prompt-single-box {
+  margin-bottom: 12px;
 }
 
-/* Section card */
-.prompt-section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  overflow: hidden;
-}
-
-.prompt-section-disabled {
-  opacity: 0.55;
-}
-
-.prompt-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  cursor: pointer;
-  user-select: none;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.prompt-section-header:hover {
-  background: var(--bg-tertiary);
-}
-
-.prompt-section-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.prompt-section-toggle {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  position: relative;
-}
-
-.prompt-section-toggle input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider-sm {
-  position: relative;
-  display: inline-block;
-  width: 28px;
-  height: 16px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  transition: background var(--duration-fast) var(--ease-out);
-  cursor: pointer;
-}
-
-.toggle-slider-sm::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  background: var(--text-muted);
-  border-radius: 50%;
-  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
-}
-
-.prompt-section-toggle input:checked + .toggle-slider-sm {
-  background: var(--accent);
-}
-
-.prompt-section-toggle input:checked + .toggle-slider-sm::after {
-  transform: translateX(12px);
-  background: #fff;
-}
-
-.prompt-section-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.prompt-section-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.prompt-section-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.prompt-section-chevron {
-  transition: transform var(--duration-fast) var(--ease-out);
-  color: var(--text-light);
-}
-
-.prompt-section-collapsed .prompt-section-chevron {
-  transform: rotate(180deg);
-}
-
-.prompt-section-body {
-  padding: 0 12px 12px;
-}
-
-.prompt-section-collapsed .prompt-section-body {
-  display: none;
-}
-
-.prompt-section-textarea {
+.prompt-content-textarea {
   width: 100%;
-  min-height: 100px;
-  padding: 10px;
+  min-height: 400px;
+  max-height: 65vh;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.6;
   resize: vertical;
   outline: none;
   transition: border-color var(--duration-fast) var(--ease-out);
   box-sizing: border-box;
 }
 
-.prompt-section-textarea:focus {
+.prompt-content-textarea:focus {
   border-color: var(--accent);
 }
 
-.prompt-section-textarea::placeholder {
+.prompt-content-textarea::placeholder {
   color: var(--text-muted);
   opacity: 0.6;
 }

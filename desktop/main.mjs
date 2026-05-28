@@ -1518,18 +1518,9 @@ async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEn
     const profileId = store.activeProfile || "default";
     const profile = store.profiles[profileId];
     if (profile && profile.enabled) {
-      const parts = [];
-      for (const [key, sec] of Object.entries(profile.sections)) {
-        if (sec.enabled && sec.content && sec.content.trim()) {
-          const label = SECTION_LABELS[key] || key;
-          let sectionContent = sec.content.trim();
-          // Replace runtime placeholders
-          sectionContent = sectionContent.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
-          parts.push(`## ${label}\n${sectionContent}`);
-        }
-      }
-      if (parts.length > 0) {
-        content = parts.join("\n\n");
+      if (profile.content && profile.content.trim()) {
+        content = profile.content.trim();
+        content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
       }
     }
   } catch (e) {
@@ -2515,22 +2506,15 @@ function getPromptStorePath() {
   return _promptStorePath;
 }
 
-const DEFAULT_SECTIONS = {
-  identity: {
-    enabled: true,
-    content: `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.`,
-  },
-  workflow: {
-    enabled: true,
-    content: `1. First explore the project with \`dir\` or \`Get-ChildItem\`.
+const DEFAULT_PROMPT = `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.
+
+1. First explore the project with \`dir\` or \`Get-ChildItem\`.
 2. Understand the user's request clearly before taking action.
 3. Plan your approach, then use the available tools to execute it.
 4. Show relevant code when explaining changes.
-5. Iterate based on user feedback to refine the result.`,
-  },
-  tools: {
-    enabled: true,
-    content: `**Available tools:**
+5. Iterate based on user feedback to refine the result.
+
+**Available tools:**
 - \`bash\` — Run PowerShell commands (dir, git, npm, etc.)
 - \`file_read\` — Read file contents
 - \`file_write\` — Create or overwrite files
@@ -2549,70 +2533,49 @@ const DEFAULT_SECTIONS = {
 - \`Agent\` — Launch a read-only sub-agent for parallel research, code exploration, or web searches
 - \`AskUserQuestion\` — Ask the user clarifying multiple-choice questions
 
-USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.`,
-  },
-  behavior: {
-    enabled: true,
-    content: `1. USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
+USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
+
+1. USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
 2. First explore the project with \`dir\` or \`Get-ChildItem\`.
 3. When you need current information, news, or docs — use \`web_search\` and \`web_fetch\`.
 4. Show relevant code when explaining.
 5. Use \`file_edit\` or \`file_write\` for code changes.
 6. Keep responses concise with Markdown formatting.
-7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).`,
-  },
-  communication: {
-    enabled: false,
-    content: `Keep responses concise with Markdown formatting. Always respond in the same language the user uses. Show relevant code when explaining your changes.`,
-  },
-  skills: {
-    enabled: true,
-    content: `If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.`,
-  },
-  safety: {
-    enabled: true,
-    content: `(No additional safety constraints configured. Edit this section to add security rules.)`,
-  },
-  runtime: {
-    enabled: true,
-    content: `You are running on Windows as a desktop AI coding agent.`,
-  },
-  examples: {
-    enabled: false,
-    content: ``,
-  },
-};
+7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).
 
-const SECTION_LABELS = {
-  identity:      "身份定义",
-  workflow:      "核心工作流",
-  tools:         "工具使用协议",
-  behavior:      "行为规范",
-  communication: "沟通风格",
-  skills:        "技能系统",
-  safety:        "安全边界",
-  runtime:       "运行时上下文",
-  examples:      "示例",
-};
+If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
+
+You are running on Windows as a desktop AI coding agent.`;
 
 function loadPromptProfiles() {
   try {
     if (existsSync(getPromptStorePath())) {
       const raw = readFileSync(getPromptStorePath(), "utf-8");
       const store = JSON.parse(raw);
-      // ── Migration: populate empty default profile sections ──
-      const def = store.profiles && store.profiles["default"];
-      if (def && def.sections && def.sections.identity && !def.sections.identity.content) {
-        def.sections = JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+      // ── Migration: convert old sections-based format to single content ──
+      let migrated = false;
+      if (store.profiles) {
+        for (const [id, prof] of Object.entries(store.profiles)) {
+          if (prof && prof.sections && !prof.content) {
+            prof.content = Object.entries(prof.sections)
+              .filter(([, sec]) => sec.enabled && sec.content && sec.content.trim())
+              .map(([, sec]) => sec.content.trim())
+              .join("\n\n");
+            delete prof.sections;
+            migrated = true;
+          }
+        }
+      }
+      if (migrated) {
         savePromptProfiles(store);
-        console.log("[main] Migrated default profile to DEFAULT_SECTIONS");
+        console.log("[main] Migrated profiles from sections to single content");
       }
       return store;
     }
   } catch (e) {
     console.error("[main] Failed to load prompt profiles:", e.message);
   }
-  // Default: one profile with DEFAULT_SECTIONS
+  // Default: one profile with DEFAULT_PROMPT
   return {
     activeProfile: "default",
     profiles: {
@@ -2620,7 +2583,7 @@ function loadPromptProfiles() {
         id: "default",
         name: "默认",
         enabled: true,
-        sections: JSON.parse(JSON.stringify(DEFAULT_SECTIONS)),
+        content: DEFAULT_PROMPT,
       },
     },
   };
@@ -2638,6 +2601,10 @@ function savePromptProfiles(data) {
 
 ipcMain.handle("prompt:list", async () => {
   return loadPromptProfiles();
+});
+
+ipcMain.handle("prompt:default", async () => {
+  return DEFAULT_PROMPT;
 });
 
 ipcMain.handle("prompt:save", async (_event, profile) => {
