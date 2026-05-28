@@ -15,7 +15,7 @@
     "asar": true,
     "files": [
       "main.mjs",
-      "preload.mjs",
+      "preload.cjs",
       "renderer/**"
     ],
     "extraResources": [

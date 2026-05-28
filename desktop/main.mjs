@@ -58,8 +58,7 @@ function createWindow() {
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       sandbox: false,
-      webSecurity: false,
-      allowRunningInsecureContent: true,
+      webSecurity: true,
     },
   });
 
@@ -94,6 +93,18 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   createWindow();
+
+  // Add CORS headers to API responses so renderer can fetch cross-origin APIs
+  // even with webSecurity enabled. This is needed because users configure custom
+  // API endpoints (DeepSeek, Anthropic, local Ollama, etc.) that may not send CORS headers.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const headers = { ...details.responseHeaders };
+    headers["access-control-allow-origin"] = ["*"];
+    headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
+    headers["access-control-allow-headers"] = ["Content-Type, Authorization, X-Requested-With"];
+    callback({ responseHeaders: headers });
+  });
+
   mcpManager.init().catch(e => console.error("[main] mcpManager.init error:", e.message));
   // Migrate old JSON sessions to SQLite
   try { sessionDb.migrateFromJson(join(app.getPath("userData"), "sessions")); } catch {}
@@ -742,8 +753,10 @@ async function runTool(tc) {
     case "grep": {
       try {
         const dir = args.path || WORKSPACE;
-        const filter = args.include ? `-Include "${args.include}"` : "";
-        const cmd = `Get-ChildItem -Path "${dir}" -Recurse ${filter} -File | Select-String -Pattern "${args.pattern}" | Select-Object -First 100 | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }`;
+        // Escape for PowerShell single-quoted strings: only ' needs doubling (backslash is literal in single-quoted strings)
+        const esc = s => String(s).replace(/'/g, "''");
+        const filter = args.include ? `-Include '${esc(args.include)}'` : "";
+        const cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}' | Select-Object -First 100 | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }`;
         const r = await runPowerShell(cmd, { timeout: 15000 });
         if (r.error) return { error: r.error };
         return { matches: r.out.trim().split("\n").filter(Boolean) };
@@ -752,7 +765,8 @@ async function runTool(tc) {
     case "glob": {
       try {
         const dir = args.path || WORKSPACE;
-        const cmd = `Get-ChildItem -Path '${dir}' -Recurse -Filter '${args.pattern}' | Select-Object -First 200 -ExpandProperty FullName`;
+        const esc = s => String(s).replace(/'/g, "''");
+        const cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse -Filter '${esc(args.pattern)}' | Select-Object -First 200 -ExpandProperty FullName`;
         const r = await runPowerShell(cmd, { timeout: 15000 });
         if (r.error) return { error: r.error };
         return { files: r.out.trim().split("\n").filter(Boolean).map(s => s.trim()) };
@@ -1288,8 +1302,9 @@ async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true,
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
   const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   // Control reasoning behavior — DeepSeek uses reasoning_effort param
-  // "none" disables thinking, "high" enables full reasoning (default)
-  body.reasoning_effort = reasoning ? "high" : "none";
+  // Only send when reasoning is enabled; omit when disabled to avoid 400 errors
+  // from APIs that don't support this param (e.g. MiMo, GLM, Qwen)
+  if (reasoning) body.reasoning_effort = "high";
   const res = await fetch(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },

@@ -91,6 +91,7 @@ const fileInput = $("#file-input");
 const filePreviewArea = $("#file-preview-area");
 const AVATAR_KEY = "goodagent_avatar";
 const USER_AVATAR_KEY = "goodagent_user_avatar";
+const FONT_KEY = "goodagent_font";
 const USER_NAME_KEY = "goodagent_user_name";
 
 /* ── Helpers ──────────────────────────────────────────── */
@@ -294,11 +295,22 @@ function addUserMessage(text) {
   div.className = "message user";
   const userName = loadUserName();
   const userAvatarSrc = loadUserAvatarSrc();
-  const avatarHtml = userAvatarSrc ? `<img class="avatar user-msg-avatar" src="${userAvatarSrc}" alt="" />` : "";
-  div.innerHTML = `
-    <div class="message-label">${userName}${avatarHtml}</div>
-    <div class="message-bubble"><p>${sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}</p></div>
-  `;
+  // Build DOM safely — avatar before name to match original layout
+  const label = document.createElement("div");
+  label.className = "message-label";
+  if (userAvatarSrc) {
+    const img = document.createElement("img");
+    img.className = "avatar user-msg-avatar";
+    img.src = userAvatarSrc;
+    img.alt = "";
+    label.appendChild(img);
+  }
+  label.appendChild(document.createTextNode(userName));
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble";
+  bubble.innerHTML = `<p>${sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}</p>`;
+  div.appendChild(label);
+  div.appendChild(bubble);
   messageList.appendChild(div);
   scrollToBottom();
   return div;
@@ -310,15 +322,20 @@ function addAssistantMessage() {
   const agentName = loadAgentName();
   const saved = localStorage.getItem(AVATAR_KEY);
   const avatarSrc = saved || DEFAULT_AVATAR;
-  div.innerHTML = `
-    <div class="message-label">
-      <img class="avatar msg-avatar" src="${avatarSrc}" alt="" />
-      ${agentName}
-    </div>
-    <div class="message-content">
-      <div class="message-text"></div>
-    </div>
-  `;
+  // Build DOM safely to prevent XSS from localStorage-tainted values
+  const label = document.createElement("div");
+  label.className = "message-label";
+  const img = document.createElement("img");
+  img.className = "avatar msg-avatar";
+  img.src = avatarSrc;
+  img.alt = "";
+  label.appendChild(img);
+  label.appendChild(document.createTextNode(agentName));
+  const content = document.createElement("div");
+  content.className = "message-content";
+  content.innerHTML = '<div class="message-text"></div>';
+  div.appendChild(label);
+  div.appendChild(content);
   messageList.appendChild(div);
   scrollToBottom();
   return div;
@@ -381,7 +398,7 @@ function extractThinkingBlocks(text) {
 
 function updateThinkingSection(msgEl, text) {
   if (!text) return;
-  const section = getOrCreateThinkingSection();
+  const section = getOrCreateThinkingSection(msgEl);
   if (!section) return;
   if (!section.hasAttribute("open")) section.setAttribute("open", "");
   const tc = section.querySelector(".thinking-content");
@@ -824,10 +841,19 @@ async function submitQuery() {
   let userHtml = text ? `<p>${sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}</p>` : "";
   if (files.length > 0) {
     const fileList = files.map(f => {
+      const safeName = sanitize(f.name.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
       if (f.type.startsWith("image/")) {
-        return `<div style="margin:4px 0"><img src="${f.dataUrl}" alt="${f.name}" style="max-width:200px;max-height:150px;border-radius:6px;object-fit:cover;border:1px solid var(--border);" /></div>`;
+        // Build img via DOM API so data: URLs aren't stripped by DOMPurify
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "margin:4px 0";
+        const img = document.createElement("img");
+        img.src = f.dataUrl; // safe — from local FileReader
+        img.alt = f.name;
+        img.style.cssText = "max-width:200px;max-height:150px;border-radius:6px;object-fit:cover;border:1px solid var(--border)";
+        wrap.appendChild(img);
+        return wrap.outerHTML;
       }
-      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;color:var(--text-light);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${f.name}</div>`;
+      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;color:var(--text-light);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${safeName}</div>`;
     }).join("");
     userHtml += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:${text ? 4 : 0}px">${fileList}</div>`;
   }
@@ -963,6 +989,7 @@ function loadChat(sessionId) {
     state.sessionId = data.sessionId;
     state.isStreaming = false;
     state.currentText = "";
+    state.currentReasoning = "";
     state.currentAssistantMsg = null;
     state._toolCallCount = 0;
     state._afterToolCall = false;
@@ -985,6 +1012,11 @@ function loadChat(sessionId) {
         if (m.id) el.dataset.msgId = m.id;
         state.currentAssistantMsg = el;
         requestAnimationFrame(() => {
+          // Restore reasoning_content from history
+          if (m.reasoning_content) {
+            state.currentReasoning = m.reasoning_content;
+            updateThinkingSection(el, m.reasoning_content);
+          }
           updateAssistantContent(el, m.content || "");
           finishAssistantMessage(el);
         });
@@ -1077,12 +1109,12 @@ document.addEventListener("click", (e) => {
 });
 
 /* ── Tool call display (collapsible inside assistant message) ─ */
-function getOrCreateThinkingSection() {
-  const msgEl = state.currentAssistantMsg;
-  if (!msgEl) return null;
-  let section = msgEl.querySelector(".thinking-collapsible");
+function getOrCreateThinkingSection(msgEl) {
+  const el = msgEl || state.currentAssistantMsg;
+  if (!el) return null;
+  let section = el.querySelector(".thinking-collapsible");
   if (!section) {
-    const content = msgEl.querySelector(".message-content");
+    const content = el.querySelector(".message-content");
     if (!content) return null;
     section = document.createElement("details");
     section.className = "thinking-collapsible";
@@ -1598,17 +1630,18 @@ function applyAgentName(name) {
   const welcomeTitle = document.querySelector(".welcome h1");
   if (welcomeTitle) welcomeTitle.textContent = name;
   const welcomeDesc = document.querySelector(".welcome .description");
-  if (welcomeDesc) welcomeDesc.innerHTML = `任何事都可以找 ${name}`;
+  if (welcomeDesc) {
+    welcomeDesc.textContent = `任何事都可以找 ${name}`;
+  }
   const welcomeAvatar = document.getElementById("welcome-avatar");
   if (welcomeAvatar) welcomeAvatar.alt = name;
 
   // Existing assistant message labels (preserve avatar img)
   document.querySelectorAll(".message.assistant .message-label").forEach(el => {
     const img = el.querySelector(".msg-avatar");
-    const imgSrc = img ? img.src : "";
-    el.innerHTML = imgSrc
-      ? `<img class="avatar msg-avatar" src="${imgSrc}" alt="" />${name}`
-      : name;
+    el.textContent = "";
+    if (img) el.appendChild(img);
+    el.appendChild(document.createTextNode(name));
   });
 }
 
@@ -1646,15 +1679,12 @@ function saveUserName(name) {
 }
 
 function applyUserName(name) {
-  // Update existing user message labels
+  // Update existing user message labels — avatar before name
   document.querySelectorAll(".message.user .message-label").forEach(el => {
     const img = el.querySelector(".user-msg-avatar");
-    const imgSrc = img ? img.src : "";
-    if (imgSrc) {
-      el.innerHTML = `${name}<img class="avatar user-msg-avatar" src="${imgSrc}" alt="" />`;
-    } else {
-      el.textContent = name;
-    }
+    el.textContent = "";
+    if (img) el.appendChild(img);
+    el.appendChild(document.createTextNode(name));
   });
 }
 
@@ -1773,6 +1803,32 @@ if (changeUserAvatarBtn) {
 if (resetUserAvatarBtn) {
   resetUserAvatarBtn.addEventListener("click", resetUserAvatar);
 }
+
+/* ── Font Settings ──────────────────────────────────── */
+function applyChatFont(fontValue) {
+  document.documentElement.style.setProperty("--chat-font", fontValue);
+}
+
+function loadChatFont() {
+  return localStorage.getItem(FONT_KEY) || "'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif";
+}
+
+const fontSelect = document.getElementById("font-select");
+if (fontSelect) {
+  // Set current value
+  fontSelect.value = loadChatFont();
+  // Apply on change
+  fontSelect.addEventListener("change", () => {
+    const val = fontSelect.value;
+    localStorage.setItem(FONT_KEY, val);
+    applyChatFont(val);
+  });
+  // Render each option in its own font
+  Array.from(fontSelect.options).forEach(opt => {
+    opt.style.fontFamily = opt.value;
+  });
+}
+applyChatFont(loadChatFont());
 
 /* ── Skills ──────────────────────────────────────────── */
 const SKILLS_KEY = "goodagent_enabled_skills";

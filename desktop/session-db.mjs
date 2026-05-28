@@ -55,11 +55,17 @@ class SessionDB {
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT,
+        reasoning_content TEXT,
         tool_calls TEXT,
         timestamp TEXT NOT NULL,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
+
+    // Migration: add reasoning_content column if missing
+    try {
+      this.#db.exec("ALTER TABLE messages ADD COLUMN reasoning_content TEXT");
+    } catch {} // column already exists
 
     this.#db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -122,14 +128,14 @@ class SessionDB {
 
     // Re-insert all history messages
     const insertMsg = this.#db.prepare(
-      "INSERT INTO messages(session_id, role, content, timestamp) VALUES (?, ?, ?, ?)"
+      "INSERT INTO messages(session_id, role, content, reasoning_content, timestamp) VALUES (?, ?, ?, ?, ?)"
     );
     const insertFts = this.#db.prepare(
       "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
     );
     for (const m of history) {
       const ts = m.timestamp || now;
-      insertMsg.run(id, m.role, m.content || "", ts);
+      insertMsg.run(id, m.role, m.content || "", m.reasoning_content || null, ts);
       if (m.content) insertFts.run(id, fts5Normalize(m.content));
     }
 
@@ -149,7 +155,7 @@ class SessionDB {
     if (!s) return null;
 
     const msgs = this.#db.prepare(
-      "SELECT id, role, content, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
+      "SELECT id, role, content, reasoning_content, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
     ).all(id);
 
     return {
@@ -161,6 +167,7 @@ class SessionDB {
         id: m.id,
         role: m.role,
         content: m.content,
+        reasoning_content: m.reasoning_content || undefined,
         timestamp: m.timestamp,
       })),
     };

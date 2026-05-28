@@ -70,6 +70,13 @@ function fts5Normalize(text) {
     .replace(/([a-zA-Z0-9])([一-鿿㐀-䶿豈-﫿])/g, "$1 $2");
 }
 
+// Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
+// "故宫博物院" → "故 宫 博 物 院"
+function spaceCJK(text) {
+  if (!text) return text;
+  return text.replace(/([一-鿿㐀-䶿⺀-⻿])/g, "$1 ").trim();
+}
+
 // ── Frontmatter Parser ────────────────────────────────────
 
 function parseFrontMatter(text) {
@@ -209,8 +216,9 @@ function ftsDelete(relPath) {
 function ftsInsert(relPath, title, tags, body) {
   try {
     ftsDelete(relPath);
+    // Space CJK characters so unicode61 tokenizes them individually
     getDb().prepare("INSERT INTO kb_fts(rel_path, title, tags, body) VALUES (?,?,?,?)")
-      .run(relPath, title || "", (tags || []).join(" "), body || "");
+      .run(relPath, spaceCJK(title || ""), spaceCJK((tags || []).join(" ")), spaceCJK(body || ""));
   } catch (e) {
     console.error("[kb] ftsInsert error:", e.message);
   }
@@ -218,12 +226,15 @@ function ftsInsert(relPath, title, tags, body) {
 
 function ftsSearch(query, limit) {
   const db = getDb();
-  const normalizedQuery = fts5Normalize(query);
   if (_hasFts5) {
     try {
+      // Split query into terms, space CJK chars in each, wrap each as phrase, join with AND
+      const terms = query.split(/\s+/).filter(Boolean);
+      const spacedTerms = terms.map(t => '"' + spaceCJK(t) + '"');
+      const matchExpr = spacedTerms.join(" ");
       return db.prepare(
-        "SELECT rowid, rel_path, title, tags, snippet(kb_fts, 3, '<mark>', '</mark>', '…', 64) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?"
-      ).all(normalizedQuery, limit);
+        'SELECT rowid, rel_path, title, tags, snippet(kb_fts, 3, \'<mark>\', \'</mark>\', \'…\', 64) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
+      ).all(matchExpr, limit);
     } catch {}
   }
   // LIKE fallback
@@ -485,8 +496,11 @@ export async function search(query, limit = 5) {
     }
   } catch {}
 
-  // 3. Fuse with RRF
-  const ftsIds = ftsResults.map((r, i) => ({ id: r.rowid || r.id, rank: i }));
+  // 3. Fuse with RRF — use rel_path as the join key (FTS rowid != kb_notes.id)
+  const ftsIds = ftsResults.map((r, i) => {
+    const note = db.prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(r.rel_path);
+    return note ? { id: note.id, rank: i } : null;
+  }).filter(Boolean);
   const vecIds = vectorResults.map((r, i) => ({ id: r.id, rank: i }));
 
   let fused;
@@ -508,8 +522,8 @@ export async function search(query, limit = 5) {
     try {
       const note = db.prepare("SELECT * FROM kb_notes WHERE id = ?").get(id);
       if (!note) continue;
-      // Find FTS snippet for this note
-      const ftsMatch = ftsResults.find(r => (r.rowid || r.id) === id);
+      // Find FTS snippet for this note (use rel_path since FTS rowid != kb_notes.id)
+      const ftsMatch = ftsResults.find(r => r.rel_path === note.rel_path);
       const snippet = ftsMatch?.snippet || note.title;
       results.push({
         id: note.id,
