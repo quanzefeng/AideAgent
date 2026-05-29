@@ -1,0 +1,2207 @@
+Found 14 Claude Code related notes
+
+=== ID: 2196 | Title: Agent Teams 文档分析报告 | Path: 人工智能/claude code/Agent-Teams-分析报告.md | Words: 3716 ===
+Agent Teams 文 档 分 析 报 告 
+基 本 信 息 
+- 标 题 : Orchestrate teams of Claude Code sessions
+- URL: https://code.claude.com/docs/en/agent-teams
+- 分 析 时 间 : 2026年 2月 6日  22:51
+核 心 摘 要 
+本 文 档 介 绍 了  Claude Code 的  Agent Teams 功 能 ，该 功 能 允 许 协 调 多 个  Claude Code 实 例 作 为 一 个 团 队 协 作 工 作 。团 队 由 一 个  team lead 和 多 个  teammates 组 成 ，支 持 共 享 任 务 列 表 、跨  agent 消 息 传 递 和 集 中 化 管 理 。Agent Teams 适 用 于 需 要 并 行 探 索 的 复 杂 任 务 ，但 这 是 一 个 实 验 性 功 能 ，默 认 禁 用 ，需 要 通 过 环 境 变 量 启 用 。
+内 容 结 构 
+主 要 章 节 
+1. 何 时 使 用  Agent Teams - 最 佳 用 例 和 与  subagents 的 对 比 
+2. 启 用  Agent Teams - 配 置 方 法 
+3. 启 动 第 一 个  Agent Team - 创 建 和 使 用 流 程 
+4. 控 制  Agent Team - 显 示 模 式 、任 务 分 配 、委 托 等 
+5. Agent Teams 工 作 原 理  - 架 构 和 机 制 
+6. 用 例 示 例  - 实 际 应 用 场 景 
+7. 最 佳 实 践  - 使 用 建 议 
+8. 故 障 排 除  - 常 见 问 题 解 决 
+9. 局 限 性  - 当 前 限 制 
+核 心 论 点 
+- Agent Teams 擅 长 处 理 需 要 并 行 探 索 的 任 务 
+- 与  subagents 的 区 别 在 于 团 队 成 员 可 以 直 接 相 互 通 信 
+- 增 加 了 协 调 开 销 和  token 成 本 
+- 适 用 于 独 立 并 行 操 作 的 场 景 ，不 适 合 顺 序 任 务 或 依 赖 性 强 的 任 务 
+关 键 知 识 点 
+1. Agent Teams vs Subagents
+| 特 性  | Subagents | Agent Teams |
+|------|-----------|-------------|
+| 上 下 文  | 独 立 ，结 果 返 回 给 调 用 者  | 独 立 ，完 全 独 立 运 行  |
+| 通 信  | 只 向 主  agent 报 告  | 团 队 成 员 直 接 相 互 通 信  |
+| 协 调  | 主  agent 管 理 所 有 工 作  | 共 享 任 务 列 表 ，自 我 协 调  |
+| 最 佳 用 途  | 需 要 结 果 的 专 注 任 务  | 需 要 讨 论 和 协 作 的 复 杂 工 作  |
+| Token 成 本  | 较 低  | 较 高  |
+2. 最 佳 使 用 场 景 
+- 研 究 和 审 查 : 多 个  teammates 同 时 调 查 问 题 的 不 同 方 面 
+- 新 模 块 或 功 能 : 每 个  teammate 拥 有 独 立 的 部 分 
+- 竞 争 假 设 调 试 : teammates 并 行 测 试 不 同 理 论 
+- 跨 层 协 调 : 前 端 、后 端 和 测 试 的 更 改 分 别 由 不 同  teammate 拥 有 
+3. 架 构 组 件 
+- Team lead: 创 建 团 队 、生 成  teammates、协 调 工 作 的 主 会 话 
+- Teammates: 在 分 配 任 务 上 工 作 的 独 立  Claude Code 实 例 
+- Task list: teammates 声 明 和 完 成 的 工 作 项 共 享 列 表 
+- Mailbox: agent 之 间 通 信 的 消 息 系 统 
+4. 显 示 模 式 
+- In-process: 所 有  teammates 在 主 终 端 内 运 行 （默 认 ）
+- Split panes: 每 个  teammate 有 独 立 窗 格 （需 要  tmux 或  iTerm2）
+5. 核 心 功 能 
+- 任 务 依 赖 管 理 : 系 统 自 动 管 理 任 务 依 赖 关 系 
+- 文 件 锁 定 防 止 竞 争 : 多 个  teammates 不 会 同 时 声 明 同 一 任 务 
+- 直 接 消 息 传 递 : 使 用  Shift+Up/Down 选 择  teammate 并 直 接 消 息 
+- 委 托 模 式 : 限 制  lead 只 使 用 协 调 工 具 
+重 要 概 念 
+Team Lead
+主 要 的  Claude Code 会 话 ，负 责 创 建 团 队 、生 成  teammates 和 协 调 工 作 。
+Teammate
+独 立 的  Claude Code 实 例 ，每 个 在 各 自 的 上 下 文 窗 口 中 工 作 。
+Shared Task List
+团 队 成 员 可 以 查 看 和 声 明 的 任 务 共 享 列 表 ，支 持 任 务 依 赖 关 系 。
+Mailbox System
+agent 之 间 通 信 的 消 息 传 递 系 统 ，支 持 点 对 点 消 息 和 广 播 。
+Delegate Mode
+限 制  lead 只 能 使 用 协 调 工 具 （生 成 、消 息 传 递 、关 闭  teammates、管 理 任 务 ）的 模 式 。
+数 据 与 事 实 
+配 置 要 求 
+- 环 境 变 量 : CLAUDECODEEXPERIMENTALAGENTTEAMS=1
+- 设 置 位 置 : settings.json 或  shell 环 境 
+存 储 位 置 
+- Team config: /.claude/teams/{team-name}/config.json
+- Task list: /.claude/tasks/{team-name}/
+Token 使 用 
+- 每 个  teammate 有 独 立 的 上 下 文 窗 口 
+- Token 使 用 量 与 活 跃  teammates 数 量 成 正 比 
+- 研 究 、审 查 和 新 功 能 工 作 通 常 值 得 额 外 成 本 
+当 前 限 制 
+1. In-process teammates 无 法 恢 复 会 话 （/resume 和  /rewind 不 工 作 ）
+2. 任 务 状 态 可 能 滞 后 
+3. 关 闭 可 能 很 慢 
+4. 每 个 会 话 只 能 有 一 个 团 队 
+5. 不 支 持 嵌 套 团 队 
+6. teammates 不 能 生 成 自 己 的 团 队 
+7. permissions 在 生 成 时 设 置 
+8. 分 屏 模 式 需 要  tmux 或  iTerm2
+延 伸 阅 读 
+- [Subagents 文 档 ](/en/sub-agents) - 轻 量 级 委 托 方 法 
+- [Settings 文 档 ](/en/settings) - 配 置 指 南 
+- [Permissions 文 档 ](/en/permissions) - 权 限 设 置 
+- [Agent team token costs](/en/costs#agent-team-token-costs) - 成 本 指 导 
+- [Git worktrees](/en/common-workflows#run-parallel-claude-code-sessions-with-git-worktrees) - 手 动 并 行 会 话 
+实 用 示 例 
+创 建 并 行 代 码 审 查 团 队 
+Create an agent team to review PR #142. Spawn three reviewers:
+- One focused on security implications
+- One checking performance impact
+- One validating test coverage
+Have them each review and report findings.
+竞 争 假 设 调 查 
+Users report the app exits after one message instead of staying connected.
+Spawn 5 agent teammates to investigate different hypotheses. Have them talk to
+each other to try to disprove each other's theories, like a scientific
+debate. Update the findings doc with whatever consensus emerges.
+创 建 设 计 团 队 
+I'm designing a CLI tool that helps developers track TODO comments across
+their codebase. Create an agent team to explore this from different angles: one
+teammate on UX, one on technical architecture, one playing devil's advocate.
+最 佳 实 践 总 结 
+给  teammates 足 够 的 上 下 文 
+- Teammates 会 自 动 加 载 项 目 上 下 文 （CLAUDE.md、MCP 服 务 器 、skills）
+- 但 不 会 继 承  lead 的 对 话 历 史 
+- 在 生 成 提 示 中 包 含 任 务 特 定 细 节 
+合 理 设 置 任 务 大 小 
+- 太 小 : 协 调 开 销 超 过 收 益 
+- 太 大 : teammates 工 作 时 间 太 长 没 有 检 查 点 
+- 合 适 : 自 包 含 单 元 ，产 生 清 晰 的 交 付 成 果 
+等 待  teammates 完 成 
+如 果  lead 开 始 自 己 实 现 任 务 而 不 是 等 待  teammates：
+Wait for your teammates to complete their tasks before proceeding
+从 研 究 和 审 查 开 始 
+新 用 户 建 议 从 有 清 晰 边 界 的 任 务 开 始 ：
+- 审 查  PR
+- 研 究 库 
+- 调 查  bug
+避 免 文 件 冲 突 
+确 保 每 个  teammate 拥 有 不 同 的 文 件 集 
+监 控 和 引 导 
+- 定 期 检 查  teammates 进 度 
+- 重 定 向 不 工 作 的 方 法 
+- 及 时 综 合 发 现 
+---
+文 档 来 源 : Claude Code 官 方 文 档 
+分 析 时 间 : 2026年 2月 6日
+
+================================================================================
+
+=== ID: 2197 | Title: Claude Code 2026 超详细安装教程｜Windows/Mac 一站式搞定，新手必看！ | Path: 人工智能/claude code/Claude Code 2026 超详细安装教程.md | Words: 2679 ===
+Claude Code 2026 超 详 细 安 装 教 程 ｜Windows/Mac 一 站 式 搞 定 ，新 手 必 看 ！
+> 导 读 ：2026 年 了 ，Claude Code 已 经 成 为 最 强  AI 编 程 助 手 之 一 。很 多 小 伙 伴 问 怎 么 安 装 ，今 天 这 篇 教 程 从 零 基 础 开 始 ，手 把 手 教 你 安 装 配 置 ，保 证 看 完 就 会 ！
+---
+📋 Before You Start｜安 装 前 准 备 
+在 开 始 之 前 ，先 确 认 几 件 事 ：
+✅ 必 要 条 件 
+| 项 目  | 要 求  | 检 查 方 法  |
+|------|------|----------|
+| 操 作 系 统  | Windows 10+/macOS 10.15+/Linux | - |
+| 网 络 环 境  | 能 访 问  claude.ai | 浏 览 器 打 开 试 试  |
+| API Key | 需 要  Anthropic 账 号  | 没 账 号 先 去 注 册  |
+| 磁 盘 空 间  | 约  500MB | 应 该 都 够  |
+⚠️ Windows 用 户 特 别 注 意 
+必 须 先 安 装  Git！ 这 是  2026 年 官 方 安 装 脚 本 的 依 赖 。
+下 载 安 装 地 址 ：https://git-scm.com/download/win
+安 装 时 一 路 默 认 即 可 ，记 住 安 装 路 径 （通 常 是  C:\Program Files\Git）。
+---
+🚀 安 装 方 式 一 ：官 方 推 荐 （原 生 安 装 ）⭐
+这 是  2026 年 官 方 最 推 荐 的 方 式 ，无 需 安 装  Node.js，更 稳 定 更 快 速 ！
+1️⃣ Windows PowerShell 用 户 （推 荐 ）
+一 行 命 令 搞 定 ：
+powershell
+irm https://claude.ai/install.ps1 | iex
+操 作 步 骤 ：
+1. 右 键 点 击 开 始 菜 单  → 选 择  Windows PowerShell 或  终 端 
+2. 复 制 上 面 命 令 ，粘 贴 进 去 
+3. 按 回 车 ，等 待 下 载 安 装 
+4. 安 装 完 成 后 重 启 终 端 
+2️⃣ Windows CMD/命 令 提 示 符 用 户 
+cmd
+curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+3️⃣ macOS / Linux 用 户 
+bash
+curl -fsSL https://claude.ai/install.sh | bash
+4️⃣ 验 证 安 装 成 功 
+打 开 新 的 终 端 窗 口 ，输 入 ：
+bash
+claude --version
+如 果 显 示 版 本 号 （如  2.1.x 或 更 高 ），恭 喜 ！安 装 成 功 ！🎉
+---
+📦 安 装 方 式 二 ：npm 安 装 （备 选 方 案 ）
+> ⚠️ 注 意 ：npm 方 式 已 被 官 方 标 记 为  Deprecated（弃 用 ），但 依 然 可 用 。如 果 你 已 经 装 了  Node.js 或 者 在 某 些 特 殊 环 境 只 能 用  npm，可 以 参 考 这 种 方 式 。
+前 置 条 件 
+确 保 已 安 装  Node.js 18+（推 荐  20+ 或  22 LTS）
+检 查 版 本 ：
+bash
+node -v
+没 有 的 话 去  https://nodejs.org 下 载 安 装 。
+安 装 命 令 
+bash
+npm install -g @anthropic-ai/claude-code
+国 内 用 户 如 果 遇 到 网 络 问 题 ，使 用 国 内 镜 像 ：
+bash
+npm install -g @anthropic-ai/claude-code --registry https://registry.npmmirror.com
+验 证 
+bash
+claude --version
+---
+🔄 从  npm 迁 移 到 原 生 版 本 （老 用 户 必 看 ）
+如 果 你 之 前 用  npm 安 装 的 ，官 方 建 议 迁 移 到 原 生 版 本 。迁 移 过 程 很 简 单 ：
+第  1 步 ：备 份 配 置 （强 烈 建 议 ！）
+bash
+macOS / Linux
+cp -r /.claude /.claude-backup-$(date +%Y%m%d)
+Windows PowerShell
+Copy-Item -Recurse /.claude /.claude-backup-$(Get-Date -Format yyyyMMdd)
+第  2 步 ：运 行 迁 移 命 令 
+bash
+claude install
+这 个 命 令 会 自 动 ：
+- 检 查 并 安 装 原 生 版 本 
+- 迁 移 你 的 配 置 、认 证 信 息 、历 史 记 录 
+- 把  native binary 放 到 合 适 的 位 置 （通 常 是  /.local/bin）
+第  3 步 ：验 证 迁 移 
+关 闭 终 端 重 新 打 开 ，然 后 ：
+bash
+claude --version          应 该 看 到  2.x.x 新 版 本 
+which claude              查 看 路 径 （通 常 在  /.local/bin）
+claude doctor             运 行 诊 断 检 查 
+第  4 步 ：卸 载 旧 版 本 （可 选 但 推 荐 ）
+确 认 迁 移 成 功 后 ，卸 载  npm 版 本 ：
+bash
+npm uninstall -g @anthropic-ai/claude-code
+---
+💡 常 见 问 题  FAQ
+Q1: 提 示  "git not found" 怎 么 办 ？
+Windows 用 户 ：确 保 已 安 装  Git，并 且 添 加 到 系 统  PATH。
+也 可 以 设 置 环 境 变 量 指 定  Git Bash 路 径 ：
+CLAUDECODEGITBASHPATH=C:\Program Files\git\bin\bash.exe
+Q2: 安 装 失 败 怎 么 办 ？
+试 试 这 几 招 ：
+1. 检 查 网 络 连 接 
+2. 以 管 理 员 身 份 运 行 终 端 
+3. 关 闭 杀 毒 软 件 /防 火 墙 临 时 试 试 
+4. 查 看 详 细 日 志 ：添 加  --verbose 参 数 
+---
+🎯 开 始 使 用 
+安 装 配 置 完 成 后 ，在 项 目 目 录 中 直 接 运 行 ：
+bash
+cd /path/to/your-project
+claude
+然 后 就 可 以 和  Claude 对 话 了 ！
+---
+📝 总 结 
+| 安 装 方 式  | 推 荐 度  | 适 用 场 景  |
+|----------|--------|----------|
+| 原 生 安 装  | ⭐⭐⭐⭐⭐ | 所 有 用 户 （官 方 推 荐 ） |
+| npm 安 装  | ⭐⭐⭐ | 已 有  Node.js 环 境 /特 殊 需 求  |
+| 迁 移 原 生  | ⭐⭐⭐⭐⭐ | npm 老 用 户  |
+一 句 话 总 结 ：2026 年 装  Claude Code，直 接 用 官 方 原 生 安 装 ，一 行 命 令 搞 定 ，简 单 稳 定 ！
+---
+🙋 互 动 时 间 
+安 装 过 程 中 遇 到 问 题 ？欢 迎 在 评 论 区 留 言 ！
+觉 得 这 篇 教 程 有 用 ，记 得 点 赞  + 收 藏  + 转 发 三 连 哦 ～ 🧡
+---
+本 文 基 于  2026 年 最 新 版  Claude Code 编 写 ，如 有 更 新 请 以 官 方 文 档 为 准 。
+作 者 ：小 泽  | 公 众 号 ：小 泽 的  AI 实 验 室
+
+================================================================================
+
+=== ID: 2198 | Title: Claude Code 与 App 开发对话记录 | Path: 人工智能/claude code/Claude Code App开发对话记录.md | Words: 3158 ===
+Claude Code 与  App 开 发 对 话 记 录 
+> 日 期 ：2026-04-07
+---
+一 、开 发 能 够 上 线 使 用 的  App 需 要 哪 些 操 作 流 程 ？
+1. 需 求 阶 段 
+- 明 确 产 品 定 位 与 核 心 功 能 
+- 市 场 /用 户 调 研 
+- 撰 写 需 求 文 档  / PRD
+2. 设 计 阶 段 
+- 架 构 设 计 （前 端 /后 端 /数 据 库 /部 署 方 案 ）
+- UI/UX 设 计 
+- API 设 计 
+3. 开 发 阶 段 
+- 编 码 实 现 
+- 代 码 审 查 （Code Review）
+- 单 元 测 试  / 集 成 测 试 
+4. 测 试 阶 段 
+- 功 能 测 试 
+- 性 能 /压 力 测 试 
+- 安 全 测 试 
+- UAT（用 户 验 收 测 试 ）
+5. 部 署 准 备 
+- 配 置 生 产 环 境 
+- 数 据 迁 移 方 案 
+- 监 控 /日 志 告 警 接 入 
+- 备 份 /回 滚 策 略 
+6. 上 线 发 布 
+- 灰 度 发 布  / 分 批 发 布 
+- 快 速 迭 代 修 复 问 题 
+- 正 式 全 量 发 布 
+7. 运 维 监 控 
+- 线 上 监 控 （Django/Nginx/数 据 库 等 ）
+- 故 障 响 应 机 制 
+- 定 期 更 新 迭 代 
+---
+二 、Claude Code 能 帮 助 实 现 哪 些 步 骤 ？
+开 发 阶 段 （核 心 协 助 范 围 ）
+| 步 骤  | Claude Code 能 做 的  |
+|------|-------------------|
+| 编 码 实 现  | ✅ 写 代 码 、调 试 、重 构 、解 释 代 码  |
+| 代 码 审 查  | ✅ Review 代 码 、发 现 潜 在 问 题  |
+| 单 元 测 试  | ✅ 编 写 测 试 用 例  |
+| 问 题 排 查  | ✅ 系 统 性 调 试 （使 用  GSD 调 试 方 法 ） |
+设 计 与 规 划 阶 段 
+| 步 骤        | Claude Code 能 做 的              |
+| -------- | --------------------------- |
+| 架 构 设 计  | ✅ 提 供 技 术 方 案 建 议                   |
+| 需 求 分 析  | ✅ 协 助 拆 解 功 能 、撰 写 方 案                |
+| 代 码 规 划  | ✅ 使 用  writing-plans 技 能 制 定 实 施 计 划  |
+上 线 后 维 护 
+| 步 骤  | Claude Code 能 做 的  |
+|------|-------------------|
+| Bug 修 复  | ✅ 定 位 问 题 、修 复 代 码  |
+| 代 码 优 化  | ✅ Simplify 技 能 审 查 重 构  |
+| 性 能 分 析  | ✅ 结 合  Chrome DevTools MCP 进 行 性 能 分 析  |
+你 无 法 独 立 完 成 的 
+- ❌ 直 接 部 署 到 服 务 器 （需 要 你 执 行 命 令 ）
+- ❌ 管 理 云 服 务 /数 据 库 （需 要 云 平 台 控 制 台 ）
+- ❌ 应 用 市 场 上 架 （需 要 你 提 交 审 核 材 料 ）
+- ❌ 实 时 监 控 线 上 服 务 （需 要 监 控 工 具 ）
+---
+三 、可 以 帮 助 制 作  App 的  Claude Code Skills
+核 心 开 发 类  Skills
+| Skill | 功 能  | 安 装 命 令  |
+|-------|------|----------|
+| frontend-design | 前 端  UI 设 计 ，让  AI 生 成 的 界 面 更 美 观  | /plugin marketplace add anthropics/claude-code 然 后  /plugin install frontend-design |
+| ui-ux-pro-max | 50+ 种  UI 样 式 、97 套 色 板 、57 种 字 体 组 合 ；支 持  React、Next.js、Vue、SwiftUI、Flutter、Tailwind | /plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill |
+| superpowers | 强 制 执 行 "头 脑 风 暴  → 方 案 规 划  → TDD → 代 码 审 查 "完 整 流 程  | /plugin marketplace add obra/superpowers-marketplace 然 后  /plugin install superpowers |
+移 动 端 开 发 支 持 
+| 能 力  | 说 明  |
+|------|------|
+| React Native | Claude Code 可 生 成 优 化 过 的  FlatList、触 摸 交 互 、下 拉 刷 新 等 移 动 端 组 件  |
+| iOS / Android | 自 动 处 理 平 台 差 异 、遵 循  Material Design 和  HIG |
+| 响 应 式 布 局  | 自 动 适 配 不 同 屏 幕 尺 寸  |
+其 他 相 关  Skills
+| Skill | 用 途  |
+|-------|------|
+| nextjs-blog-dev | Next.js 个 人 博 客 开 发  |
+| webapp-testing | Web 应 用 测 试  |
+| mcp-builder | 构 建  MCP 服 务 扩 展  |
+| Simplify | 代 码 审 查 与 优 化 重 构  |
+---
+四 、有 没 有 开 发 特 定  App 的  Skills？
+结 论 ：没 有 专 门 针 对 某 款 特 定  App 的  Skills（如 "抖 音  App 开 发  Skill"），但 有 大 量 使 用  Claude Code 开 发 各 类  App 的 实 战 案 例 。
+实 战 案 例 展 示 
+| App 类 型  | 开 发 者  | 技 术 栈  | 成 果  |
+|---------|--------|--------|------|
+| 微 信 记 账 小 程 序  | 独 立 开 发 者  | 微 信 小 程 序  | 产 品 定 位 →UI设 计 →开 发 全 流 程  |
+| 自 动 饮 品 售 卖 小 程 序  | 独 立 开 发 者  | 微 信 小 程 序  + 后 端  | 扫 码 点 单 、库 存 管 理 、支 付 集 成  |
+| 社 区 生 鲜 配 送 小 程 序  | 张 经 理  | 微 信 小 程 序  + 后 端  | 3天 完 成 核 心 功 能 （原 本 2周 ） |
+| 电 商 小 程 序  | 独 立 开 发 者  | 微 信 小 程 序  + CloudBase | Figma设 计 稿 →代 码 生 成  |
+| macOS 原 生  App "Context" | Indragie Karunaratne | SwiftUI | 95% 代 码 由  AI 完 成 ，已 上 架  App Store |
+| 健 康 监 测  App | 独 立 开 发 者  | React Native | 饮 食 /运 动 /睡 眠 数 据 追 踪  |
+| 购 物 商 城 小 程 序 +APP | 独 立 开 发 者  | SpringBoot + Vue + UniApp | 3小 时 完 成 全 栈 开 发  |
+常 用  Skills 组 合 （5个 最 实 用 的 ）
+brainstorming      → 产 品 头 脑 风 暴  + 选 择 题 式 需 求 确 认 
+frontend-design    → UI 美 化 （减 少  AI 味 ）
+superpowers        → 强 制  TDD 流 程 
+impeccable         → 界 面 细 节 优 化 （布 局 /间 距 /视 觉 层 级 ）
+核 心 发 现 
+Claude Code 不 是 "针 对 特 定  App 的  Skill"，而 是 一 个 通 用 编 程  Agent。 它 的 强 大 之 处 在 于 ：
+1. 自 然 语 言  → 全 栈 代 码 （前 端 /后 端 /数 据 库 ）
+2. 持 续 对 话 式 迭 代 （提 需 求  → 看 效 果  → 反 馈  → 改 代 码 ）
+3. 配 合  Skills 使 用 （UI设 计 、代 码 审 查 、测 试 等 专 项 增 强 ）
+典 型 工 作 流 
+头 脑 风 暴 （brainstorming）
+  ↓
+确 定 产 品 方 向 （选 择 题 式 需 求 分 析 ）
+  ↓
+UI 设 计 （frontend-design / impeccable）
+  ↓
+代 码 开 发 （Claude Code 直 接 生 成 ）
+  ↓
+测 试  & 修 复 循 环 
+---
+五 、总 结 
+Claude Code 可 以 在  App 开 发 的 编 码 实 现 、代 码 审 查 、单 元 测 试 、问 题 排 查 、架 构 设 计 等 环 节 提 供 强 有 力 协 助 。
+但 上 线 部 署 、应 用 市 场 上 架 、云 服 务 管 理 等 环 节 仍 需 要 你 自 行 完 成 。
+关 键 不 是 找 特 定 的  App 开 发  Skill，而 是 明 确 你 想 做 什 么  App，Claude Code 配 合 合 适 的  Skills 可 以 帮 你 从 零 实 现 。
+
+================================================================================
+
+=== ID: 2199 | Title: Claude Code App 练手项目推荐 | Path: 人工智能/claude code/Claude Code App练手项目推荐.md | Words: 1533 ===
+Claude Code App 练 手 项 目 推 荐 
+> 创 建 日 期 ：2026-04-07
+---
+入 门 级 （1-3天 ）
+| 项 目            | 技 术 栈                   | 练 什 么            |
+| ------------ | -------------------- | ------------- |
+| 个 人 简 历  App | HTML/CSS/JS 单 页 应 用      | 布 局 、响 应 式 设 计 、基 础 交 互  |
+| Todo 清 单   | React + LocalStorage | 状 态 管 理 、CRUD操 作    |
+| 计 数 器 /秒 表    | 原 生  JS                | 计 时 逻 辑 、事 件 处 理      |
+| 随 机 抽 签 /抽 奖 器  | 小 程 序 /H5               | 随 机 算 法 、动 画 效 果      |
+---
+进 阶 级 （3-7天 ）
+| 项 目            | 技 术 栈                    | 练 什 么           |
+| ------------ | --------------------- | ------------ |
+| 天 气 查 询  App | 小 程 序  + 和 风 天 气 API         | API调 用 、异 步 数 据 处 理  |
+| 记 账 本       | React Native / UniApp | 数 据 持 久 化 、图 表 可 视 化   |
+| 图 书 搜 索      | 小 程 序  + 豆 瓣 API           | 搜 索 功 能 、网 络 请 求 缓 存   |
+| 倒 计 时 纪 念 日    | H5                    | 日 期 计 算 、本 地 存 储     |
+---
+中 级 （7-14天 ）
+| 项 目             | 技 术 栈              | 练 什 么             |
+| ------------- | --------------- | -------------- |
+| 二 手 交 易 小 程 序    | UniApp + 后 端      | 完 整 业 务 逻 辑 、支 付 接 口     |
+| 社 区 论 坛       | React + Node.js | 用 户 系 统 、CRUD、评 论 功 能  |
+| 健 身 打 卡  App  | React Native    | 签 到 日 历 、数 据 统 计       |
+| 食 谱 /菜 谱  App | Flutter + 开 放 API | 列 表 页 、详 情 页 、搜 索 过 滤    |
+---
+高 级 （14天 +）
+| 项 目  | 技 术 栈  | 练 什 么  |
+|------|--------|--------|
+| 外 卖 点 餐 小 程 序  | UniApp + SpringBoot | 商 家 入 驻 、购 物 车 、订 单 系 统  |
+| 即 时 通 讯  Chat App | Flutter + Firebase | 实 时 消 息 、好 友 系 统  |
+| 短 视 频 分 享  App | React Native + 云 存 储  | 媒 体 上 传 、列 表 流 、播 放  |
+---
+推 荐 入 门 顺 序 
+天 气 查 询  App（小 程 序 版 ）
+  ↓
+难 度 低  → 有 真 实  API 可 调 用 
+  ↓
+2天 能 跑 通 ，7天 功 能 完 整 
+  ↓
+可 以 直 接 给 朋 友 用 ，有 成 就 感 
+---
+第 二 天 选 择 项 目 时 考 虑 的 问 题 
+1. 你 更 擅 长 前 端 还 是 后 端 ？
+   - 前 端 优 先  → Todo清 单 、天 气 App、记 账 本 
+   - 全 栈  → 二 手 交 易 、论 坛 、外 卖 点 餐 
+2. 你 想 做 哪 类  App？
+   - 工 具 类  → 计 数 器 、抽 签 、倒 计 时 
+   - 实 用 类  → 天 气 、记 账 、图 书 搜 索 
+   - 社 交 类  → 论 坛 、即 时 通 讯 、短 视 频 
+3. 你 的 时 间 投 入 ？
+   - 碎 片 时 间 多  → 入 门 级 项 目 
+   - 能 集 中 投 入  → 中 级 或 高 级 项 目
+
+================================================================================
+
+=== ID: 2200 | Title: Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！ | Path: 人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md | Words: 2989 ===
+Claude Code 国 内 完 美 平 替 方 案 ｜无 需 魔 法 ，5 分 钟 用 上 国 产 大 模 型 ！
+> 导 读 ：想 用  Claude Code 但 被 网 络 问 题 劝 退 ？别 急 ！今 天 教 你 用 国 产 大 模 型  + CC-Switch 工 具 ，5 分 钟 搞 定 配 置 ，无 需 魔 法 也 能 享 受  AI 编 程 的 快 乐 ！
+---
+解 决 方 案 ：使 用 国 产 大 模 型  API + CC-Switch 工 具 ，一 键 切 换 ，丝 滑 流 畅 ！前 提 已 经 安 装 了 Claude code
+---
+📋 方 案 总 览 
+我 们 将 使 用 ：
+| 组 件                | 作 用              | 推 荐     |
+| ---------------- | -------------- | ----- |
+| CC-Switch    | 图 形 化 管 理 工 具 ，一 键 切 换 模 型  | ⭐⭐⭐⭐⭐ |
+| DeepSeek（深 求 ） | 国 产 最 强 编 程 模 型 之 一      | ⭐⭐⭐⭐⭐ |
+| 智 谱  AI（GLM）   | 清 华 系 ，GLM-5 很 强    | ⭐⭐⭐⭐  |
+| 硅 基 流 动          | 多 模 型 聚 合 平 台         | ⭐⭐⭐⭐  |
+---
+🚀 第 一 步 ：安 装  CC-Switch（核 心 工 具 ）
+CC-Switch 是 一 个 开 源 的 图 形 化 管 理 工 具 ，专 门 解 决 国 内 用 户 切 换 大 模 型 的 问 题 ，GitHub 已 获  5.9k stars！
+1️⃣ 下 载 安 装 
+Windows 用 户 （推 荐  MSI 安 装 包 ）：
+1. 访 问  GitHub Releases：https://github.com/farion1231/cc-switch/releases
+2. 下 载  CC-Switch-v3.11.1-Windows.msi
+3. 双 击 安 装 ，一 路 下 一 步 即 可 
+Windows 用 户 （免 安 装 版 ）：
+下 载  CC-Switch-v3.11.1-Windows-Portable.zip，解 压 即 用 。
+macOS 用 户 ：
+bash
+brew install --cask cc-switch
+> ⚠️ Mac 首 次 打 开 提 示 "无 法 验 证 开 发 者 "：
+> 去 "系 统 设 置 " → "隐 私 与 安 全 性 " → 点 击 "仍 要 打 开 "
+Linux 用 户 ：
+bash
+wget https://github.com/farion1231/cc-switch/releases/download/v3.11.1/CC-Switch-v3.11.1-Linux.deb
+sudo dpkg -i CC-Switch-v3.11.1-Linux.deb
+2️⃣ 首 次 启 动 
+安 装 完 成 后 打 开  CC-Switch，界 面 长 这 样 ：
+- 左 上 角 ：添 加 服 务 商  按 钮 
+- 中 间 ：已 配 置 的 模 型 列 表 
+- 右 上 角 ：设 置  和  同 步  功 能 
+---
+🔑 第 二 步 ：获 取 国 产 大 模 型  API Key
+方 案 一 ：DeepSeek（深 求 ）⭐ 强 烈 推 荐 
+特 点 ：编 程 能 力 超 强 ，价 格 良 心 ，响 应 速 度 快 
+1. 访 问 ：https://platform.deepseek.com
+2. 注 册 /登 录 账 号 （支 持 手 机 号 ）
+3. 进 入  API Keys 页 面 
+4. 点 击  创 建  API Key
+5. 复 制 保 存 （只 显 示 一 次 ！）
+方 案 二 ：智 谱  AI（GLM）
+特 点 ：清 华 系 ，GLM-5 模 型 ，中 文 理 解 好 
+1. 访 问 ：https://open.bigmodel.cn
+2. 注 册 /登 录 
+3. 进 入  API Key 管 理 
+4. 创 建 新 的  API Key
+5. 复 制 保 存 
+方 案 三 ：硅 基 流 动 
+特 点 ：聚 合 多 家 模 型 ，选 择 多 
+1. 访 问 ：https://cloud.siliconflow.cn
+2. 注 册 /登 录 
+3. 创 建  API Key
+---
+⚙️ 第 三 步 ：在  CC-Switch 中 配 置 模 型 
+1️⃣ 添 加  DeepSeek
+1. 打 开  CC-Switch
+2. 点 击  "Add Provider"（添 加 服 务 商 ）
+3. 填 写 以 下 信 息 ：
+名 称 ：DeepSeek
+Base URL: https://api.deepseek.com/anthropic
+API Key: 你 刚 才 复 制 的  DeepSeek API Key
+模 型 名 称 ：deepseek-v3.2
+4. 点 击  保 存 
+2️⃣ 添 加 智 谱  GLM（可 选 ）
+1. 再 次 点 击  "Add Provider"
+2. 填 写 ：
+名 称 ：智 谱  GLM
+Base URL: https://open.bigmodel.cn/api/anthropic
+API Key: 你 的 智 谱  API Key
+模 型 名 称 ：glm-5
+3️⃣ 一 键 切 换 
+在  CC-Switch 主 界 面 ，点 击 任 意 已 配 置 的 模 型 ，立 即 生 效 ！
+无 需 手 动 修 改 配 置 文 件 ，无 需 重 启 终 端 ，丝 滑 ！✨
+---
+🎯 第 四 步 ：开 始 使 用 
+1️⃣ 在  CC-Switch 中 选 择 模 型 
+打 开  CC-Switch，点 击 你 配 置 好 的 模 型 （比 如  DeepSeek）。
+2️⃣ 打 开 终 端 ，进 入 项 目 目 录 
+bash
+cd D:\my-project
+3️⃣ 运 行  Claude Code
+bash
+claude
+4️⃣ 开 始 对 话 
+你 好 ，请 分 析 这 个 项 目 的 结 构 
+帮 我 写 一 个  Python 脚 本 ，读 取  CSV 文 件 并 生 成 统 计 图 表 
+这 个 函 数 有 什 么  bug？帮 我 修 复 一 下 
+---
+❓ 常 见 问 题  FAQ
+Q1: CC-Switch 安 全 吗 ？
+开 源 透 明 ：GitHub 开 源 项 目 ，代 码 可 查 （5.9k stars）
+本 地 运 行 ：所 有 配 置 存 储 在 本 地 ，不 上 传 
+无 中 间 商 ：直 接 调 用 官 方  API，没 有 第 三 方 赚 差 价 
+Q2: 国 产 模 型 和  Claude 原 版 差 距 大 吗 ？
+编 程 场 景 ：DeepSeek、GLM-5 已 经 非 常 接 近 ，日 常 编 码 完 全 够 用 
+中 文 理 解 ：国 产 模 型 反 而 更 好 
+复 杂 推 理 ：原 版  Claude 略 强 ，但 差 距 在 缩 小 
+Q3: 一 个  API Key 可 以 多 台 设 备 用 吗 ？
+可 以 ！但 注 意 并 发 限 制 。建 议 ：
+- 个 人 使 用 ：没 问 题 
+- 团 队 使 用 ：考 虑 团 队 版 或 分 别 注 册 
+Q4: CC-Switch 配 置 错 了 怎 么 办 ？
+随 时 可 以 改 ！在  CC-Switch 中 ：
+1. 点 击 配 置 好 的 模 型 
+2. 点 击  编 辑  按 钮 
+3. 修 改 后 保 存 
+或 者 直 接 删 除 重 新 添 加 。
+---
+📝 总 结 
+| 步 骤  | 操 作  | 耗 时  |
+|------|------|------|
+| 1 | 安 装  CC-Switch | 2 分 钟  |
+| 2 | 注 册  DeepSeek/智 谱  | 3 分 钟  |
+| 3 | 配 置  API Key | 1 分 钟  |
+| 4 | 安 装  Claude Code | 2 分 钟  |
+| 5 | 开 始 使 用  | 0 分 钟  |
+总 计 ：8 分 钟 ，从 此 告 别 网 络 问 题 ！
+---
+🙋 互 动 时 间 
+配 置 过 程 中 遇 到 问 题 ？欢 迎 在 评 论 区 留 言 ！
+觉 得 这 篇 教 程 有 用 ，记 得 点 赞  + 收 藏  + 转 发 三 连 哦 ～ 🧡
+---
+本 文 基 于  2026 年 最 新 工 具 编 写 ，CC-Switch 持 续 更 新 中 ，请 以  GitHub 最 新 版 为 准 。
+相 关 资 源 ：
+- CC-Switch GitHub：https://github.com/farion1231/cc-switch
+- DeepSeek：https://platform.deepseek.com
+- 智 谱  AI：https://open.bigmodel.cn
+作 者 ：小 泽  | 公 众 号 ：小 泽 的  AI 实 验 室
+
+================================================================================
+
+=== ID: 2201 | Title: claude code安装 | Path: 人工智能/claude code/claude code安装.md | Words: 2630 ===
+目 前 （2026年 ）官 方 推 荐 的 安 装 方 式 已 经 从 早 期 的  npm 全 局 安 装 升 级 成 了 原 生 安 装 （native install），更 稳 定 、启 动 更 快 ，也 不 需 要 提 前 装  Node.js。
+推 荐 方 式 ：一 键 原 生 安 装 （2025年 底 后 官 方 主 推 ）
+直 接 复 制 对 应 系 统 的 命 令 到 终 端 运 行 即 可 ，基 本  1–2 分 钟 搞 定 。
+| 操 作 系 统                 | 终 端 类 型        | 安 装 命 令 （直 接 复 制 粘 贴 运 行 ）                                                                              |       |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------- | ----- |
+| macOS / Linux / WSL | bash/zsh   | curl -fsSL https://claude.ai/install.sh                                                    | bash |
+| Windows             | PowerShell | irm https://claude.ai/install.ps1                                                          | iex  |
+| Windows             | CMD（命 令 提 示 符 ） | curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd |       |
+执 行 完 后 验 证 安 装 成 功 ：
+bash
+claude --version
+看 到 版 本 号 （如  2.1.x 或 更 高 ）就 成 功 了 。
+旧 方 式 （npm 安 装 ）——仍 然 可 用 ，但 官 方 已 标 记 为  Deprecated
+如 果 你 更 习 惯  npm，或 者 某 些 特 殊 环 境 只 能 用 这 个 方 式 ：
+1. 先 确 保 有  Node.js 18+（推 荐  20+ 或  22 LTS）
+   bash
+   node -v
+   
+   没 有 的 话 去  https://nodejs.org 下 载 安 装 。
+2. 全 局 安 装 
+   bash
+   npm install -g @anthropic-ai/claude-code
+   
+3. 验 证 
+   bash
+   claude --version
+   
+快 速 上 手 测 试 
+进 到 一 个 项 目 文 件 夹 ，然 后 直 接 运 行 ：
+bash
+cd /path/to/your-project
+claude
+常 见 入 门 指 令 示 例 ：
+- 让 它 先 分 析 项 目 ：先 完 整 扫 描 项 目 结 构 和 主 要 技 术 栈 
+- 写 新 功 能 ：帮 我 在  src/api/ 下 加 一 个 获 取 用 户 详 细 信 息 的 接 口 ，要 带 鉴 权 和 错 误 处 理 
+- 修  bug：我 运 行  npm run dev 报 错 了 ：Cannot find module 'xxx'，帮 我 定 位 并 修 复 
+- 重 构 ：把 所 有  class 组 件 改 成  function component + hooks
+- 写 测 试 ：给  utils/date.js 里 的 所 有 函 数 都 补 上 单 元 测 试 
+如 何 安 全 迁 移 （推 荐 步 骤 ，2026 年 最 新 流 程 ）
+1. 先 备 份 配 置 （强 烈 建 议 ）  
+   配 置 基 本 都 在  C:\Users\用 户 名 \.claude 目 录 下 ，迁 移 会 尽 量 保 留 ，但 先 备 份 无 害 ：
+   bash
+   cp -r /.claude /.claude-backup-$(date +%Y%m%d)
+   
+2. 运 行 迁 移 命 令 （最 简 单 官 方 方 式 ）  
+   直 接 在 终 端 运 行 ：
+   bash
+   claude install
+   
+   - 这 条 命 令 是 官 方 专 门 为  npm 用 户 准 备 的 迁 移 入 口 
+   - 它 会 ：
+     - 下 载 并 安 装  native 版 本 
+     - 尝 试 保 留 你 的 设 置 、认 证 信 息 、历 史 等 
+     - 把  native binary 放 到 合 适 的 位 置 （通 常  /.local/bin/claude 或 系 统  PATH 已 包 含 的 位 置 ）
+   - 过 程 中 如 果 提 示 确 认 ，输 入  y 继 续 
+3. 验 证 新 版 本 是 否 正 常 工 作   
+   迁 移 完 成 后 ，关 闭 并 重 新 打 开 终 端 （或  source 你 的  shell 配 置 文 件 ），然 后 检 查 ：
+   bash
+   claude --version          应 该 看 到 类 似  2.x.x 的 新 版 本 号 
+   which claude              macOS/Linux，看 看 路 径 是 否 变 了 （通 常 在  /.local/bin）
+   claude doctor             运 行 健 康 检 查 ，查 看 是 否 有 问 题 
+   
+4. 清 理 旧 的  npm 版 本 （可 选 但 推 荐 ）  
+   迁 移 成 功  + 确 认  native 版 一 切 正 常 后 ，卸 载 旧 版 避 免 冲 突 ：
+   bash
+   npm uninstall -g @anthropic-ai/claude-code
+   
+   - 如 果 之 前 用  npx 或 其 他 方 式 装 过 ，也 可 检 查  npm list -g | grep claude 清 理 残 留 
+5. 如 果 迁 移 中 遇 到 问 题   
+   - 卡 住 /网 络 问 题  → 直 接 用 一 键 安 装 脚 本 重 装 （会 覆 盖 ）：
+     - macOS/Linux/WSL：curl -fsSL https://claude.ai/install.sh | bash
+     - Windows PowerShell：irm https://claude.ai/install.ps1 | iex
+   - 仍 然 提 示 旧 版 警 告  → 说 明  native 没 覆 盖 成 功 ，手 动  rm npm 版 后 重 跑  install
+   - PATH 没 生 效  → 手 动 加  export PATH="$HOME/.local/bin:$PATH" 到  /.zshrc 或  /.bashrc，然 后  source
+迁 移 后 你 会 发 现 启 动 快 了 很 多 ，更 新 自 动 ，报 错 少 很 多 ——这 是 目 前  Claude Code 团 队 最 希 望 用 户 走 的 路 。
+
+================================================================================
+
+=== ID: 2202 | Title: 启用自动权限模式 | Path: 人工智能/claude code/claude code技巧.md | Words: 7274 ===
+一 、Claude Code 快 捷 命 令 与 配 置 
+1.1 基 础 快 捷 命 令 
+|                         |             |                                   |
+| ----------------------- | ----------- | --------------------------------- |
+| 命 令                       | 用 途           | 说 明                                 |
+| /bug                    | 报 告 错 误         | 将 对 话 发 送 给  Anthropic 团 队                |
+| /clear                  | 清 除 对 话 历 史       | 清 空 当 前 会 话 的 所 有 记 录                        |
+| /compact [instructions] | 压 缩 对 话         | 可 选 择 性 压 缩 并 聚 焦 特 定 说 明                      |
+| /config                 | 查 看 /修 改 配 置      | 管 理  Claude Code 的 设 置                 |
+| /cost                   | 显 示 令 牌 使 用 统 计     | 查 看  API 调 用 成 本 和 用 量                     |
+| /doctor                 | 检 查 安 装 健 康 状 况     | 诊 断 安 装 和 配 置 问 题                          |
+| /help                   | 获 取 使 用 帮 助       | 显 示 所 有 可 用 命 令                           |
+| /init                   | 初 始 化 项 目        | 使 用  [CLAUDE.md](CLAUDE.md) 指 南 初 始 化 项 目  |
+| /memory                 | 编 辑 记 忆 文 件       | 管 理  [CLAUDE.md](CLAUDE.md) 记 忆 文 件     |
+| /prcomments            | 查 看 拉 取 请 求 评 论     | 显 示  PR 相 关 评 论                         |
+| /review                 | 请 求 代 码 审 查       | 对 当 前 代 码 进 行 审 查                          |
+| /status                 | 查 看 账 户 和 系 统 状 态    | 显 示 当 前 状 态 信 息                           |
+| /vim                    | 进 入  vim 模 式    | 切 换 插 入 和 命 令 模 式                          |
+| /resume                 | 查 看 历 史 对 话 记 录     | 恢 复 之 前 的 会 话                            |
+| /mcp                    | 查 看  MCP 工 具 状 态  | 显 示 已 安 装 的  MCP 工 具                      |
+1.2 自 动 模 式 配 置 
+设 置 自 动 执 行 权 限 
+由 于  Claude Code 默 认 在 执 行 命 令 时 需 要 用 户 确 认 ，可 以 通 过 以 下 命 令 启 用 自 动 模 式 ：
+Bash
+启 用 自 动 权 限 模 式 
+claude --dangerously-skip-permissions
+1.3 高 级 操 作 技 巧 
+权 限 模 式 切 换 
+Shift+Tab: 循 环 切 换 权 限 模 式 
+⏵⏵ accept edits on - 自 动 接 受 模 式 
+⏸ plan mode on - 计 划 模 式 
+计 划 模 式 启 动 
+Bash
+以 计 划 模 式 启 动 新 会 话 
+claude --permission-mode plan
+快 捷 键 
+@文 件 名 : 精 准 引 用 分 析 文 件 
+: 快 速 编 辑  [CLAUDE.md](CLAUDE.md) 文 件 
+! : 执 行  bash 命 令 
++Enter: 换 行 输 入 
+Ctrl+L: 清 屏 
+1.4 全 局 记 忆 设 置 
+设 置 中 文 环 境 
+Bash
+使 用  /memory 命 令 设 置 全 局 记 忆 
+/memory
+在 打 开 的 编 辑 器 中 设 置 以 下 内 容 ：
+与 用 户 交 流 始 终 使 用 中 文 。
+项 目 初 始 化 
+Bash
+使 用  /init 命 令 初 始 化 项 目 
+/init
+Claude Code 会 自 动 分 析 项 目 结 构 并 生 成 中 文 内 容 的  [CLAUDE.md](CLAUDE.md) 文 件 ，该 文 件 会 记 录 ：
+常 用 的  bash 命 令 
+核 心 代 码 文 件 
+实 用 函 数 
+代 码 风 格 信 息 
+一 般 用 于 已 经 存 在 的 项 目 中 ，与 memory一 样 都 是 编 辑 CLAUDE.md文 件 
+设 置 项 目 特 定 规 则 
+使 用  号 开 头 直 接 添 加 规 则 ，编 写 的 命 令 CLAUDE.md的 模 板 格 式 如 下 ：
+项 目 说 明 
+项 目 概 述 
+[在 此 处 简 要 描 述 项 目 的 主 要 功 能 和 目 标 ]
+技 术 栈 
+- 编 程 语 言 ：[如 ：Python, JavaScript, Java等 ]
+    
+- 框 架 ：[如 ：React, Django, Spring等 ]
+    
+- 数 据 库 ：[如 ：MySQL, PostgreSQL, MongoDB等 ]
+    
+- 其 他 依 赖 ：[如 ：Redis, Docker等 ]
+    
+开 发 环 境 设 置 
+1. 安 装 依 赖 ：
+    
+    Bash
+    [安 装 命 令 ]
+    
+    
+2. 配 置 环 境 变 量 ：
+    
+    Bash
+    [环 境 变 量 配 置 ]
+    
+    
+3. 启 动 开 发 服 务 器 ：
+    
+    Bash
+    [启 动 命 令 ]
+    
+    
+项 目 结 构 
+Plain
+[项 目 目 录 结 构 ]
+重 要 配 置 文 件 
+- config/ - 配 置 文 件 目 录 
+    
+- src/ - 源 代 码 目 录 
+    
+- tests/ - 测 试 文 件 目 录 
+    
+- docs/ - 文 档 目 录 
+    
+开 发 规 范 
+1. 代 码 风 格 ：[如 ：ESLint, Prettier等 ]
+    
+2. 提 交 规 范 ：[如 ：Conventional Commits]
+    
+3. 分 支 管 理 ：[如 ：Git Flow]
+    
+常 用 命 令 
+- 运 行 测 试 ：[测 试 命 令 ]
+    
+- 代 码 检 查 ：[lint命 令 ]
+    
+- 构 建 项 目 ：[构 建 命 令 ]
+    
+- 部 署 命 令 ：[部 署 命 令 ]
+    
+注 意 事 项 
+- [重 要 的 开 发 注 意 事 项 ]
+    
+- [常 见 问 题 及 解 决 方 案 ]
+    
+- [性 能 优 化 建 议 ]
+    
+联 系 方 式 
+- 项 目 负 责 人 ：[姓 名 ]
+    
+- 技 术 支 持 ：[联 系 方 式 ]
+    
+二 、MCP 工 具 配 置 与 使 用 
+2.1 MCP 工 具 概 述 
+MCP (Model Context Protocol) 工 具 是  Claude Code 的 扩 展 功 能 ，可 以 为 其 添 加 各 种 第 三 方 服 务 的 能 力 。Claude Code 自 带 基 础 联 网 搜 索 功 能 ，但 通 过  MCP 工 具 可 以 实 现 深 度 搜 索 、地 图 服 务 、天 气 查 询 等 高 级 功 能 。
+2.2 智 谱 平 台  MCP 工 具 配 置 
+基 础 配 置 命 令 格 式 
+Bash
+通 用 添 加 命 令 格 式 
+claude mcp add 工 具 名 称  配 置 参 数 
+2.3 其 他 实 用  MCP 工 具 （除  GLM Coding Plan 覆 盖 的 ）
+Bash
+EdgeOne Pages 网 页 部 署 工 具 
+claude mcp add edgeone-pages -- npx edgeone-pages-mcp
+Context7 上 下 文 管 理 工 具 
+claude mcp add context7 -- npx -y @upstash/context7-mcp
+spec-driven 规 范 驱 动 工 作 流 
+claude mcp add spec-driven -- npx -y mcp-server-spec-driven-development@latest
+Figma 原 型 设 计 工 具 
+claude mcp add Framelink -- npx -y figma-developer-mcp --figma-api-key=yourkey --stdio
+2.4 MCP 工 具 管 理 命 令 
+查 看 已 安 装 工 具 
+Bash
+列 出 所 有 已 安 装 的  MCP 工 具 
+claude mcp list
+查 看  MCP 工 具 状 态 
+/mcp
+删 除 工 具 
+Bash
+删 除 指 定 的  MCP 工 具 
+claude mcp remove context7
+claude mcp remove gaode-map
+作 用 域 管 理 
+Bash
+项 目 级 别 安 装  (仅 当 前 项 目 可 用 )
+claude mcp add 工 具 名  --scope project /path/to/project
+用 户 级 别 安 装  (所 有 项 目 可 用 )
+claude mcp add 工 具 名  --scope user
+2.5 MCP 配 置 文 件 
+MCP 工 具 的 配 置 信 息 会 保 存 在 项 目 目 录 下 的 .mcp.json文 件 中 ，该 文 件 会 记 录 ：
+已 安 装 的 工 具 列 表 
+工 具 配 置 参 数 
+API 密 钥 和 令 牌 
+作 用 域 设 置 
+三 、常 见 问 题 与 故 障 排 除 
+3.1 安 装 相 关 问 题 
+问 题 1: npm 权 限 错 误  (EACCES)
+现 象 : npm install -g @anthropic-ai/claude-code 提 示 权 限 不 足 
+解 决 方 案 :
+Bash
+Linux/macOS
+sudo npm install -g @anthropic-ai/claude-code
+或 者 配 置  npm 使 用 用 户 目 录 
+npm config set prefix /.npm-global
+export PATH=/.npm-global/bin:$PATH
+echo 'export PATH=/.npm-global/bin:$PATH' >> /.bashrc
+问 题 2: Node.js 版 本 过 低 
+现 象 : 安 装 时 提 示  Node.js 版 本 不 符 合 要 求 
+解 决 方 案 :
+Bash
+使 用  nvm 管 理  Node.js 版 本 
+安 装  nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+重 启 终 端 后 安 装 最 新  Node.js
+nvm install node
+nvm use node
+问 题 3: 网 络 连 接 问 题 
+现 象 : 下 载 安 装 脚 本 失 败 或 超 时 
+解 决 方 案 :
+Bash
+设 置  npm 镜 像 源 
+npm config set registry https://registry.npmmirror.com
+使 用 代 理  (如 果 需 要 )
+npm config set proxy http://your-proxy:port
+npm config set https-proxy http://your-proxy:port
+3.2 配 置 相 关 问 题 
+问 题 1: .bashrc 文 件 不 生 效 
+现 象 : 配 置 的 快 捷 命 令 无 法 使 用 
+解 决 方 案 :
+Bash
+检 查  .bashrc 是 否 存 在 
+ls -la /.bashrc
+如 果 不 存 在 ，创 建 它 
+echo 'alias claudecc="claude --dangerously-skip-permissions"' > /.bashrc
+重 新 加 载 配 置 
+source /.bashrc
+或 检 查  .bashprofile 是 否 包 含 加 载  .bashrc 的 语 句 
+echo 'if [ -f /.bashrc ]; then . /.bashrc; fi' >> /.bashprofile
+问 题 2: 权 限 配 置 不 生 效 
+现 象 : 自 动 模 式 仍 然 需 要 确 认 
+解 决 方 案 :
+Bash
+确 保 使 用 正 确 的 参 数 
+claude --dangerously-skip-permissions
+检 查 是 否 有 其 他 配 置 覆 盖 
+claude --config
+问 题 3: MCP 工 具 安 装 失 败 
+现 象 : 添 加  MCP 工 具 时 报 错 
+解 决 方 案 :
+Bash
+检 查 网 络 连 接 
+ping open.bigmodel.cn
+验 证  API 密 钥 是 否 正 确 
+替 换 为 您 的 实 际 密 钥 
+claude mcp add --transport http gaode-map https://open.bigmodel.cn/api/mcp-broker/proxy/gaode-map/mcp --header "Authorization: Bearer your-real-token"
+查 看 详 细 错 误 信 息 
+claude mcp list
+3.3 使 用 相 关 问 题 
+问 题 1: 命 令 无 响 应 
+现 象 : 输 入 命 令 后 程 序 卡 住 
+解 决 方 案 :
+Bash
+强 制 退 出 当 前 会 话 
+Ctrl+C
+重 启  Claude Code
+claude
+检 查 系 统 状 态 
+claude --status
+问 题 2: MCP 工 具 无 法 使 用 
+现 象 : 安 装 的  MCP 工 具 无 法 正 常 工 作 
+解 决 方 案 :
+Bash
+检 查 工 具 状 态 
+/mcp
+重 新 安 装 工 具 
+claude mcp remove tool-name
+claude mcp add tool-name [parameters]
+清 理 缓 存 
+rm -rf /.claude/cache
+问 题 3: 内 存 不 足 问 题 
+现 象 : 处 理 大 文 件 时 程 序 崩 溃 
+解 决 方 案 :
+Bash
+增 加 内 存 限 制  (如 果 支 持 )
+export NODEOPTIONS="--max-old-space-size=4096"
+分 批 处 理 大 文 件 
+使 用  @ 引 用 文 件 而 不 是 直 接 粘 贴 
+@large-file.txt
+3.4 升 级 与 维 护 
+升 级  Claude Code
+Bash
+升 级 到 最 新 版 本 
+npm update -g @anthropic-ai/claude-code
+检 查 当 前 版 本 
+claude --version
+清 理 缓 存 
+Bash
+清 理  Claude Code 缓 存 
+rm -rf /.claude/cache
+清 理  npm 缓 存 
+npm cache clean --force
+四 、高 级 使 用 技 巧 
+4.1 项 目 工 作 流 
+1. 新 项 目 初 始 化 
+Bash
+创 建 项 目 目 录 
+mkdir my-project
+cd my-project
+初 始 化 项 目 
+/init
+设 置 项 目 规 则 
+在 这 个 项 目 中 使 用  React + TypeScript
+请 遵 循  Prettier 配 置 
+所 有  API 调 用 需 要 错 误 处 理 
+2. 团 队 协 作 配 置 
+Bash
+创 建 团 队 共 享 的  CLAUDE.md
+团 队 编 码 规 范 
+项 目 架 构 说 明 
+常 用 命 令 和 脚 本 
+安 装 团 队 共 享 的  MCP 工 具 
+claude mcp add shared-tool --scope project
+4.2 性 能 优 化 
+1. 减 少 上 下 文 大 小 
+Bash
+使 用  /compact 压 缩 对 话 
+/compact 保 留 核 心 功 能 
+定 期 清 除 历 史 
+/clear
+2. 批 量 操 作 
+Bash
+使 用 脚 本 批 量 处 理 
+创 建  process.sh
+#!/bin/bash
+for file in .js; do
+    claude --input="优 化  $file" --file="$file"
+done
+4.3 自 动 化 集 成 
+1. Git 钩 子 集 成 
+Bash
+在  .git/hooks/pre-commit 中 添 加 
+#!/bin/bash
+claude --input="检 查 代 码 质 量 " --file="$@"
+2. CI/CD 集 成 
+YAML
+.github/workflows/claude-review.yml
+name: Claude Code Review
+on: [pullrequest]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run Review
+        run: claude --review
+五 、卸 载  Claude Code
+5.1 完 全 卸 载 步 骤 
+1. 卸 载  Claude Code
+Bash
+npm 卸 载 
+npm uninstall -g @anthropic-ai/claude-code
+2. 清 理 配 置 文 件 
+⚠️ 重 要 提 示 : 大 多 数 安 装 失 败 都 是 由 于 旧 版 本 文 件 未 完 全 清 除 导 致 的 。必 须 彻 底 删 除 以 下 位 置 的 残 留 文 件 ：
+Windows 系 统 :
+Bash
+删 除 主 目 录 下 的 配 置 文 件 
+rm -rf /.claude
+rm -f /.claude
+rm -f /.bashrc
+Linux/macOS 系 统 :
+Bash
+删 除 所 有  Claude 相 关 文 件 
+rm -rf /.claude
+rm -rf /.claude
+清 理  npm 全 局 包 
+npm uninstall -g @anthropic-ai/claude-code
+npm cache clean --force
+3. 手 动 清 理 残 留 文 件 
+检 查 并 删 除 以 下 位 置 的 文 件 ：
+C:\Users\用 户 名 .claude
+C:\Users\用 户 名 .claude
+项 目 目 录 中 的 .mcp.json
+项 目 目 录 中 的 [CLAUDE.md](CLAUDE.md)
+5.2 验 证 卸 载 
+Bash
+检 查 是 否 还 有 残 留 
+which claude
+ls -la /.claude
+检 查  npm 全 局 包 
+npm list -g --depth=0 | grep claude
+
+================================================================================
+
+=== ID: 2203 | Title: Claude Code 子代理 文档 - 分析报告 | Path: 人工智能/claude code/Claude-Code-子代理-文档分析报告.md | Words: 4071 ===
+Claude Code 子 代 理  文 档  - 分 析 报 告 
+基 本 信 息 
+| 项 目  | 内 容  |
+|------|------|
+| 标 题  | Create custom subagents - Claude Code Docs |
+| URL | https://code.claude.com/docs/en/sub-agents |
+| 域 名  | code.claude.com |
+| 分 析 时 间  | 2025-02-06 |
+| 内 容 类 型  | 产 品 文 档  |
+---
+核 心 摘 要 
+本 文 档 详 细 介 绍  Claude Code 中 的  子 代 理  (Subagents) 功 能 ——一 种 可 以 处 理 特 定 类 型 任 务 的 专 业 化  AI 助 手 。子 代 理 拥 有 独 立 的 上 下 文 窗 口 、自 定 义 系 统 提 示 、特 定 工 具 访 问 权 限 和 独 立 权 限 ，通 过 任 务 委 派 实 现 高 效 的 代 码 库 管 理 和 开 发 工 作 流 。
+---
+内 容 结 构 
+主 要 章 节 
+1. 子 代 理 概 述  - 什 么 是 子 代 理 及 其 核 心 价 值 
+2. 内 置 子 代 理  - Explore、Plan、General-purpose 等 
+3. 快 速 开 始  - 创 建 第 一 个 子 代 理 
+4. 配 置 选 项  - 作 用 域 、模 型 、工 具 、权 限 等 
+5. 工 作 模 式  - 前 台 /后 台 、自 动 委 派 、并 行 研 究 
+6. 示 例 子 代 理  - Code Reviewer、Debugger、Data Scientist 等 
+核 心 论 点 
+- 子 代 理 通 过 隔 离 上 下 文 保 护 主 对 话 的 整 洁 
+- 通 过 工 具 限 制 实 现 安 全 约 束 
+- 通 过 持 久 化 记 忆 积 累 跨 会 话 知 识 
+---
+关 键 知 识 点 
+知 识 点  1: 子 代 理 的 核 心 价 值  ⭐⭐⭐
+| 价 值 点  | 说 明  |
+|--------|------|
+| 保 留 上 下 文  | 将 探 索 和 实 现 工 作 隔 离 到 独 立 对 话 ，避 免 主 对 话 被 大 量 输 出 污 染  |
+| 强 制 约 束  | 限 制 子 代 理 可 使 用 的 工 具 ，确 保 安 全  |
+| 复 用 配 置  | 用 户 级 子 代 理 可 在 所 有 项 目 中 使 用  |
+| 专 业 化 行 为  | 针 对 特 定 领 域 的 专 注 系 统 提 示  |
+| 控 制 成 本  | 将 任 务 路 由 到 更 快 的 模 型 （如  Haiku） |
+知 识 点  2: 四 种 作 用 域 优 先 级  ⭐⭐⭐
+CLI flag (--agents)      >  优 先 级  1 (当 前 会 话 )
+项 目 级  (.claude/agents/)  >  优 先 级  2 (当 前 项 目 )
+用 户 级  (/.claude/agents/) >  优 先 级  3 (所 有 项 目 )
+插 件 级                     >  优 先 级  4 (最 低 )
+知 识 点  3: 内 置 子 代 理 对 比  ⭐⭐⭐
+| 子 代 理  | 模 型  | 工 具  | 用 途  |
+|--------|------|------|------|
+| Explore | Haiku | 只 读  | 代 码 库 快 速 搜 索 、探 索  |
+| Plan | 继 承  | 只 读  | 计 划 模 式 下 的 代 码 库 研 究  |
+| General-purpose | 继 承  | 全 部  | 复 杂 多 步 骤 任 务  |
+| Bash | 继 承  | Bash | 独 立 上 下 文 运 行 终 端 命 令  |
+| statusline-setup | Sonnet | - | 配 置 状 态 栏  |
+| Claude Code Guide | Haiku | - | 回 答  Claude Code 功 能 问 题  |
+知 识 点  4: 前 台  vs 后 台 子 代 理  ⭐⭐
+| 特 性  | 前 台  | 后 台  |
+|------|------|------|
+| 阻 塞 性  | 阻 塞 主 对 话  | 并 发 运 行  |
+| 权 限 提 示  | 传 递 给 用 户  | 启 动 前 预 批 准  |
+| 提 问 能 力  | 可 使 用  AskUserQuestion | 失 败 但 不 中 断  |
+| MCP 工 具  | 可 用  | 不 可 用  |
+| 切 换 方 式  | Ctrl+B 转 后 台  | 可 恢 复 到 前 台  |
+知 识 点  5: 持 久 化 记 忆  ⭐⭐
+yaml
+memory: user    跨 所 有 项 目 记 忆 
+memory: project  项 目 特 定 ，可 版 本 控 制 
+memory: local    项 目 特 定 ，不 入 版 本 控 制 
+启 用 记 忆 后 ：
+- 自 动 注 入 前  200 行  MEMORY.md
+- 自 动 启 用  Read/Write/Edit 工 具 
+- 子 代 理 主 动 维 护 知 识 库 
+---
+重 要 概 念 
+| 术 语  | 解 释  |
+|------|------|
+| Subagent | 在 独 立 上 下 文 中 运 行 的 专 业 化  AI 助 手  |
+| Thoroughness | 探 索 深 度 级 别 ：quick / medium / very thorough |
+| Hooks | 生 命 周 期 事 件 触 发 器 （PreToolUse、PostToolUse、Stop） |
+| Resume | 恢 复 已 有 子 代 理 ，保 留 完 整 对 话 历 史  |
+| Auto-compaction | 自 动 压 缩 ，默 认 在  95% 容 量 时 触 发  |
+---
+关 键 配 置 字 段 
+YAML Frontmatter 结 构 
+yaml
+---
+name: my-agent              必 填 ：唯 一 标 识 符 
+description: ...            必 填 ：何 时 使 用 此 代 理 
+tools: Read, Grep, Glob     可 选 ：允 许 的 工 具 白 名 单 
+disallowedTools: Write, Edit  可 选 ：工 具 黑 名 单 
+model: sonnet               可 选 ：sonnet/opus/haiku/inherit
+permissionMode: default     可 选 ：权 限 模 式 
+skills:                     可 选 ：预 加 载 技 能 
+  - api-conventions
+hooks:                      可 选 ：生 命 周 期 钩 子 
+memory: user                可 选 ：持 久 化 记 忆 
+---
+Permission Modes
+| 模 式  | 行 为  |
+|------|------|
+| default | 标 准 权 限 检 查  |
+| acceptEdits | 自 动 接 受 文 件 编 辑  |
+| dontAsk | 自 动 拒 绝 权 限 提 示  |
+| bypassPermissions | 跳 过 所 有 权 限 检 查  |
+| plan | 计 划 模 式 （只 读 ） |
+---
+使 用 模 式 
+1. 隔 离 高 输 出 操 作 
+Use a subagent to run the test suite and report only the failing tests
+2. 并 行 研 究 
+Research the authentication, database, and API modules in parallel
+3. 链 式 子 代 理 
+Use code-reviewer to find issues, then optimizer to fix them
+---
+示 例 子 代 理 
+Code Reviewer
+yaml
+---
+name: code-reviewer
+description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code.
+tools: Read, Grep, Glob, Bash
+model: inherit
+---
+Debugger
+yaml
+---
+name: debugger
+description: Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
+tools: Read, Edit, Bash, Grep, Glob
+---
+Data Scientist
+yaml
+---
+name: data-scientist
+description: Data analysis expert for SQL queries, BigQuery operations, and data insights. Use proactively for data analysis tasks and queries.
+tools: Bash, Read, Write
+model: sonnet
+---
+---
+子 代 理  vs Skills vs 主 对 话 
+| 特 性  | 主 对 话  | Skills | 子 代 理  |
+|------|--------|--------|--------|
+| 上 下 文  | 共 享  | 共 享  | 独 立  |
+| 工 具 限 制  | 无  | 无  | 可 限 制  |
+| 适 用 场 景  | 快 速 迭 代 、频 繁 交 互  | 可 复 用 工 作 流  | 高 输 出 、需 隔 离  |
+---
+标 签 
+#ClaudeCode #Subagents #AI工 作 流  #开 发 工 具  #上 下 文 管 理 
+---
+核 心 洞 察 
+1. 子 代 理  ≠ Skills：子 代 理 在 隔 离 上 下 文 中 运 行 ，Skills 在 主 对 话 上 下 文 中 运 行 
+2. 描 述 决 定 触 发 ：编 写 清 晰 的  description 是 让  Claude 正 确 委 派 的 关 键 ，建 议 包 含  "use proactively" 等 短 语 
+3. Resume 机 制 强 大 ：恢 复 子 代 理 可 保 留 完 整 历 史 ，适 合 分 阶 段 复 杂 任 务 
+---
+延 伸 阅 读 
+- [插 件 开 发 ](https://code.claude.com/docs/en/plugins) - 分 发 子 代 理 
+- [Agent SDK](https://code.claude.com/docs/en/agent-sdk) - CI/CD 自 动 化 
+- [MCP 服 务 器 ](https://code.claude.com/docs/en/mcp) - 外 部 工 具 集 成
+
+================================================================================
+
+=== ID: 2204 | Title: GSD (Get Shit Done) - Claude Code 完整使用教程 | Path: 人工智能/claude code/GSD-Claude-Code 使用教程.md | Words: 7296 ===
+GSD (Get Shit Done) - Claude Code 完 整 使 用 教 程 
+> GSD 是 一 个 轻 量 级 但 强 大 的 元 提 示  (meta-prompting)、上 下 文 工 程 和 规 范 驱 动 开 发 系 统 ，专 为  Claude Code、OpenCode、Gemini CLI 和  Codex 设 计 。
+>
+> 核 心 作 用 : 解 决  Context Rot（上 下 文 腐 烂 ） —— 当  AI 上 下 文 窗 口 被 填 满 时 ，代 码 质 量 会 下 降 的 问 题 。
+---
+📦 一 、快 速 安 装 
+1. 安 装  GSD
+打 开 终 端 ，运 行 ：
+bash
+npx get-shit-done-cc@latest
+安 装 程 序 会 提 示 你 选 择 ：
+- 运 行 时 ：选 择  Claude Code（或  OpenCode、Gemini、Codex）
+- 位 置 ：Global（所 有 项 目 ）或  Local（当 前 项 目 ）
+2. 验 证 安 装 
+bash
+/gsd:help          Claude Code / Gemini
+/gsd-help          OpenCode
+$gsd-help          Codex
+能 看 到 帮 助 信 息 就 说 明 安 装 成 功 了 ！
+3. 推 荐 配 置 
+GSD 需 要 频 繁 执 行  Git 命 令 ，建 议 使 用 无 权 限 模 式 运 行  Claude Code：
+bash
+claude --dangerously-skip-permissions
+> 💡 为 什 么 ？ 如 果 每 次  git commit、date 都 要 确 认 ，会 非 常 打 断 工 作 流 。
+---
+🎯 二 、核 心 工 作 流 程 
+完 整 流 程 图 
+/gsd:new-project 
+    ↓
+/gsd:discuss-phase N 
+    ↓
+/gsd:plan-phase N 
+    ↓
+/gsd:execute-phase N 
+    ↓
+/gsd:verify-work N 
+    ↓
+/gsd:complete-milestone
+---
+📝 三 、详 细 使 用 步 骤 
+步 骤  1️⃣：初 始 化 项 目 
+bash
+/gsd:new-project
+系 统 会 执 行 ：
+1. 提 问 阶 段  - 系 统 会 一 直 问 问 题 直 到 完 全 理 解 你 的 想 法 
+   - 项 目 目 标 、功 能 需 求 
+   - 技 术 栈 偏 好 
+   - 约 束 条 件 和 边 界 情 况 
+   
+2. 市 场 /技 术 研 究  - 并 行 启 动 多 个  Agent 研 究 相 关 领 域 （可 选 但 推 荐 ）
+3. 需 求 提 取  - 自 动 区 分  v1/v2 功 能 和 范 围 外 内 容 
+4. 创 建 路 线 图  - 生 成 分 阶 段 的 开 发 计 划 
+生 成 的 文 件 ：
+- PROJECT.md - 项 目 愿 景 （始 终 加 载 ）
+- REQUIREMENTS.md - 需 求 文 档 
+- ROADMAP.md - 开 发 路 线 图 
+- STATE.md - 决 策 和 状 态 记 录 
+- .planning/research/ - 研 究 报 告 
+---
+步 骤  2️⃣：讨 论 阶 段 （可 选 但 推 荐 ）
+bash
+/gsd:discuss-phase 1
+作 用 ： 在 规 划 之 前 ，捕 获 你 对 实 现 方 式 的 偏 好 
+系 统 会 分 析 当 前 阶 段 ，针 对 模 糊 地 带 提 问 ：
+- 视 觉 功 能  → 布 局 、密 度 、交 互 方 式 、空 状 态 
+- API/CLI → 响 应 格 式 、参 数 、错 误 处 理 
+- 内 容 系 统  → 结 构 、语 气 、深 度 
+- 组 织 任 务  → 分 组 标 准 、命 名 规 则 
+输 出 ： {phasenum}-CONTEXT.md - 这 份 文 档 会 指 导 后 续 的 研 究 和 规 划 
+> 💡 提 示 ： 这 里 讨 论 得 越 详 细 ，最 终 结 果 越 符 合 你 的 预 期 。跳 过 这 步 会 得 到 "合 理 默 认 "，深 入 讨 论 会 得 到 "你 的 愿 景 "。
+---
+步 骤  3️⃣：规 划 阶 段 
+bash
+/gsd:plan-phase 1
+系 统 会 执 行 ：
+1. 研 究  - 调 查 如 何 实 现 这 个 阶 段 ，参 考 你 的  CONTEXT.md 决 策 
+2. 规 划  - 创 建  2-3 个 原 子 任 务 计 划 （XML 结 构 ）
+3. 验 证  - 检 查 计 划 是 否 符 合 需 求 ，循 环 验 证 直 到 通 过 
+每 个 计 划 的 结 构 示 例 ：
+xml
+<task type="auto">
+  <name>Create login endpoint</name>
+  <files>src/app/api/auth/login/route.ts</files>
+  <action>Use jose for JWT tokens...</action>
+  <verify>curl -X POST http://localhost:3000/api/auth/login...</verify>
+  <done>Valid credentials return cookie, invalid returns 401</done>
+</task>
+生 成 的 文 件 ：
+- {phasenum}-RESEARCH.md - 技 术 研 究 报 告 
+- {phasenum}-{N}-PLAN.md - 具 体 任 务 计 划 
+---
+步 骤  4️⃣：执 行 阶 段 
+bash
+/gsd:execute-phase 1
+系 统 会 ：
+1. 分 析 任 务 依 赖 关 系 
+2. 并 行 波 次 执 行  - 独 立 任 务 并 行 执 行 
+3. 每 个 执 行 器 都 有 全 新 的  200K 上 下 文 窗 口 （避 免 上 下 文 腐 烂 ）
+4. 每 个 任 务 完 成 后 独 立  Git 提 交 
+执 行 流 程 ：
+Wave 1: Executor A → commit
+        Executor B → commit
+        ↓
+Wave 2: Executor C → commit (依 赖  Wave 1)
+        ↓
+Verifier: 检 查 代 码 库 是 否 符 合 阶 段 目 标 
+---
+步 骤  5️⃣：验 证 工 作 
+bash
+/gsd:verify-work 1
+作 用 ： 用 户 验 收 测 试  (UAT)
+- 系 统 会 展 示 完 成 的 功 能 
+- 你 可 以 手 动 测 试 
+- 如 果 发 现 问 题 ，系 统 会 自 动 诊 断 并 创 建 修 复 计 划 
+---
+步 骤  6️⃣：完 成 里 程 碑 
+bash
+/gsd:audit-milestone    验 证 里 程 碑 是 否 完 成 
+/gsd:complete-milestone 归 档 里 程 碑 ，创 建  release tag
+/gsd:new-milestone v2.0 开 始 下 一 个 版 本 周 期 
+---
+🛠️ 四 、常 用 命 令 速 查 
+核 心 工 作 流 
+| 命 令  | 作 用  | 何 时 使 用  |
+|------|------|----------|
+| /gsd:new-project | 完 整 项 目 初 始 化  | 新 项 目 开 始  |
+| /gsd:new-project --auto @idea.md | 从 文 档 自 动 初 始 化  | 已 有  PRD 或 需 求 文 档  |
+| /gsd:discuss-phase N | 捕 获 实 现 决 策  | 规 划 前 ，定 义 "怎 么 做 " |
+| /gsd:plan-phase N | 研 究  + 规 划  + 验 证  | 执 行 前  |
+| /gsd:execute-phase N | 并 行 执 行 所 有 计 划  | 规 划 完 成 后  |
+| /gsd:verify-work N | 手 动 验 收 测 试  | 执 行 完 成 后  |
+| /gsd:audit-milestone | 验 证 里 程 碑 完 成 度  | 完 成 里 程 碑 前  |
+| /gsd:complete-milestone | 归 档 并 打  tag | 所 有 阶 段 验 证 通 过  |
+| /gsd:new-milestone | 开 始 新 版 本 周 期  | 完 成 里 程 碑 后  |
+导 航 与 状 态 
+| 命 令  | 作 用  |
+|------|------|
+| /gsd:progress | 显 示 当 前 状 态 和 下 一 步  |
+| /gsd:resume-work | 恢 复 上 次 会 话 的 上 下 文  |
+| /gsd:pause-work | 保 存 上 下 文 （用 于 暂 停 ） |
+| /gsd:help | 显 示 所 有 命 令  |
+| /gsd:update | 检 查 更 新  |
+| /gsd:join-discord | 加 入  Discord 社 区  |
+阶 段 管 理 
+| 命 令  | 作 用  |
+|------|------|
+| /gsd:add-phase | 添 加 新 阶 段 到 路 线 图  |
+| /gsd:insert-phase N | 插 入 紧 急 任 务 （使 用 小 数 编 号 ） |
+| /gsd:remove-phase N | 移 除 某 个 阶 段  |
+| /gsd:list-phase-assumptions N | 预 览  AI 的 计 划 方 向  |
+| /gsd:research-phase N | 深 度 研 究 某 个 阶 段  |
+现 有 代 码 库 （Brownfield）
+bash
+/gsd:map-codebase
+作 用 ： 分 析 现 有 代 码 库 ，生 成 ：
+- codebase/STACK.md - 技 术 栈 分 析 
+- codebase/ARCHITECTURE.md - 架 构 分 析 
+- codebase/CONVENTIONS.md - 代 码 规 范 
+- codebase/CONCERNS.md - 关 注 点 
+然 后 运 行  /gsd:new-project 时 ，问 题 会 聚 焦 在 你 要 添 加 什 么 ，而 不 是 从 头 开 始 。
+实 用 工 具 
+| 命 令  | 作 用  |
+|------|------|
+| /gsd:quick "任 务 描 述 " | 快 速 小 任 务 （Bug 修 复 、小 功 能 、配 置 变 更 ） |
+| /gsd:debug [描 述 ] | 系 统 化 调 试  |
+| /gsd:add-todo [描 述 ] | 捕 获 想 法 稍 后 处 理  |
+| /gsd:check-todos | 查 看 待 办 清 单  |
+| /gsd:settings | 配 置 工 作 流 和 模 型  |
+| /gsd:set-profile <配 置 名 > | 快 速 切 换 模 型 配 置  |
+---
+⚙️ 五 、配 置 选 项 
+配 置 文 件 位 置 ：.planning/config.json
+运 行  /gsd:settings 可 以 交 互 式 配 置 。
+核 心 设 置 
+| 设 置  | 选 项  | 默 认  | 说 明  |
+|------|------|------|------|
+| mode | interactive / yolo | interactive | yolo 模 式 自 动 确 认 所 有 决 策  |
+| granularity | coarse / standard / fine | standard | 阶 段 粒 度 （3-5 / 5-8 / 8-12 个 阶 段 ） |
+| modelprofile | quality / balanced / budget | balanced | 模 型 质 量 档 位  |
+工 作 流 开 关 
+| 设 置  | 默 认  | 说 明  | 何 时 关 闭  |
+|------|------|------|----------|
+| workflow.research | ✅ | 领 域 研 究  | 熟 悉 领 域 ，节 省  token |
+| workflow.plancheck | ✅ | 计 划 验 证 循 环  | 快 速 原 型  |
+| workflow.verifier | ✅ | 执 行 后 验 证  | 小 型 任 务  |
+| workflow.nyquistvalidation | ✅ | 自 动 化 测 试 覆 盖 验 证  | 原 型 阶 段  |
+模 型 档 位 对 比 
+| Agent | quality | balanced | budget |
+|-------|---------|----------|--------|
+| 规 划 者  | Opus | Opus | Sonnet |
+| 执 行 者  | Opus | Sonnet | Sonnet |
+| 研 究 者  | Opus | Sonnet | Haiku |
+| 验 证 者  | Sonnet | Sonnet | Haiku |
+---
+💡 六 、实 际 使 用 示 例 
+场 景  1：从 零 开 始 创 建 项 目 
+bash
+1. 初 始 化 
+/gsd:new-project
+→ 回 答 系 统 的 问 题 ，描 述 你 的 想 法 
+2. 讨 论 第 一 阶 段 实 现 细 节 
+/gsd:discuss-phase 1
+→ 决 定 视 觉 风 格 、API 格 式 等 
+3. 规 划 
+/gsd:plan-phase 1
+4. 执 行 
+/gsd:execute-phase 1
+5. 验 证 
+/gsd:verify-work 1
+6. 继 续 下 一 阶 段 ...
+/gsd:plan-phase 2
+/gsd:execute-phase 2
+场 景  2：为 现 有 项 目 添 加 功 能 
+bash
+1. 先 分 析 现 有 代 码 
+/gsd:map-codebase
+2. 初 始 化 项 目 （聚 焦 新 增 功 能 ）
+/gsd:new-project
+3. 按 正 常 流 程 执 行 
+场 景  3：快 速 小 任 务 
+bash
+/gsd:quick "修 复 登 录 页 面 的 响 应 式 布 局 问 题 "
+适 用 于 ：Bug 修 复 、小 功 能 、配 置 变 更 
+场 景  4：中 途 暂 停 和 恢 复 
+bash
+暂 停 前 保 存 上 下 文 
+/gsd:pause-work
+下 次 会 话 恢 复 
+/gsd:resume-work
+---
+🎓 七 、核 心 设 计 理 念 
+1. 上 下 文 工 程 
+GSD 通 过 精 心 设 计 的 文 件 管 理 上 下 文 ，避 免  AI"忘 记 "重 要 信 息 ：
+| 文 件  | 作 用  | 生 命 周 期  |
+|------|------|----------|
+| PROJECT.md | 项 目 愿 景 ，始 终 加 载  | 整 个 项 目  |
+| REQUIREMENTS.md | 需 求 追 踪 （分  v1/v2/范 围 外 ） | 整 个 项 目  |
+| ROADMAP.md | 分 阶 段 路 线 图  | 整 个 项 目  |
+| STATE.md | 决 策 、阻 塞 、立 场 记 忆  | 整 个 项 目  |
+| CONTEXT.md | 实 现 偏 好 （视 觉 、API 等 ） | 每 阶 段  |
+| RESEARCH.md | 技 术 栈 、架 构 、陷 阱 研 究  | 每 阶 段  |
+| PLAN.md | XML 结 构 原 子 任 务  | 每 阶 段  |
+| SUMMARY.md | 执 行 总 结 和 变 更  | 每 阶 段  |
+2. XML 提 示 格 式 化 
+每 个 计 划 都 是 结 构 化  XML，例 如 ：
+xml
+<task type="auto">
+  <name>Create login endpoint</name>
+  <files>src/app/api/auth/login/route.ts</files>
+  <action>Use jose for JWT tokens. Store in HTTP-only cookie.</action>
+  <verify>curl -X POST http://localhost:3000/api/auth/login -d '{"email":"test@example.com","password":"test123"}'</verify>
+  <done>Valid credentials return Set-Cookie header. Invalid returns 401 with error message.</done>
+</task>
+这 种 结 构 让  AI 清 晰 理 解 ：
+- 做 什 么 （name）
+- 改 哪 些 文 件 （files）
+- 怎 么 做 （action）
+- 如 何 验 证 （verify）
+- 完 成 标 准 （done）
+3. 多  Agent 编 排 
+| Agent | 数 量  | 作 用  |
+|-------|------|------|
+| 研 究 者  | 4 并 行  | 技 术 栈 、功 能 、架 构 、陷 阱  |
+| 规 划 者  | 1 | 创 建 任 务 计 划  |
+| 检 查 器  | 1 | 验 证 计 划 是 否 符 合 需 求  |
+| 执 行 者  | 多 波 次  | 执 行 任 务 ，每 个  200K 上 下 文  |
+| 验 证 器  | 1 | 独 立 检 查 完 成 质 量  |
+4. 原 子  Git 提 交 
+每 个 任 务 独 立 提 交 ，便 于 ：
+- ✅ git bisect 快 速 定 位 问 题 
+- ✅ 独 立 回 滚 某 个 功 能 
+- ✅ 清 晰 的 提 交 历 史 
+- ✅ Code Review 更 精 准 
+---
+🔗 八 、学 习 资 源 
+- GitHub 仓 库 : https://github.com/gsd-build/get-shit-done
+- NPM 包 : https://www.npmjs.com/package/get-shit-done-cc
+- Discord 社 区 : https://discord.gg/gsd
+- Twitter/X: @gsdfoundation
+---
+⚠️ 常 见 问 题 
+Q: 为 什 么 需 要  --dangerously-skip-permissions？
+A: GSD 会 频 繁 执 行  git commit、date、echo 等 命 令 ，每 次 确 认 会 严 重 打 断 工 作 流 。如 果 你 坚 持 要 用 权 限 控 制 ，可 以 在  .claude/settings.json 中 配 置 允 许 的 命 令 列 表 。
+Q: 可 以 用 免 费 的 模 型 吗 ？
+A: 可 以 ！在  /gsd:settings 中 选 择  budget 模 型 配 置 ，会 使 用  Haiku 等 更 便 宜 的 模 型 。适 合 预 算 有 限 或 简 单 任 务 。
+Q: 适 合 小 项 目 吗 ？
+A: 适 合 ！你 可 以 只 使 用 核 心 流 程 ，跳 过 研 究 和 讨 论 步 骤 。对 于 非 常 小 的 任 务 ，使 用  /gsd:quick 命 令 即 可 。
+Q: 如 何 更 新  GSD？
+A: 运 行  /gsd:update 检 查 更 新 ，或 重 新 运 行  npx get-shit-done-cc@latest
+Q: 支 持 哪 些  AI 工 具 ？
+A: 
+- ✅ Claude Code (主 要 支 持 )
+- ✅ OpenCode (开 源 ，支 持 免 费 模 型 )
+- ✅ Gemini CLI
+- ✅ Codex (通 过  skills 方 式 )
+Q: 可 以 和 现 有 工 作 流 整 合 吗 ？
+A: 可 以 ！GSD 生 成 的 都 是  Markdown 文 件 ，可 以 和 你 的 文 档 系 统 整 合 。Git 分 支 策 略 也 可 配 置 。
+---
+🎯 九 、适 合 人 群 
+- ✅ 独 立 开 发 者 想 要 描 述 需 求 并 让  AI 正 确 构 建 
+- ✅ 不 想 玩 "企 业 角 色 扮 演 "（冲 刺 会 议 、故 事 点 、Jira）的 创 作 者 
+- ✅ 需 要 可 靠 、可 扩 展 的  AI 编 码 工 作 流 
+- ✅ 希 望  AI 产 出 高 质 量 、可 维 护 代 码 的 开 发 者 
+不 适 合 ：
+- ❌ 想 要 完 全 手 动 控 制 每 个 细 节 的 人 
+- ❌ 已 经 有 一 套 成 熟 开 发 流 程 的 大 团 队 
+---
+教 程 基 于  GSD v1.0+，最 后 更 新 ：2026-03-13
+
+================================================================================
+
+=== ID: 2205 | Title: gstack Skills 功能一览表 | Path: 人工智能/claude code/gstack-skills.md | Words: 4438 ===
+gstack Skills 功 能 一 览 表 
+> 来 源 : [garrytan/gstack](https://github.com/garrytan/gstack) | 版 本 : 1.39.0.0
+---
+完 整 技 能 列 表 （48个 ）
+核 心 流 程 技 能 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /office-hours | YC Office Hours | 六 问 产 品 审 视 ，反 驳 你 的 方 案 设 计 ，生 成 替 代 实 现 方 案  | 产 品 构 思 、头 脑 风 暴  |
+| /plan-ceo-review | CEO/Founder | 重 新 思 考 问 题 本 质 ，4种 范 围 模 式 （扩 展 /选 择 扩 展 /保 持 /缩 减 ） | 战 略 方 向 、Scope决 策  |
+| /plan-eng-review | Eng Manager | 锁 定 架 构 、数 据 流 、边 缘 案 例 和 测 试 计 划  | 架 构 设 计 、技 术 方 案  |
+| /plan-design-review | Senior Designer | 每 个 设 计 维 度 0-10评 分 ，AI垃 圾 检 测  | 设 计 规 划 审 查  |
+| /plan-devex-review | DX Lead | 开 发 者 体 验 评 估 ，20-45个 强 制 问 题  | API/CLI/SDK设 计  |
+| /autoplan | Review Pipeline | 一 键 执 行 CEO→设 计 →工 程 →DX完 整 评 审 流 程  | 快 速 全 评 审  |
+代 码 与 审 查 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /review | Staff Engineer | 发 现 通 过 CI但 会 在 生 产 环 境 爆 炸 的 bug，自 动 修 复 明 显 问 题  | 代 码 审 查  |
+| /investigate | Debugger | 系 统 化 根 因 调 试 ，铁 律 ：无 调 查 不 修 复 ，3次 失 败 后 停 止  | Bug排 查  |
+| /devex-review | DX Tester | 真 实 开 发 者 体 验 审 计 ，测 试 入 职 流 程  | 上 线 前 DX验 证  |
+| /codex | Second Opinion | OpenAI Codex CLI独 立 评 审 ，三 种 模 式  | 交 叉 审 查  |
+设 计 相 关 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /design-consultation | Design Partner | 从 零 构 建 设 计 系 统 ，研 究 竞 品 ，生 成 逼 真 Mockup | 品 牌 /视 觉 设 计  |
+| /design-shotgun | Design Explorer | 生 成 4-6个 AI Mockup变 体 ，打 开 对 比 板 ，收 集 反 馈 迭 代  | 快 速 探 索 方 案  |
+| /design-html | Design Engineer | 将 Mockup转 为 生 产 级 HTML/CSS，30KB零 依 赖  | 前 端 实 现  |
+| /design-review | Designer Who Codes | 审 计 +修 复 ，原 子 提 交 ，前 后 截 图 对 比  | 视 觉 修 复  |
+QA与 测 试 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /qa | QA Lead | 测 试 App找 bug，自 动 修 复 ，生 成 回 归 测 试  | 功 能 测 试  |
+| /qa-only | QA Reporter | 同 上 但 只 报 告 bug，不 改 代 码  | Bug报 告  |
+| /benchmark | Performance Engineer | 基 线 页 面 加 载 时 间 、Core Web Vitals | 性 能 测 试  |
+部 署 与 发 布 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /ship | Release Engineer | 同 步 主 线 、运 行 测 试 、审 计 覆 盖 率 、推 送 代 码  | 创 建 PR |
+| /land-and-deploy | Release Engineer | 合 并 PR、等 待 CI和 部 署 、验 证 生 产 环 境 健 康  | 一 键 上 线  |
+| /canary | SRE | 部 署 后 监 控 循 环 ，监 控 控 制 台 错 误 、性 能 回 归  | 生 产 监 控  |
+| /setup-deploy | Deploy Configurator | 一 次 性 设 置 land-and-deploy，检 测 平 台 和 命 令  | 部 署 配 置  |
+文 档 与 知 识 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /document-generate | Documentation Author | 用 Diataxis框 架 从 零 生 成 缺 失 文 档  | 文 档 编 写  |
+| /document-release | Technical Writer | 更 新 所 有 项 目 文 档 匹 配 已 发 布 内 容  | 发 版 更 新  |
+| /retro | Eng Manager | 团 队 感 知 周 回 顾 ，每 人 分 解 ，发 货  streaks | 周 会 回 顾  |
+| /learn | Memory | 管 理 跨 会 话 学 习 的 知 识 ，搜 索 、修 剪 、导 出  | 知 识 管 理  |
+安 全 
+| 技 能  | 角 色 定 位  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /cso | Chief Security Officer | OWASP Top 10 + STRIDE威 胁 模 型 ，17个 误 报 排 除  | 安 全 审 计  |
+安 全 护 栏 
+| 技 能  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|
+| /careful | 危 险 命 令 警 告 （rm -rf, DROP TABLE, force-push） | 安 全 操 作  |
+| /freeze | 限 制 文 件 编 辑 到 指 定 目 录  | 调 试 时 保 护  |
+| /guard | careful + freeze 组 合 ，最 大 安 全  | 生 产 环 境 工 作  |
+| /unfreeze | 解 除 冻 结 限 制  | 继 续 编 辑  |
+浏 览 器 与 浏 览 
+| 技 能  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|
+| /browse | QA工 程 师 的 眼 睛 ，真 实 Chromium浏 览 器 ，100ms/命 令  | 网 页 测 试  |
+| /open-gstack-browser | 启 动 GStack Browser，侧 边 栏 、反 爬 虫 隐 身 、自 动 模 型 路 由  | 有 头 浏 览 器  |
+| /setup-browser-cookies | 从 真 实 浏 览 器 导 入 Cookies（Chrome/Arc/Brave/Edge） | 认 证 测 试  |
+上 下 文 管 理 
+| 技 能  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|----------|
+| /context-save | 保 存 进 度 、检 查 点  | 工 作 备 份  |
+| /context-restore | 恢 复 之 前 的 进 度  | 继 续 工 作  |
+其 他 
+| 技 能  | 功 能 说 明  | 使 用 场 景  |
+|------|----------|----------|
+| /pair-agent | 多 Agent协 调 ，共 享 浏 览 器 给 任 何 AI Agent | Agent协 作  |
+| /setup-gbrain | 配 置 GBrain持 久 知 识 库  | 知 识 库 设 置  |
+| /sync-gbrain | 保 持 GBrain代 码 索 引 最 新  | 知 识 同 步  |
+| /gstack-upgrade | 升 级 gstack到 最 新 版 本  | 版 本 更 新  |
+---
+评 审 技 能 对 照 表 
+| 构 建 目 标  | 计 划 阶 段 （写 代 码 前 ） | 上 线 审 计 （发 布 后 ） |
+|----------|----------------------|-------------------|
+| 终 端 用 户  (UI, Web App) | /plan-design-review | /design-review |
+| 开 发 者  (API, CLI, SDK, 文 档 ) | /plan-devex-review | /devex-review |
+| 架 构  (数 据 流 , 性 能 , 测 试 ) | /plan-eng-review | /review |
+| 全 部  | /autoplan (自 动 检 测 ) | — |
+---
+快 速 使 用 指 南 
+典 型 开 发 流 程 
+1. /office-hours        产 品 构 思 
+2. /plan-ceo-review    CEO评 审 
+3. /plan-eng-review    架 构 设 计 
+4. /review             代 码 审 查 
+5. /qa                 功 能 测 试 
+6. /ship               推 送 代 码 
+按 需 使 用 
+| 你 想 做 什 么  | 使 用 技 能  |
+|-----------|----------|
+| 构 思 新 产 品  | /office-hours |
+| 验 证 设 计 方 向  | /design-shotgun |
+| 做 安 全 检 查  | /cso |
+| 检 查 网 站 是 否 正 常  | /qa |
+| 上 线 并 监 控  | /land-and-deploy |
+| 保 存 进 度 继 续 工 作  | /context-save |
+---
+OpenClaw / Codex 兼 容 性 
+gstack 支 持 多 种  AI 编 码  Agent：
+| Agent | 技 能 安 装 位 置  |
+|-------|-------------|
+| OpenAI Codex CLI | /.codex/skills/gstack-/ |
+| OpenCode | /.config/opencode/skills/gstack-/ |
+| Cursor | /.cursor/skills/gstack-/ |
+| Factory Droid | /.factory/skills/gstack-/ |
+| Slate | /.slate/skills/gstack-/ |
+| Kiro | /.kiro/skills/gstack-/ |
+| Hermes | /.hermes/skills/gstack-/ |
+| GBrain | /.gbrain/skills/gstack-/ |
+> 想 添 加 其 他  Agent 支 持 ？参 考  [docs/ADDINGAHOST.md](docs/ADDINGAHOST.md)
+---
+最 后 更 新 : 2026-05-15
+
+================================================================================
+
+=== ID: 2206 | Title: Connect Claude Code to tools via MCP 分析报告 | Path: 人工智能/claude code/MCP文档分析报告.md | Words: 2198 ===
+Connect Claude Code to tools via MCP 分 析 报 告 
+基 本 信 息 
+- 标 题 : Connect Claude Code to tools via MCP
+- URL: https://code.claude.com/docs/en/mcp
+- 分 析 时 间 : 2025-02-06
+核 心 摘 要 
+本 文 档 是  Claude Code 的  MCP (Model Context Protocol) 官 方 文 档 。MCP 是 一 个 开 源 的  AI-工 具 集 成 标 准 ，允 许  Claude Code 连 接 到 数 百 个 外 部 工 具 、数 据 库 和  API。文 档 详 细 介 绍 了 如 何 安 装 、配 置 和 管 理  MCP 服 务 器 ，以 及 三 种 传 输 方 式 （HTTP、SSE、stdio）和 三 种 配 置 范 围 （本 地 、项 目 、用 户 ）。
+内 容 结 构 
+1. MCP 简 介  - 什 么 是  MCP 及 其 用 途 
+2. 安 装 方 式  - 三 种 传 输 方 式 的 安 装 指 南 
+3. 配 置 范 围  - Local、Project、User 三 级 作 用 域 
+4. 实 际 示 例  - Sentry、GitHub、PostgreSQL 等 集 成 案 例 
+5. 身 份 验 证  - OAuth 2.0 认 证 配 置 
+6. 高 级 功 能  - 工 具 搜 索 、资 源 引 用 、命 令 提 示 
+7. 企 业 管 理  - managed-mcp.json 和 允 许 /拒 绝 列 表 
+关 键 知 识 点 
+1. MCP 的 三 种 传 输 方 式 
+| 方 式  | 适 用 场 景  | 命 令 示 例  |
+|------|----------|----------|
+| HTTP | 云 服 务 、远 程  API | claude mcp add --transport http notion https://mcp.notion.com/mcp |
+| SSE | 服 务 器 推 送 事 件  | claude mcp add --transport sse asana https://mcp.asana.com/sse |
+| stdio | 本 地 进 程 、系 统 访 问  | claude mcp add --transport stdio db -- npx -y @bytebase/dbhub |
+2. 三 种 配 置 范 围 
+| 范 围  | 存 储 位 置  | 适 用 场 景  |
+|------|----------|----------|
+| Local | /.claude.json (项 目 路 径 ) | 个 人 开 发 、敏 感 凭 证 、实 验 性 配 置  |
+| Project | .mcp.json (项 目 根 目 录 ) | 团 队 共 享 、版 本 控 制 、协 作 工 具  |
+| User | /.claude.json | 跨 项 目 个 人 工 具 、常 用 服 务  |
+3. 环 境 变 量 扩 展 
+.mcp.json 支 持 环 境 变 量 语 法 ：
+- ${VAR} - 展 开 变 量 值 
+- ${VAR:-default} - 变 量 未 设 置 时 使 用 默 认 值 
+示 例 ：
+json
+{
+  "mcpServers": {
+    "api-server": {
+      "type": "http",
+      "url": "${APIBASEURL:-https://api.example.com}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${APIKEY}"
+      }
+    }
+  }
+}
+重 要 概 念 
+| 术 语  | 解 释  |
+|------|------|
+| MCP | Model Context Protocol，AI-工 具 集 成 的 开 源 标 准  |
+| MCP Server | 提 供  tools/prompts/resources 的 服 务 端 程 序  |
+| Transport | MCP 连 接 的 通 信 方 式 ：HTTP/SSE/stdio |
+| Scope | MCP 配 置 的 作 用 域 级 别  |
+| Tool Search | 当  MCP 工 具 定 义 超 过 上 下 文 窗 口  10% 时 自 动 启 用 ，动 态 加 载 工 具  |
+| MCP Resources | 可 通 过  @ 提 及 引 用 的 资 源 ，类 似 文 件 引 用  |
+数 据 与 事 实 
+- 输 出 警 告 阈 值 : MCP 工 具 输 出 超 过  10,000 tokens 时 显 示 警 告 
+- 默 认 输 出 限 制 : 25,000 tokens
+- 可 通 过 环 境 变 量 调 整 : MAXMCPOUTPUTTOKENS
+- Tool Search 自 动 触 发 : 默 认  10% 上 下 文 阈 值 
+- 支 持 的 模 型 : Sonnet 4+、Opus 4+（Haiku 不 支 持 工 具 搜 索 ）
+实 用 命 令 速 查 
+bash
+列 出 所 有 已 配 置 的 服 务 器 
+claude mcp list
+获 取 特 定 服 务 器 详 情 
+claude mcp get github
+删 除 服 务 器 
+claude mcp remove github
+在  Claude Code 中 检 查 服 务 器 状 态 
+/mcp
+启 动  Claude 作 为  MCP 服 务 器 
+claude mcp serve
+延 伸 阅 读 
+- [Claude Code 官 方 文 档 ](https://code.claude.com/docs/en/intro)
+- [MCP 协 议 规 范 ](https://modelcontextprotocol.io/)
+- [Plugin 开 发 指 南 ](https://code.claude.com/docs/en/plugins) - 插 件 中 打 包  MCP 服 务 器
+
+================================================================================
+
+=== ID: 2207 | Title: 1. 克隆仓库（放用户配置目录，方便更新） | Path: 人工智能/claude code/Superpowers安装.md | Words: 4504 ===
+在  Claude Code 和  OpenCode 中 安 装 与 使 用  Superpowers 的 方 式 有 明 显 区 别 ：Claude Code 走 官 方 插 件 市 场 （最 简 单 、最 推 荐 ），而  OpenCode 需 要 手 动 克 隆 仓 库  + symlink（因 为 它 目 前 没 有 内 置 的 插 件 市 场 支 持 ）。下 面 我 把 两 个 平 台 的 完 整 步 骤 、注 意 事 项 、验 证 方 式 、使 用 方 式 、常 见 问 题 及 边 缘 情 况 都 详 细 列 出 来 （基 于  2026 年  2 月 的 最 新 仓 库 状 态 ）。
+1. 在  Claude Code 中 安 装 与 使 用 （推 荐 方 式 ，2 条 命 令 搞 定 ）
+前 提   
+- 你 已 经 在 用  Claude Code（命 令 行 版 ，Anthropic 官 方 工 具 ）。
+- 确 保  Claude Code 版 本  ≥ 2.0.13（插 件 系 统 支 持 较 完 整 ）。
+- 网 络 正 常 （安 装 时 会 从  GitHub 拉 取 ）。
+安 装 步 骤 （在  Claude Code 终 端 里 直 接 输 入 ）：
+1. 先 注 册  Superpowers 的 专 用  marketplace（只 需 做 一 次 ）：
+   
+   /plugin marketplace add obra/superpowers-marketplace
+   
+2. 然 后 从 这 个  marketplace 安 装  superpowers 插 件 ：
+   
+   /plugin install superpowers@superpowers-marketplace
+   
+更 新 方 式 （以 后 想 升 级 时 用 ）：
+/plugin update superpowers
+（它 会 自 动 拉 取 最 新 技 能 和 修 复 ）
+验 证 安 装 成 功 ：
+- 退 出 当 前  Claude Code 会 话 （或 新 开 一 个 终 端 ）。
+- 重 新 启 动  Claude Code，进 入 项 目 目 录 。
+- 输 入 一 句 能 触 发  Superpowers 的 自 然 语 言 指 令 ，例 如 ：
+  - “帮 我 规 划 一 个 用 户 登 录 功 能 ，包 括 前 后 端 ”
+  - “help me plan this feature: add OAuth2 login”
+  - “let's debug why this test is failing”
+- 如 果 看 到 它 自 动 开 始  brainstorming → 输 出 结 构 化 问 题  → 等 待 你 确 认  → 生 成  Implementation Plan，说 明 成 功 了 。
+日 常 使 用 方 式 （几 乎 零 手 动 操 作 ）：
+- 不 需 要 额 外 命 令 激 活 ，Superpowers 是 “被 动 触 发  + 强 制 执 行 ”的 。
+- 你 只 要 正 常 用 自 然 语 言 描 述 需 求 ，它 就 会 根 据 上 下 文 自 动 调 用 合 适 的  skill（比 如 需 求 不 清 晰  → brainstorming；要 写 代 码  → 先  plan → TDD → subagents → review）。
+- 典 型 触 发 词 （可 以 直 接 说 ）：
+  - plan / planning / 规 划  / 设 计 
+  - implement / 实 现  / 写 代 码 
+  - debug / 调 试  / 为 什 么 报 错 
+  - review / code review / 检 查 代 码 
+  - refactor / 重 构 
+- 它 会 强 制 走 完 整 流 程 （你 不 确 认  plan 它 就 不 往 下 写 代 码 ，没 测 试 它 就 不 提 交 ）。
+Claude Code 特 有 优 势 ：
+- 安 装 最 简 单 ，官 方 支 持 最 好 。
+- 更 新 最 方 便 。
+- 与  Anthropic 生 态 集 成 最 紧 密 （子 代 理 、hooks 等 都 原 生 兼 容 ）。
+2. 在  OpenCode 中 安 装 与 使 用 （手 动  symlink 方 式 ）
+前 提   
+- 已 安 装  OpenCode（https://opencode.ai 的  CLI 工 具 ，开 源 版  Claude Code 风 格 ）。
+- Git 已 安 装 。
+- 系 统 为  macOS / Linux（Windows 可 能 需 调 整 路 径 ）。
+- 建 议 搭 配  oh-my-opencode 插 件 使 用 （增 强  subagent 和 后 台 任 务 能 力 ，但 非 必 须 ）。
+安 装 步 骤 （最 简 单 的 一 步 式 指 令 方 式 ）：
+1. 直 接 在  OpenCode 终 端 里 输 入 下 面 这 句 话 ，它 会 自 己 帮 你 执 行 安 装 ：
+   
+   Fetch and follow instructions from https://raw.githubusercontent.com/obra/superpowers/refs/heads/main/.opencode/INSTALL.md
+   
+   - OpenCode 会 自 动 读 取 那 个  INSTALL.md，然 后 提 示 或 直 接 帮 你 克 隆 和  symlink。
+等 价 的 手 动 完 整 步 骤 （如 果 你 想 自 己 控 制 ）：
+bash
+1. 克 隆 仓 库 （放 用 户 配 置 目 录 ，方 便 更 新 ）
+git clone https://github.com/obra/superpowers.git /.config/opencode/superpowers
+2. 创 建  plugins 目 录 （如 果 不 存 在 ）
+mkdir -p /.config/opencode/plugins
+3. 创 建  symlink 让  OpenCode 发 现 插 件 
+rm -f /.config/opencode/plugins/superpowers.js
+ln -s /.config/opencode/superpowers/.opencode/plugins/superpowers.js /.config/opencode/plugins/superpowers.js
+4. （可 选 但 推 荐 ）symlink 技 能 目 录 ，让 技 能 更 容 易 被 发 现 /更 新 
+ln -s /.config/opencode/superpowers/skills /.config/opencode/skills/superpowers
+5. 重 启  OpenCode
+退 出 当 前  opencode 进 程 ，然 后 重 新 运 行  opencode
+更 新 方 式 ：
+- 进 入  /.config/opencode/superpowers 目 录 
+- git pull
+- 如 果 有  symlink 变 化 ，按 上 面 步 骤 重 新  symlink
+- 重 启  OpenCode
+验 证 安 装 成 功 ：
+- 重 启  OpenCode 后 ，进 入 项 目 。
+- 输 入 类 似  Claude Code 的 触 发 句 ：
+  - “plan a new REST API endpoint for user profile”
+  - “debug this failing unit test”
+- 应 该 看 到 它 自 动 进 入  Superpowers 流 程 （问 问 题  → plan → TDD 等 ）。
+OpenCode 特 有 注 意 事 项  & 边 缘 情 况 ：
+- OpenCode 的 技 能 系 统 是 “注 入 式 ”的 ，Superpowers 会 通 过  bootstrap 做 一 些  mapping（比 如  Claude 的 某 些 指 令 在  OpenCode 里 会 映 射 成  updateplan 等 ）。
+- 如 果 你 同 时 用 了  oh-my-opencode，Superpowers 和 它 可 以 共 存 ，但 偶 尔 会 出 现  skill 名 称 冲 突 或 工 具 调 用 混 乱 （比 如  findskills 工 具 重 复 ），建 议 优 先 用  Superpowers 的 子 代 理 机 制 。
+- OpenCode 没 有  marketplace，所 以 更 新 全 靠  git pull，手 动 性 更 强 。
+- 如 果 你 经 常 切 换 项 目 ，建 议 把  superpowers 克 隆 到 全 局 路 径 ，而 不 是 每 个 项 目 单 独  clone。
+- 极 少 数 情 况 下  symlink 失 效 （权 限 问 题 或 路 径 变 了 ），可 以 删 掉 所 有  symlink 后 重 新 跑 上 面 命 令 。
+两 个 平 台 共 性  & 建 议 
+- 不 需 要 手 动 启 用 任 何  skill：安 装 后 它 们 自 动 工 作 ，靠 上 下 文 触 发 。
+- 最 有 效 的 启 动 方 式 ：新 开 一 个 干 净 会 话  + 直 接 说 “我 要 实 现 /规 划 /调 试  xxx”，让 它 从 头 走  Superpowers 流 程 。
+- 想 临 时 禁 用 ：目 前 没 有 全 局 开 关 ，最 简 单 是 新 开 一 个 不 带  Superpowers 的 会 话 ，或 者 在  prompt 里 明 确 说 “不 要 用  superpowers 流 程 ，直 接 写 代 码 ”。
+- 想 自 己 改  skill：所 有  skill 都 在  skills/ 目 录 ，都 是 纯  Markdown + prompt 文 件 ，你 可 以  fork 仓 库 修 改 后 本 地  symlink。
+- 常 见 报 错 处 理 ：
+  - “plugin not found” → 检 查 命 令 拼 写  / marketplace 是 否 添 加 
+  - “skill not triggering” → 换 个 更 明 确 的 触 发 词 （plan/debug/implement）
+  - OpenCode symlink 失 效  → 检 查 路 径 是 否 正 确 ，权 限 是 否  755
+ClaudeCode 插 件 ：Superpowers 卸 载 及 注 意 事 项 
+根 据  obra/superpowers 的 插 件 化 安 装 方 式 ，以 下 是 安 装 位 置 和 卸 载 方 法 的 详 细 说 明 ：
+一 、安 装 位 置 
+Claude Code 的 插 件 默 认 安 装 在 用 户 目 录 下 的 配 置 文 件 夹 中 ，具 体 路 径 因 操 作 系 统 而 异 ：
+| 操 作 系 统         | 插 件 安 装 路 径 （默 认 ）                                                        |
+| ----------- | ----------------------------------------------------------------- |
+| Windows | C:\Users\7\.claude\plugins\marketplaces\superpowers-marketplace |
+| macOS   | /Library/Application Support/ClaudeCode/plugins/               |
+| Linux   | /.config/ClaudeCode/plugins/                                   |
+说 明 ：
+- 插 件 会 以  superpowers 或 类 似 名 称 的 文 件 夹 形 式 存 放 在 上 述 路 径 中 ；
+    
+- 若 需 手 动 查 看 ，可 在  Claude Code 中 通 过  /plugin list 命 令 查 看 已 安 装 插 件 的 具 体 路 径 。
+    
+二 、卸 载 方 法 （推 荐 用 命 令 ，安 全 便 捷 ）
+1. 一 键 卸 载 插 件 
+在  Claude Code 中 直 接 执 行 以 下 命 令 即 可 ：
+/plugin uninstall superpowers
+2. （可 选 ）移 除 插 件 市 场 
+如 果 后 续 不 再 使 用 该 市 场 ，可 一 并 移 除 ：
+/plugin marketplace remove obra/superpowers-marketplace
+三 、验 证 卸 载 是 否 成 功 
+执 行 以 下 命 令 ，确 认  superpowers 不 在 插 件 列 表 中 ：
+/plugin list
+注 意 事 项 
+- 卸 载 前 建 议 通 过  /plugin export superpowers 备 份 自 定 义 配 置 （若 有 ）；
+    
+- 若 手 动 删 除 插 件 文 件 夹 ，需 重 启  Claude Code 生 效 ，不 建 议 新 手 操 作 ，避 免 误 删 其 他 配 置 。
+
+================================================================================
+
+=== ID: 2228 | Title: OpenClaw-OpenCode-Claude-Code对比 | Path: 人工智能/openclaw/OpenClaw-OpenCode-Claude-Code对比.md | Words: 2376 ===
+OpenClaw、OpenCode 和  Claude Code 都 是 2025–2026年 间 爆 火 的 AI agent类 工 具 ，但 它 们 的 核 心 定 位 、使 用 场 景 和 能 力 边 界 差 异 非 常 大 。
+简 单 一 句 话 总 结 三 者 的 本 质 区 别 
+- OpenClaw：通 用 型 "能 干 活 的 个 人 /家 庭 /团 队 助 理 "（真 正 执 行 现 实 世 界 操 作 ）
+- OpenCode：开 源 的 "编 程 专 用 AI agent"（终 端 /IDE里 的 代 码 副 驾 驶 ）
+- Claude Code：Anthropic官 方 出 品 的 "最 强 Claude编 程 体 验 "（封 闭 但 极 致 打 磨 ）
+---
+多 维 度 详 细 对 比 
+（基 于 2026年 2月 公 开 信 息 和 社 区 实 际 使 用 反 馈 ）
+| 维 度  | OpenClaw | OpenCode | Claude Code |
+|------|----------|----------|-------------|
+| 主 要 用 途  | 生 活 /工 作 自 动 化 （收 邮 件 、日 历 、发 消 息 、订 票 、浏 览 器 操 作 、shell命 令 、本 地 文 件 读 写 等 ） | 纯 编 程 任 务 （写 代 码 、重 构 、debug、写 测 试 、理 解 代 码 库 、多 文 件 修 改 ） | 纯 编 程 任 务 （官 方 定 位 就 是 "Claude写 代 码 "） |
+| 开 源 情 况  | 开 源 （GitHub上 极 火 ，改 名 多 次 ：Clawdbot → Moltbot → OpenClaw） | 开 源 （MIT，社 区 活 跃 ，SST团 队 主 导 ） | 闭 源 （Anthropic官 方 CLI工 具 ） |
+| 运 行 方 式  | 自 托 管 （本 地 或 云 端 跑 ），主 要 通 过 聊 天 App交 互 （WhatsApp/Telegram/Discord/Slack等 ） | 终 端 CLI + TUI界 面  + 桌 面 App(beta) + IDE插 件  | 官 方 CLI + 少 量 桌 面 /Web研 究 预 览  |
+| 模 型 支 持  | 主 要 Claude系 列 （也 支 持 其 他 ），但 重 点 不 在 模 型 而 在 "技 能 "生 态  | 75+提 供 商 （Claude、GPT、Gemini、Ollama本 地 、Groq、DeepSeek等 随 便 切 ） | 仅 限 Claude系 列 （Sonnet/Opus等 ） |
+| 执 行 真 实 动 作  | ★★★★★（真 正 能 发 邮 件 、改 日 历 、控 制 浏 览 器 、跑 shell、安 装 软 件 、买 东 西 ……） | ★★☆☆☆（能 读 写 文 件 、跑 git、执 行 测 试 命 令 ，但 不 鼓 励 跑 危 险 shell） | ★★☆☆☆（文 件 操 作 很 强 ，但 严 格 限 制 危 险 动 作 ） |
+| 编 程 能 力  | ★★☆☆☆（能 写 点 代 码 ，但 不 是 重 点 ） | ★★★★★（当 前 开 源 编 程 agent里 最 强 之 一 ） | ★★★★★+（Claude模 型 +官 方 优 化 ，目 前 公 认 最 丝 滑 ） |
+| 自 主 性 /Agent程 度  | 极 高 （可 以 设 定 目 标 后 自 己 循 环 执 行 ） | 高 （支 持 sub-agents、多 轮 自 主 尝 试 修 复 ） | 高 （有 sub-agents、思 考 链 很 强 ） |
+| 安 全 性 争 议  | ★☆☆☆☆（技 能 过 于 强 大 ，社 区 出 现 恶 意 skill、越 权 执 行 、被 用 作 恶 意 软 件 载 体 的 案 例 极 多 ） | ★★★★☆（默 认 比 较 保 守 ，可 配 置 ） | ★★★★☆（Anthropic有 较 多 安 全 守 栏 ） |
+| 部 署 难 度  | 中 等 （docker一 键 多 ，但 配 置 技 能 /权 限 很 繁 琐 ） | 低 （brew install / curl安 装 ，几 分 钟 跑 起 来 ） | 极 低 （pip install + 登 录 即 可 ） |
+| 成 本  | 自 托 管 免 费  + 你 用 的 LLM费 用  | 工 具 免 费  + 你 用 的 LLM费 用  | $20–200/月 订 阅  或  API按 量 付 费  |
+| 典 型 用 户  | 想 让 AI"替 我 活 着 的 "人 （高 净 值 、忙 碌 高 管 、极 客 ） | 开 发 者 、想 逃 离 厂 商 锁 定 的 极 客 团 队  | 深 度 Claude用 户 、重 度 依 赖 Anthropic生 态 的 开 发 者  |
+| 2026年 社 区 热 度  | 病 毒 式 传 播 ，但 安 全 担 忧 拖 后 腿  | 持 续 上 升 （尤 其 是 厌 倦 Claude锁 定 的 群 体 ） | 仍 然 最 稳 的 编 程 agent标 杆  |
+---
+核 心 功 能 差 异 总 结 （最 直 观 的 三 个 角 度 ）
+1. 你 想 让 AI帮 你 "干 活 "还 是 "写 代 码 "？
+- 收 邮 件 、订 机 票 、管 日 历 、自 动 回 复 消 息 、监 控 GitHub issue并 自 动 回 复  → 选 OpenClaw
+- 重 构 遗 留 系 统 、跨 文 件 debug、生 成 完 整 功 能 模 块 、跑 测 试 循 环 修 复  → 选 OpenCode 或  Claude Code
+2. 你 是 否 已 经 被 Anthropic深 度 绑 定 ？
+- 已 经 买 了 Claude Pro/Max，只 想 最 好 的 Claude编 程 体 验 ，不 想 折 腾  → Claude Code
+- 讨 厌 厂 商 锁 定 ，想 用 Claude时 用 Claude，想 省 钱 用 本 地 /DeepSeek/Gemini时 切 过 去  → OpenCode
+3. 你 对 "AI拿 枪 指 着 自 己 电 脑 "有 多 大 接 受 度 ？
+- 愿 意 承 担 极 大 安 全 风 险 换 取 最 真 实 的 "AI替 我 活 " → OpenClaw（但 强 烈 建 议 沙 箱 /小 号 /监 控 ）
+- 想 要 强 大 但 可 控 的 执 行 能 力  → OpenCode（编 程 域 最 强 开 源 选 项 ）
+---
+2026年 2月 真 实 使 用 建 议 排 序 （按 场 景 ）
+- 只 想 写 代 码 ，且 预 算 充 足 、追 求 极 致 体 验  → Claude Code > OpenCode（用 Claude模 型 ）
+- 写 代 码 ，但 想 省 钱 /多 模 型 /本 地 跑 /自 托 管  → OpenCode >> Claude Code
+- 想 要 真 正 的 "生 活 /工 作 助 理 "而 非 编 程 工 具  → OpenClaw（但 请 务 必 阅 读 安 全 警 告 ，社 区 恶 意 skill泛 滥 ）
+- 两 者 都 想 要  → 大 多 数 人 最 终 会 同 时 跑 ：OpenClaw管 生 活  + OpenCode/Claude Code管 编 程 
+---
+一 句 话 结 论 
+- OpenClaw 是 "AI秘 书 /管 家 "
+- OpenCode 是 "开 源 版 Claude Code + 模 型 自 由 "
+- Claude Code 是 "官 方 最 强 Claude编 程 副 驾 "
+看 你 到 底 是 想 让 AI帮 你 活 得 更 轻 松 ，还 是 代 码 写 得 更 快 更 好 ，答 案 就 很 清 晰 了 。
+
+================================================================================
+
+=== ID: 2335 | Title: Claude Code 使用技巧 | Path: 人工智能/claude code/Claude Code 使用技巧.md | Words: 4610 ===
+Claude Code 使 用 技 巧 
+
+核 心 理 念 
+
+Claude Code 是  Anthropic 推 出 的 命 令 行  AI 编 程 代 理 ，它 直 接 在 终 端 中 运 行 ，能 够 理 解 整 个 代 码 库 并 执 行 复 杂 的 编 程 任 务 。掌 握 使 用 技 巧 可 以 大 幅 提 升 开 发 效 率 。
+
+---
+
+一 、CLAUDE.md — 项 目 记 忆 文 件 
+
+1. 作 用 
+CLAUDE.md 是  Claude Code 的 "项 目 记 忆 "，类 似 于 给  AI 的  system prompt。每 次 对 话 开 始 时 ，Claude Code 会 自 动 读 取 该 文 件 ，从 而 了 解 项 目 的 背 景 、规 范 和 偏 好 。
+
+2. 三 个 层 级 
+
+| 文 件 位 置  | 作 用 范 围  | 适 用 内 容  |
+|---------|---------|---------|
+| `~/.claude/CLAUDE.md` | 全 局  | 个 人 偏 好 、通 用 编 码 规 范  |
+| `项 目 根 目 录 /CLAUDE.md` | 当 前 项 目  | 项 目 架 构 、技 术 栈 、编 码 约 定  |
+| `子 目 录 /CLAUDE.md` | 特 定 模 块  | 模 块 级 规 范 、注 意 事 项  |
+
+3. CLAUDE.md 应 该 写 什 么 
+
+```markdown
+CLAUDE.md 示 例 
+
+项 目 概 述 
+这 是 一 个  Next.js 15 + TypeScript 的 电 商 后 台 管 理 系 统 。
+
+技 术 栈 
+- 框 架 : Next.js 15 (App Router)
+- 语 言 : TypeScript (strict mode)
+- 数 据 库 : PostgreSQL + Prisma ORM
+- 样 式 : Tailwind CSS
+- 测 试 : Vitest + Testing Library
+
+编 码 规 范 
+- 使 用 函 数 式 组 件 ，禁 止  class 组 件 
+- 所 有 组 件 必 须 有  TypeScript 类 型 定 义 
+- 文 件 命 名 : 组 件 用  PascalCase，工 具 函 数 用  camelCase
+- 每 个 文 件 不 超 过  200 行 
+
+常 用 命 令 
+- 开 发 : `npm run dev`
+- 构 建 : `npm run build`
+- 测 试 : `npm test`
+- Lint: `npm run lint`
+- 数 据 库 迁 移 : `npx prisma migrate dev`
+
+架 构 说 明 
+- `src/app/` — 页 面 路 由 
+- `src/components/` — 共 享 组 件 
+- `src/lib/` — 工 具 函 数 和 业 务 逻 辑 
+- `src/hooks/` — 自 定 义  Hooks
+- `prisma/` — 数 据 库  schema
+
+注 意 事 项 
+- 不 要 修 改  prisma/schema.prisma，需 要 先 讨 论 
+- API 路 由 必 须 做 输 入 验 证  (zod)
+- 所 有 数 据 库 操 作 通 过  Prisma Client，禁 止 原 生  SQL
+```
+
+4. 技 巧 
+- 在  CLAUDE.md 中 列 出 **常 用 命 令 **，这 样 你 可 以 直 接 说 "运 行 测 试 "而 不 用 每 次 指 定 命 令 
+- 写 明 **不 要 做 什 么 **（禁 止 事 项 ）和 **应 该 做 什 么 **同 样 重 要 
+- 定 期 更 新 ，保 持 与 项 目 实 际 状 态 一 致 
+
+---
+
+二 、高 效 对 话 技 巧 
+
+1. 明 确 具 体 ，一 次 说 清 
+```
+❌ 帮 我 写 个 组 件 
+✅ 在  src/components/UserCard.tsx 创 建 一 个 用 户 卡 片 组 件 ，接 收  name, email, avatar 三 个  props，用  Tailwind CSS 样 式 ，支 持 点 击 跳 转 到 用 户 详 情 页 
+```
+
+2. 分 步 骤 拆 解 复 杂 任 务 
+```
+1. 先 帮 我 设 计 数 据 库  schema
+2. 然 后 创 建  API 路 由 
+3. 最 后 写 前 端 页 面 调 用  API
+```
+
+3. 善 用 上 下 文 引 用 
+```
+参 考  src/components/Header.tsx 的 样 式 风 格 ，创 建 一 个  Footer 组 件 
+```
+
+4. 让  Claude Code 先 理 解 再 行 动 
+```
+先 看 看 这 个 项 目 的 结 构 ，告 诉 我 你 的 理 解 ，然 后 再 帮 我 添 加 新 功 能 
+```
+
+---
+
+三 、核 心 命 令 与 快 捷 操 作 
+
+1. 常 用 斜 杠 命 令 
+
+| 命 令  | 说 明  |
+|------|------|
+| `/help` | 查 看 帮 助  |
+| `/clear` | 清 除 当 前 对 话 上 下 文  |
+| `/compact` | 压 缩 对 话 历 史 （保 留 关 键 信 息 ） |
+| `/cost` | 查 看 当 前 会 话 的  token 消 耗 和 费 用  |
+| `/doctor` | 诊 断  Claude Code 的 配 置 问 题  |
+| `/init` | 初 始 化 项 目 的  CLAUDE.md |
+| `/memory` | 编 辑  CLAUDE.md 文 件  |
+| `/config` | 查 看 /修 改 配 置  |
+| `/login` | 切 换 账 号  |
+| `/status` | 查 看 当 前 状 态  |
+
+2. 键 盘 快 捷 键 
+
+| 快 捷 键  | 说 明  |
+|--------|------|
+| `Enter` | 发 送 消 息  |
+| `Shift+Enter` | 换 行 （多 行 输 入 ） |
+| `Escape` | 中 断 当 前 操 作  |
+| `Ctrl+C` | 退 出  Claude Code |
+| `Ctrl+L` | 清 屏  |
+| `Up/Down` | 浏 览 历 史 消 息  |
+
+3. 权 限 模 式 
+
+```bash
+允 许 所 有 工 具 调 用 （适 合 信 任 的 环 境 ）
+claude --dangerously-skip-permissions
+
+指 定 工 作 目 录 
+claude --cwd /path/to/project
+
+继 续 上 次 的 对 话 
+claude --continue
+claude --resume
+
+传 入 初 始 提 示 
+claude -p "解 释 这 个 项 目 的 架 构 "
+```
+
+---
+
+四 、高 级 使 用 技 巧 
+
+1. 子 代 理 （Sub-Agents）
+Claude Code 可 以 启 动 子 代 理 并 行 执 行 独 立 任 务 ，例 如 同 时 搜 索 多 个 文 件 或 并 行 进 行 代 码 审 查 。
+
+2. Git 集 成 
+```
+创 建 一 个 新 分 支  feature/user-auth，然 后 在 这 个 分 支 上 实 现 用 户 认 证 功 能 
+```
+
+Claude Code 会 自 动 ：
+- 创 建 分 支 
+- 编 写 代 码 
+- 运 行 测 试 
+- 提 交 代 码 
+
+3. 多 文 件 编 辑 
+```
+重 构 整 个  src/utils/ 目 录 ，将 所 有 工 具 函 数 从  JavaScript 转 换 为  TypeScript，添 加 类 型 定 义 
+```
+
+4. 代 码 审 查 
+```
+审 查 最 近 一 次  git commit 的 所 有 改 动 ，检 查 潜 在 的  bug 和 性 能 问 题 
+```
+
+5. 调 试 助 手 
+```
+这 个 测 试 报 错 了  [粘 贴 错 误 信 息 ]，帮 我 找 到 问 题 所 在 并 修 复 
+```
+
+6. 文 档 生 成 
+```
+为  src/api/ 目 录 下 所 有  API 端 点 生 成  OpenAPI 文 档 
+```
+
+---
+
+五 、配 置 优 化 
+
+1. 全 局 配 置 文 件 
+
+位 置 ：`~/.claude/settings.json`
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(git *)",
+      "Read",
+      "Write"
+    ],
+    "deny": [
+      "Bash(rm -rf *)"
+    ]
+  }
+}
+```
+
+2. 项 目 级 配 置 
+
+位 置 ：`项 目 根 目 录 /.claude/settings.json`（可 提 交 到  git）
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(npx prisma *)"
+    ]
+  }
+}
+```
+
+3. 自 定 义 斜 杠 命 令 
+
+在  `.claude/commands/` 目 录 下 创 建  `.md` 文 件 ，即 可 定 义 可 复 用 的 自 定 义 命 令 ：
+
+```
+.claude/
+  commands/
+    review.md       → /project:review
+    test.md         → /project:test
+    deploy.md       → /project:deploy
+```
+
+命 令 文 件 内 容 示 例 （`.claude/commands/review.md`）：
+```markdown
+请 对 当 前  git diff 中 的 所 有 改 动 进 行 代 码 审 查 ：
+1. 检 查 是 否 有  bug
+2. 检 查 是 否 符 合 项 目 编 码 规 范 
+3. 检 查 是 否 有 性 能 问 题 
+4. 检 查 是 否 有 安 全 漏 洞 
+5. 给 出 改 进 建 议 
+```
+
+使 用 时 输 入  `/project:review` 即 可 。
+
+---
+
+六 、最 佳 实 践 
+
+1. 迭 代 式 开 发 
+```
+第 1步 ：帮 我 搭 建 项 目 骨 架 
+第 2步 ：实 现 用 户 注 册 登 录 
+第 3步 ：添 加 权 限 管 理 
+...
+```
+每 次 做 完 一 步 ，确 认 没 问 题 再 继 续 下 一 步 。
+
+2. 让  Claude 解 释 再 执 行 
+```
+先 告 诉 我 你 打 算 怎 么 实 现 这 个 功 能 ，我 确 认 后 再 动 手 
+```
+
+3. 善 用  /compact 压 缩 上 下 文 
+对 话 太 长 时 ，使 用  `/compact` 压 缩 历 史 ，保 持 上 下 文 窗 口 高 效 利 用 。
+
+4. 明 确 指 定 文 件 路 径 
+```
+在  src/components/Header.tsx 的 第  15 行 之 后 添 加 一 个 导 航 菜 单 
+```
+
+5. 测 试 驱 动 
+```
+先 为 用 户 注 册 功 能 写 测 试 用 例 ，然 后 实 现 功 能 让 测 试 通 过 
+```
+
+6. 保 持  CLAUDE.md 更 新 
+项 目 架 构 或 规 范 变 更 时 ，及 时 更 新  CLAUDE.md，让  Claude Code 始 终 了 解 最 新 情 况 。
+
+7. 安 全 意 识 
+- 不 要 在  CLAUDE.md 中 存 放 密 钥 或 敏 感 信 息 
+- 使 用 权 限 配 置 限 制 危 险 操 作 
+- 在 生 产 环 境 相 关 操 作 前 做 好 备 份 
+
+---
+
+七 、常 见 场 景 示 例 
+
+场 景  1：快 速 了 解 新 项 目 
+```
+请 帮 我 了 解 这 个 项 目 的 整 体 架 构 ，包 括 ：
+1. 使 用 了 哪 些 技 术 栈 
+2. 项 目 目 录 结 构 
+3. 核 心 模 块 和 它 们 之 间 的 关 系 
+4. 数 据 库 设 计 
+5. API 设 计 模 式 
+```
+
+场 景  2：修 复  Bug
+```
+运 行  npm test 后 有 一 个 失 败 的 测 试 ，帮 我 找 到 失 败 原 因 并 修 复 。
+
+这 是 错 误 输 出 ：
+[粘 贴 错 误 信 息 ]
+```
+
+场 景  3：性 能 优 化 
+```
+帮 我 分 析  src/components/Dashboard.tsx 的 性 能 问 题 ，特 别 是 ：
+1. 不 必 要 的 重 渲 染 
+2. 大 列 表 的 虚 拟 滚 动 
+3. 图 片 懒 加 载 
+```
+
+场 景  4：重 构 代 码 
+```
+将  src/utils/api.ts 重 构 为 ：
+1. 使 用  fetch 替 代  axios
+2. 添 加 统 一 的 错 误 处 理 
+3. 添 加 请 求 重 试 机 制 
+4. 保 持 所 有 现 有 功 能 不 变 
+```
+
+场 景  5：国 际 化 
+```
+为 项 目 添 加  i18n 支 持 ：
+1. 安 装  next-intl
+2. 创 建 语 言 文 件  zh.json 和  en.json
+3. 将 首 页 的 所 有 硬 编 码 文 本 提 取 为 翻 译  key
+```
+
+---
+
+参 考 来 源 
+- Anthropic 官 方 文 档 ：https://docs.anthropic.com/en/docs/claude-code
+- Claude Code GitHub：https://github.com/anthropics/claude-code
+
+================================================================================

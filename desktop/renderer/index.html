@@ -12,22 +12,22 @@
 <body>
   <!-- Status Banner (shown when no API config) -->
   <div id="config-banner" class="hidden">
-    <span>⚙️ 请先在设置中配置 API</span>
-    <button class="btn primary" id="banner-settings-btn">打开设置</button>
+    <span data-i18n="banner.api_required">⚙️ 请先在设置中配置 API</span>
+    <button class="btn primary" id="banner-settings-btn" data-i18n="banner.open_settings">打开设置</button>
   </div>
 
   <!-- Permission Modal -->
   <div id="perm-modal" class="modal">
     <div class="modal-content" style="width: 500px;">
       <div class="modal-header">
-        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);">⚠️ 需要授权</h2>
+        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" data-i18n="perm.title">⚠️ 需要授权</h2>
       </div>
       <div class="modal-body">
-        <p class="hint">以下命令需要您的批准：</p>
+        <p class="hint" data-i18n="perm.hint">以下命令需要您的批准：</p>
         <pre id="perm-command" style="background:var(--bg-tertiary);padding:12px;border-radius:var(--radius-sm);margin:8px 0 16px;font-family:var(--font-mono);font-size:13px;color:var(--text-primary);white-space:pre-wrap;border:1px solid var(--border);overflow-x:auto;"></pre>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button id="perm-deny" class="btn" style="border-color:var(--danger);color:var(--danger);">拒绝</button>
-          <button id="perm-allow" class="btn primary">允许</button>
+          <button id="perm-deny" class="btn" style="border-color:var(--danger);color:var(--danger);" data-i18n="perm.deny">拒绝</button>
+          <button id="perm-allow" class="btn primary" data-i18n="perm.allow">允许</button>
         </div>
       </div>
     </div>
@@ -37,11 +37,11 @@
   <div id="ask-modal" class="modal">
     <div class="modal-content" style="max-width:560px;">
       <div class="modal-header">
-        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);">🤔 需要确认</h2>
+        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" data-i18n="ask.title">🤔 需要确认</h2>
       </div>
       <div class="modal-body" id="ask-modal-body"></div>
       <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 0 0;">
-        <button id="ask-submit" class="btn primary">确认</button>
+        <button id="ask-submit" class="btn primary" data-i18n="ask.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -50,50 +50,54 @@
   <div id="settings-modal" class="modal">
     <div class="modal-content settings-modal-content">
       <div class="modal-header">
-        <h2 style="font-size:18px;font-weight:600;color:var(--text-primary);">设置</h2>
+        <h2 style="font-size:18px;font-weight:600;color:var(--text-primary);" data-i18n="settings.title">设置</h2>
       </div>
       <div class="settings-layout">
         <!-- Left Tab Bar -->
         <div class="settings-tabs" id="settings-tabs">
           <div class="settings-tab active" data-tab="api">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span>API 配置</span>
+            <span data-i18n="settings.api">API 配置</span>
           </div>
           <div class="settings-tab" data-tab="avatar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span>头像</span>
+            <span data-i18n="settings.avatar">头像</span>
           </div>
           <div class="settings-tab" data-tab="skills">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span>技能</span>
+            <span data-i18n="settings.skills">技能</span>
           </div>
           <div class="settings-tab" data-tab="prompt">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="12" y1="10" x2="12" y2="16"/></svg>
-            <span>系统提示词</span>
+            <span data-i18n="settings.prompt">系统提示词</span>
           </div>
           <div class="settings-tab" data-tab="mcp">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            <span>MCP</span>
+              <span data-i18n="settings.mcp">MCP</span>
           </div>
           <div class="settings-tab" data-tab="social">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <span>社交</span>
+            <span data-i18n="settings.social">社交</span>
           </div>
           <div class="settings-tab" data-tab="memory">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span>记忆</span>
+            <span data-i18n="settings.memory">记忆</span>
           </div>
           <div class="settings-tab" data-tab="knowledge-base">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-            <span>知识库</span>
+            <span data-i18n="settings.kb">知识库</span>
           </div>
           <div class="settings-tab" data-tab="agent-skills">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span>Agent 技能</span>
+            <span data-i18n="settings.agent_skills">Agent 技能</span>
           </div>
           <div class="settings-tab" data-tab="font">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-            <span>字体</span>
+            <span data-i18n="settings.font">字体</span>
+          </div>
+          <div class="settings-tab" data-tab="language">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span data-i18n="settings.language">语言</span>
           </div>
         </div>
 
@@ -104,39 +108,39 @@
           <div class="settings-panel active" id="panel-api">
             <div class="api-config-form">
               <div class="form-row">
-                <label class="form-label">供应商</label>
+                <label class="form-label" data-i18n="api.provider">供应商</label>
                 <select id="settings-provider" class="form-select">
-                  <option value="">— 自定义 —</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="glm">GLM (智谱)</option>
-                  <option value="qwen">Qwen (通义千问)</option>
-                  <option value="mimo">MiMo (小米)</option>
-                  <option value="claude">Claude (Anthropic)</option>
-                  <option value="lmstudio">LM Studio（本地）</option>
-                  <option value="ollama">Ollama（本地）</option>
+                  <option value="" data-i18n="api.custom">— 自定义 —</option>
+                  <option value="deepseek" data-i18n="provider.deepseek">DeepSeek</option>
+                  <option value="glm" data-i18n="provider.glm">GLM (智谱)</option>
+                  <option value="qwen" data-i18n="provider.qwen">Qwen (通义千问)</option>
+                  <option value="mimo" data-i18n="provider.mimo">MiMo (小米)</option>
+                  <option value="claude" data-i18n="provider.claude">Claude (Anthropic)</option>
+                  <option value="lmstudio" data-i18n="provider.lmstudio">LM Studio（本地）</option>
+                  <option value="ollama" data-i18n="provider.ollama">Ollama（本地）</option>
                 </select>
               </div>
               <div class="form-row">
-                <label class="form-label">API URL</label>
+                <label class="form-label" data-i18n="api.url">API URL</label>
                 <input type="text" id="settings-url" class="form-input" placeholder="https://api.deepseek.com/chat/completions" />
               </div>
               <div class="form-row">
-                <label class="form-label">Model</label>
+                <label class="form-label" data-i18n="api.model">Model</label>
                 <div class="form-row-inline-group">
                   <select id="settings-model" class="form-select" style="flex:1;"></select>
-                  <input type="text" id="settings-model-input" class="form-input" style="flex:1;display:none;" placeholder="输入模型名称，如 gpt-4o" />
-                  <button id="settings-fetch-models-btn" class="btn" style="white-space:nowrap;flex-shrink:0;" title="从 API 获取可用模型列表">
+                  <input type="text" id="settings-model-input" class="form-input" style="flex:1;display:none;" data-i18n-placeholder="api.model_placeholder" placeholder="输入模型名称，如 gpt-4o" />
+                  <button id="settings-fetch-models-btn" class="btn" style="white-space:nowrap;flex-shrink:0;" data-i18n-title="api.fetch_models" title="从 API 获取可用模型列表">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
-                    获取模型
+                    <span data-i18n="api.fetch_models_btn">获取模型</span>
                   </button>
                 </div>
               </div>
               <div class="form-row">
-                <label class="form-label">API Key</label>
+                <label class="form-label" data-i18n="api.key">API Key</label>
                 <input type="password" id="settings-key" class="form-input" placeholder="sk-..." />
               </div>
               <div id="settings-status" class="settings-status hidden"></div>
-              <button id="settings-save-btn" class="btn primary" style="width:100%;margin-top:8px;">保存</button>
+              <button id="settings-save-btn" class="btn primary" style="width:100%;margin-top:8px;" data-i18n="common.save">保存</button>
             </div>
           </div>
 
@@ -145,42 +149,42 @@
             <div class="avatar-settings">
               <img id="settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="current avatar" />
               <div class="avatar-settings-actions">
-                <p class="hint" style="margin-bottom:8px;">选择一个图片文件作为头像</p>
+                <p class="hint" style="margin-bottom:8px;" data-i18n="avatar.select_hint">选择一个图片文件作为头像</p>
                 <input type="file" id="avatar-file-input" accept="image/*" hidden />
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button id="change-avatar-btn" class="btn">选择图片</button>
-                  <button id="reset-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);">恢复默认</button>
+                  <button id="change-avatar-btn" class="btn" data-i18n="avatar.select">选择图片</button>
+                  <button id="reset-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);" data-i18n="avatar.reset">恢复默认</button>
                 </div>
               </div>
             </div>
             <div class="agent-name-settings">
-              <label class="agent-name-label">Agent 名称</label>
+              <label class="agent-name-label" data-i18n="avatar.agent_name">Agent 名称</label>
               <div class="agent-name-row">
                 <input type="text" id="agent-name-input" class="form-input" value="GoodAgent" maxlength="30" />
-                <button id="save-agent-name-btn" class="btn primary">保存</button>
+                <button id="save-agent-name-btn" class="btn primary" data-i18n="common.save">保存</button>
               </div>
-              <p class="hint">修改后在侧边栏、对话标签、页面标题等所有位置生效</p>
+              <p class="hint" data-i18n="avatar.name_hint">修改后在侧边栏、对话标签、页面标题等所有位置生效</p>
             </div>
             <div class="user-avatar-settings">
-              <label class="agent-name-label">我的头像和名称</label>
+              <label class="agent-name-label" data-i18n="avatar.user_section">我的头像和名称</label>
               <div class="user-avatar-row">
                 <img id="user-settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="user avatar" />
                 <div class="user-avatar-actions">
-                  <p class="hint" style="margin-bottom:8px;">选择一个图片文件作为你的头像</p>
+                  <p class="hint" style="margin-bottom:8px;" data-i18n="avatar.user_hint">选择一个图片文件作为你的头像</p>
                   <input type="file" id="user-avatar-file-input" accept="image/*" hidden />
                   <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button id="change-user-avatar-btn" class="btn">选择图片</button>
-                    <button id="reset-user-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);">恢复默认</button>
+                    <button id="change-user-avatar-btn" class="btn" data-i18n="avatar.select">选择图片</button>
+                    <button id="reset-user-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);" data-i18n="avatar.reset">恢复默认</button>
                   </div>
                 </div>
               </div>
               <div class="user-name-row">
-                <label class="agent-name-label" style="margin-bottom:6px;">你的名称</label>
+                <label class="agent-name-label" style="margin-bottom:6px;" data-i18n="avatar.user_name">你的名称</label>
                 <div class="agent-name-row">
                   <input type="text" id="user-name-input" class="form-input" value="你" maxlength="30" />
-                  <button id="save-user-name-btn" class="btn primary">保存</button>
+                  <button id="save-user-name-btn" class="btn primary" data-i18n="common.save">保存</button>
                 </div>
-                <p class="hint" style="margin-top:6px;">修改后在对话中你的消息标签上显示</p>
+                <p class="hint" style="margin-top:6px;" data-i18n="avatar.user_name_hint">修改后在对话中你的消息标签上显示</p>
               </div>
             </div>
           </div>
@@ -188,15 +192,15 @@
           <!-- 技能 Panel (L3 本地技能, 只读浏览) -->
           <div class="settings-panel" id="panel-skills">
             <div class="skills-settings">
-              <p class="hint" style="margin-bottom:12px;">
+              <p class="hint" style="margin-bottom:12px;" data-i18n="skills.desc">
                 本地安装的技能（<code>.agents/</code> / <code>.claude/skills/</code>），Agent 可自动识别并使用。此面板为只读浏览。
               </p>
               <div class="skills-toolbar">
                 <button id="skills-refresh-btn" class="btn">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
-                  刷新
+                  <span data-i18n="skills.refresh">刷新</span>
                 </button>
-                <span id="skills-count" class="skills-count">0 个技能</span>
+                <span id="skills-count" class="skills-count" data-i18n="skills.count">0 个技能</span>
               </div>
               <div id="local-skills-list" class="skills-list"></div>
             </div>
@@ -210,7 +214,7 @@
                 <div id="prompt-profile-selector" class="prompt-profile-selector"></div>
                 <button id="prompt-add-profile-btn" class="btn prompt-add-btn">
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
-                  新建
+                  <span data-i18n="prompt.new_profile">新建</span>
                 </button>
               </div>
 
@@ -225,73 +229,73 @@
           <!-- MCP Panel -->
           <div class="settings-panel" id="panel-mcp">
             <div class="mcp-settings">
-              <p class="hint" style="margin-bottom:12px;">
+              <p class="hint" style="margin-bottom:12px;" data-i18n="mcp.desc">
                 配置 MCP（Model Context Protocol）服务器，让 AI 可以访问更多工具（数据库、文件系统、浏览器等）。
                 格式与 Claude Code 的 <code>.mcp.json</code> 兼容。
               </p>
 
               <!-- Quick Add SearXNG -->
               <div class="mcp-quick-searxng" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
-                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">🔍 快速添加 SearXNG 搜索</div>
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;" data-i18n="mcp.quick_searxng">🔍 快速添加 SearXNG 搜索</div>
                 <div style="display:flex;gap:8px;">
-                  <input type="text" id="mcp-searxng-url" class="form-input" placeholder="http://localhost:4000" style="flex:1;" />
-                  <button id="mcp-searxng-add-btn" class="btn primary" style="white-space:nowrap;">添加</button>
+                  <input type="text" id="mcp-searxng-url" class="form-input" data-i18n-placeholder="mcp.searxng_placeholder" placeholder="http://localhost:4000" style="flex:1;" />
+                  <button id="mcp-searxng-add-btn" class="btn primary" style="white-space:nowrap;" data-i18n="mcp.add">添加</button>
                 </div>
-                <div style="font-size:11px;color:var(--text-light);margin-top:4px;">输入你的 SearXNG 实例地址，自动配置 <code>npx mcp-searxng@latest</code></div>
+                <div style="font-size:11px;color:var(--text-light);margin-top:4px;" data-i18n="mcp.searxng_hint">输入你的 SearXNG 实例地址，自动配置 <code>npx mcp-searxng@latest</code></div>
               </div>
 
               <!-- Detect Local MCP Configs -->
               <div class="mcp-detect" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                  <span style="font-size:13px;font-weight:600;">📡 检测本地 MCP 配置</span>
-                  <button id="mcp-detect-btn" class="btn" style="font-size:12px;padding:4px 12px;">扫描</button>
+                  <span style="font-size:13px;font-weight:600;" data-i18n="mcp.detect_local">📡 检测本地 MCP 配置</span>
+                  <button id="mcp-detect-btn" class="btn" style="font-size:12px;padding:4px 12px;" data-i18n="mcp.scan">扫描</button>
                 </div>
-                <div id="mcp-detect-results" style="font-size:12px;color:var(--text-light);">扫描 Claude Code CLI、OpenCode 等本机已配置的 MCP 服务器，一键导入。</div>
+                <div id="mcp-detect-results" style="font-size:12px;color:var(--text-light);" data-i18n="mcp.detect_hint">扫描 Claude Code CLI、OpenCode 等本机已配置的 MCP 服务器，一键导入。</div>
               </div>
 
               <div class="mcp-toolbar">
                 <button id="mcp-add-btn" class="btn primary">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle;margin-right:4px;"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
-                  手动添加服务器
+                  <span data-i18n="mcp.add_server">手动添加服务器</span>
                 </button>
                 <button id="mcp-save-all-btn" class="btn">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                  保存配置
+                  <span data-i18n="mcp.save_config">保存配置</span>
                 </button>
                 <button id="mcp-refresh-btn" class="btn">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
-                  刷新
+                  <span data-i18n="mcp.refresh">刷新</span>
                 </button>
               </div>
 
               <!-- Add form (hidden by default) -->
               <div id="mcp-add-form" class="mcp-add-form hidden">
                 <div class="form-row">
-                  <label class="form-label">名称</label>
-                  <input type="text" id="mcp-name-input" class="form-input" placeholder="例如: filesystem" />
+                  <label class="form-label" data-i18n="mcp.name">名称</label>
+                  <input type="text" id="mcp-name-input" class="form-input" data-i18n-placeholder="mcp.name_placeholder" placeholder="例如: filesystem" />
                 </div>
                 <div class="form-row">
-                  <label class="form-label">命令 (command)</label>
-                  <input type="text" id="mcp-command-input" class="form-input" placeholder="例如: npx" />
+                  <label class="form-label" data-i18n="mcp.command">命令 (command)</label>
+                  <input type="text" id="mcp-command-input" class="form-input" data-i18n-placeholder="mcp.command_placeholder" placeholder="例如: npx" />
                 </div>
                 <div class="form-row">
-                  <label class="form-label">参数 (args)</label>
-                  <input type="text" id="mcp-args-input" class="form-input" placeholder='例如: -y @modelcontextprotocol/server-filesystem C:/Users/7' />
+                  <label class="form-label" data-i18n="mcp.args">参数 (args)</label>
+                  <input type="text" id="mcp-args-input" class="form-input" data-i18n-placeholder="mcp.args_placeholder" placeholder='例如: -y @modelcontextprotocol/server-filesystem C:/Users/7' />
                 </div>
                 <div class="form-row">
-                  <label class="form-label">环境变量 (可选, JSON)</label>
-                  <input type="text" id="mcp-env-input" class="form-input" placeholder='{"API_KEY":"xxx"}' />
+                  <label class="form-label" data-i18n="mcp.env">环境变量 (可选, JSON)</label>
+                  <input type="text" id="mcp-env-input" class="form-input" data-i18n-placeholder="mcp.env_placeholder" placeholder='{"API_KEY":"xxx"}' />
                 </div>
                 <div class="mcp-form-actions">
-                  <button id="mcp-save-btn" class="btn primary">保存并启动</button>
-                  <button id="mcp-cancel-btn" class="btn">取消</button>
+                  <button id="mcp-save-btn" class="btn primary" data-i18n="mcp.save_and_start">保存并启动</button>
+                  <button id="mcp-cancel-btn" class="btn" data-i18n="mcp.cancel">取消</button>
                 </div>
                 <div id="mcp-form-status" class="settings-status hidden"></div>
               </div>
 
               <!-- Server list -->
               <div id="mcp-server-list" class="mcp-server-list">
-                <p class="hint" style="padding:24px 0;text-align:center;">没有配置 MCP 服务器。点击"添加服务器"开始。</p>
+                <p class="hint" style="padding:24px 0;text-align:center;" data-i18n="mcp.empty_hint">没有配置 MCP 服务器。点击"添加服务器"开始。</p>
               </div>
               <div id="mcp-settings-status" class="settings-status hidden"></div>
             </div>
@@ -300,20 +304,20 @@
           <!-- 社交平台 Panel -->
           <div class="settings-panel" id="panel-social">
             <div class="social-settings">
-              <p class="hint" style="margin-bottom:12px;">连接社交平台，AI 自动回复消息。</p>
+              <p class="hint" style="margin-bottom:12px;" data-i18n="social.desc">连接社交平台，AI 自动回复消息。</p>
 
               <div class="social-platform-section">
                 <div class="social-platform-header">
-                  <span style="font-weight:600;">微信</span>
-                  <span id="wechat-status-badge" class="wechat-badge disconnected">未连接</span>
+                  <span style="font-weight:600;" data-i18n="social.wechat">微信</span>
+                  <span id="wechat-status-badge" class="wechat-badge disconnected" data-i18n="social.disconnected">未连接</span>
                 </div>
 
                 <div id="wechat-login-area">
                   <button id="wechat-login-btn" class="btn primary" style="margin-top:8px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16.5 8h.01M8.5 8h.01M8.5 14h.01M12 14h.01M15.5 14h.01"/></svg>
-                    扫码登录
+                    <span data-i18n="social.qr_login">扫码登录</span>
                   </button>
-                  <button id="wechat-logout-btn" class="btn hidden" style="margin-top:8px;color:var(--danger-color);border-color:var(--danger-color);">退出登录</button>
+                  <button id="wechat-logout-btn" class="btn hidden" style="margin-top:8px;color:var(--danger-color);border-color:var(--danger-color);" data-i18n="social.logout">退出登录</button>
                 </div>
 
                 <div id="wechat-login-status" class="wechat-login-status hidden"></div>
@@ -325,12 +329,12 @@
           <div class="settings-panel" id="panel-memory">
             <div class="section-header">
               <div class="section-header-left">
-                <h3 class="section-title">记忆管理</h3>
-                <span class="section-hint">Agent 会在对话中自动创建和更新记忆</span>
+                <h3 class="section-title" data-i18n="memory.title">记忆管理</h3>
+                <span class="section-hint" data-i18n="memory.hint">Agent 会在对话中自动创建和更新记忆</span>
               </div>
               <div class="section-header-right">
-                <input type="text" id="memory-search-input" class="form-input form-input-sm" placeholder="搜索记忆..." />
-                <button id="memory-new-btn" class="btn primary btn-sm">＋ 新建</button>
+                <input type="text" id="memory-search-input" class="form-input form-input-sm" data-i18n-placeholder="memory.search_placeholder" placeholder="搜索记忆..." />
+                <button id="memory-new-btn" class="btn primary btn-sm" data-i18n="memory.new">＋ 新建</button>
               </div>
             </div>
             <div class="memory-layout">
@@ -338,24 +342,24 @@
               <div class="memory-editor-panel" id="memory-editor-panel">
                 <div class="memory-editor-empty">
                   <div class="empty-icon">📝</div>
-                  <p>选择一个记忆查看或编辑<br/>或点击「＋ 新建」创建新的记忆</p>
+                  <p data-i18n="memory.empty_hint">选择一个记忆查看或编辑<br/>或点击「＋ 新建」创建新的记忆</p>
                 </div>
                 <div class="memory-editor-fields">
                   <div class="field-row">
-                    <input type="text" id="memory-edit-name" class="form-input" placeholder="名称，如 user_role" />
+                    <input type="text" id="memory-edit-name" class="form-input" data-i18n-placeholder="memory.name_placeholder" placeholder="名称，如 user_role" />
                     <select id="memory-edit-type" class="form-select form-select-sm">
-                      <option value="user">用户信息</option>
-                      <option value="feedback">用户反馈</option>
-                      <option value="project">项目上下文</option>
-                      <option value="reference">外部参考</option>
+                      <option value="user" data-i18n="memory.type_user">用户信息</option>
+                      <option value="feedback" data-i18n="memory.type_feedback">用户反馈</option>
+                      <option value="project" data-i18n="memory.type_project">项目上下文</option>
+                      <option value="reference" data-i18n="memory.type_reference">外部参考</option>
                     </select>
                   </div>
-                  <input type="text" id="memory-edit-desc" class="form-input" placeholder="简短描述，用于搜索匹配" />
+                  <input type="text" id="memory-edit-desc" class="form-input" data-i18n-placeholder="memory.desc_placeholder" placeholder="简短描述，用于搜索匹配" />
                 </div>
-                <textarea id="memory-edit-body" class="memory-editor" rows="8" placeholder="记忆内容（支持 Markdown）..."></textarea>
+                <textarea id="memory-edit-body" class="memory-editor" rows="8" data-i18n-placeholder="memory.body_placeholder" placeholder="记忆内容（支持 Markdown）..."></textarea>
                 <div class="memory-editor-actions">
-                  <button id="memory-save-btn" class="btn primary btn-sm">保存</button>
-                  <button id="memory-delete-btn" class="btn btn-sm btn-danger-ghost">删除</button>
+                  <button id="memory-save-btn" class="btn primary btn-sm" data-i18n="common.save">保存</button>
+                  <button id="memory-delete-btn" class="btn btn-sm btn-danger-ghost" data-i18n="common.delete">删除</button>
                   <span id="memory-edit-status" class="inline-status"></span>
                 </div>
               </div>
@@ -366,44 +370,44 @@
           <div class="settings-panel" id="panel-knowledge-base">
             <div class="section-header">
               <div class="section-header-left">
-                <h3 class="section-title">知识库 (Obsidian)</h3>
-                <span class="section-hint">混合 RAG 检索：FTS5 关键词 + 向量语义搜索</span>
+                <h3 class="section-title" data-i18n="kb.title">知识库 (Obsidian)</h3>
+                <span class="section-hint" data-i18n="kb.hint">混合 RAG 检索：FTS5 关键词 + 向量语义搜索</span>
               </div>
             </div>
             <div class="kb-settings">
               <div class="form-row">
-                <label class="form-label">Vault 路径</label>
+                <label class="form-label" data-i18n="kb.vault_path">Vault 路径</label>
                 <div style="display:flex;gap:8px;">
-                  <input type="text" id="kb-vault-path" class="form-input" placeholder="选择 Obsidian Vault 文件夹" readonly style="flex:1;" />
-                  <button id="kb-pick-vault-btn" class="btn" style="white-space:nowrap;">选择</button>
-                  <button id="kb-clear-vault-btn" class="btn" style="white-space:nowrap;">清除</button>
+                  <input type="text" id="kb-vault-path" class="form-input" data-i18n-placeholder="kb.vault_placeholder" placeholder="选择 Obsidian Vault 文件夹" readonly style="flex:1;" />
+                  <button id="kb-pick-vault-btn" class="btn" style="white-space:nowrap;" data-i18n="kb.select">选择</button>
+                  <button id="kb-clear-vault-btn" class="btn" style="white-space:nowrap;" data-i18n="kb.clear">清除</button>
                 </div>
               </div>
               <div class="form-row">
-                <label class="form-label">Embedding 模型</label>
+                <label class="form-label" data-i18n="kb.embedding">Embedding 模型</label>
                 <select id="kb-embedding-provider" class="form-select">
-                  <option value="local">本地 MiniLM-L6（离线，推荐）</option>
-                  <option value="ollama">Ollama（需本地运行）</option>
-                  <option value="deepseek">DeepSeek API</option>
+                  <option value="local" data-i18n="kb.local_model">本地 MiniLM-L6（离线，推荐）</option>
+                  <option value="ollama" data-i18n="kb.ollama_model">Ollama（需本地运行）</option>
+                  <option value="deepseek" data-i18n="kb.deepseek_model">DeepSeek API</option>
                 </select>
               </div>
-              <div id="kb-status" class="settings-status" style="margin:8px 0;">未配置</div>
+              <div id="kb-status" class="settings-status" style="margin:8px 0;" data-i18n="kb.unconfigured">未配置</div>
               <div style="display:flex;gap:8px;">
-                <button id="kb-scan-btn" class="btn primary" style="flex:1;">扫描并索引</button>
-                <button id="kb-test-search-btn" class="btn" style="flex:1;">测试搜索</button>
+                <button id="kb-scan-btn" class="btn primary" style="flex:1;" data-i18n="kb.scan_btn">扫描并索引</button>
+                <button id="kb-test-search-btn" class="btn" style="flex:1;" data-i18n="kb.test_btn">测试搜索</button>
               </div>
               <div id="kb-test-area" style="margin-top:12px;display:none;">
-                <input type="text" id="kb-test-query" class="form-input" placeholder="输入关键词测试搜索..." />
+                <input type="text" id="kb-test-query" class="form-input" data-i18n-placeholder="kb.test_placeholder" placeholder="输入关键词测试搜索..." />
                 <div id="kb-test-results" style="margin-top:8px;max-height:200px;overflow-y:auto;"></div>
               </div>
               <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
                 <div class="form-row">
-                  <label class="form-label">最大注入笔记数</label>
-                  <input type="number" id="kb-max-notes" class="form-input" value="5" min="1" max="20" style="width:80px;" />
+                  <label class="form-label" data-i18n="kb.max_notes">最大注入笔记数</label>
+                  <input type="number" id="kb-max-notes" class="form-input" value="5" min="1" max="100" style="width:80px;" />
                 </div>
                 <div class="form-row">
-                  <label class="form-label">单篇最大字数</label>
-                  <input type="number" id="kb-max-chars" class="form-input" value="500" min="100" max="2000" style="width:80px;" />
+                  <label class="form-label" data-i18n="kb.max_chars">单篇最大字数</label>
+                  <input type="number" id="kb-max-chars" class="form-input" value="1000" min="100" max="10000" style="width:80px;" />
                 </div>
               </div>
             </div>
@@ -413,26 +417,26 @@
           <div class="settings-panel" id="panel-agent-skills">
             <div class="section-header">
               <div class="section-header-left">
-                <h3 class="section-title">Agent 技能</h3>
-                <span class="section-hint">Agent 生成或手动创建的可复用操作流程</span>
+                <h3 class="section-title" data-i18n="agent_skills.title">Agent 技能</h3>
+                <span class="section-hint" data-i18n="agent_skills.hint">Agent 生成或手动创建的可复用操作流程</span>
               </div>
               <div class="section-header-right">
-                <button id="agent-skills-refresh-btn" class="btn btn-sm btn-icon-only" title="刷新">↻</button>
-                <button id="agent-skills-import-btn" class="btn btn-sm">导入</button>
-                <button id="skill-create-btn" class="btn primary btn-sm">＋ 新建技能</button>
+                <button id="agent-skills-refresh-btn" class="btn btn-sm btn-icon-only" data-i18n-title="agent_skills.refresh" title="刷新">↻</button>
+                <button id="agent-skills-import-btn" class="btn btn-sm" data-i18n="agent_skills.import">导入</button>
+                <button id="skill-create-btn" class="btn primary btn-sm" data-i18n="agent_skills.new_skill">＋ 新建技能</button>
               </div>
             </div>
 
             <!-- Create form -->
             <div id="skill-create-form" class="skill-create-form hidden">
               <div class="form-card">
-                <div class="form-card-header">创建新技能</div>
-                <input id="sk-name" class="form-input" placeholder="技能名称（英文小写 + 连字符）" />
-                <input id="sk-desc" class="form-input" placeholder="简短描述" />
-                <textarea id="sk-steps" class="memory-editor" rows="4" placeholder="1. 步骤一&#10;2. 步骤二"></textarea>
+                <div class="form-card-header" data-i18n="agent_skills.create_title">创建新技能</div>
+                <input id="sk-name" class="form-input" data-i18n-placeholder="agent_skills.name_placeholder" placeholder="技能名称（英文小写 + 连字符）" />
+                <input id="sk-desc" class="form-input" data-i18n-placeholder="agent_skills.desc_placeholder" placeholder="简短描述" />
+                <textarea id="sk-steps" class="memory-editor" rows="4" data-i18n-placeholder="agent_skills.steps_placeholder" placeholder="1. 步骤一&#10;2. 步骤二"></textarea>
                 <div class="form-card-actions">
-                  <button id="sk-save" class="btn primary btn-sm">保存</button>
-                  <button id="sk-cancel" class="btn btn-sm">取消</button>
+                  <button id="sk-save" class="btn primary btn-sm" data-i18n="common.save">保存</button>
+                  <button id="sk-cancel" class="btn btn-sm" data-i18n="common.cancel">取消</button>
                 </div>
               </div>
             </div>
@@ -441,16 +445,16 @@
             <div class="curator-bar">
               <div class="curator-bar-left">
                 <span class="curator-bar-icon">🧹</span>
-                <span class="curator-bar-label">自动归档超过</span>
+                <span class="curator-bar-label" data-i18n="agent_skills.archive_before">自动归档超过</span>
                 <input type="number" id="curator-days-input" class="form-input form-input-xs" value="30" min="1" max="365" />
-                <span class="curator-bar-label">天未使用的技能</span>
-                <button id="curator-save-btn" class="btn btn-xs">保存</button>
+                <span class="curator-bar-label" data-i18n="agent_skills.archive_after">天未使用的技能</span>
+                <button id="curator-save-btn" class="btn btn-xs" data-i18n="common.save">保存</button>
               </div>
               <span id="curator-status-line" class="curator-bar-status">加载中...</span>
             </div>
 
             <!-- Skills count -->
-            <div id="agent-skills-count" class="skills-count-bar">0 个技能</div>
+            <div id="agent-skills-count" class="skills-count-bar" data-i18n="agent_skills.count">0 个技能</div>
 
             <!-- Skills list -->
             <div id="agent-skills-list" class="skills-list"></div>
@@ -459,20 +463,33 @@
           <!-- 字体 Panel -->
           <div class="settings-panel" id="panel-font">
             <div class="font-settings">
-              <label class="agent-name-label">聊天字体</label>
+              <label class="agent-name-label" data-i18n="font.label">聊天字体</label>
               <select id="font-select" class="form-select" style="width:100%;margin-bottom:8px;">
-                <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif">微软雅黑（默认）</option>
-                <option value="'Noto Serif SC', 'Source Han Serif SC', serif">思源宋体</option>
+                <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.yahei">微软雅黑（默认）</option>
+                <option value="'Noto Serif SC', 'Source Han Serif SC', serif" data-i18n="font.serif">思源宋体</option>
               </select>
-              <p class="hint">修改后立即生效，影响所有对话消息和思考过程的显示字体</p>
+              <p class="hint" data-i18n="font.hint">修改后立即生效，影响所有对话消息和思考过程的显示字体</p>
             </div>
+          </div>
+
+          <!-- 语言 Panel -->
+          <div class="settings-panel" id="panel-language">
+            <div class="form-row">
+              <label class="form-label" data-i18n="lang.interface">界面语言</label>
+              <select id="lang-select" class="form-select">
+                <option value="zh">简体中文</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+            <p class="hint" data-i18n="lang.hint" style="margin-top:12px;">切换语言后立即生效</p>
           </div>
 
         </div>
       </div>
       <div class="modal-footer">
-        <button id="settings-close-btn" class="btn primary">关闭</button>
+        <button id="settings-close-btn" class="btn primary" data-i18n="settings.close">关闭</button>
       </div>
+    </div>
   </div>
 </div>
 
@@ -480,12 +497,12 @@
 <div id="wechat-qr-overlay" class="wechat-qr-overlay hidden">
   <div class="wechat-qr-card">
     <button id="wechat-qr-close" class="wechat-qr-close">×</button>
-    <h3 style="margin:0 0 12px;font-size:16px;">微信扫码登录</h3>
+    <h3 style="margin:0 0 12px;font-size:16px;" data-i18n="wechat.qr_title">微信扫码登录</h3>
     <div id="wechat-qr-container" class="wechat-qr-container">
-      <span id="wechat-qr-loading">加载中...</span>
+      <span id="wechat-qr-loading" data-i18n="wechat.loading">加载中...</span>
       <img id="wechat-qr-img" style="display:none;max-width:280px;" alt="QR Code" />
     </div>
-    <div id="wechat-qr-status" class="wechat-qr-status">请使用微信扫描二维码</div>
+    <div id="wechat-qr-status" class="wechat-qr-status" data-i18n="wechat.scan_hint">请使用微信扫描二维码</div>
   </div>
 </div>
 
@@ -499,26 +516,26 @@
           <span class="brand" id="sidebar-brand">GoodAgent</span>
         </div>
       </div>
-      <div id="workspace-bar" class="workspace-bar" title="点击切换工作区间">
+          <div id="workspace-bar" class="workspace-bar" data-i18n-title="sidebar.switch_workspace" title="点击切换工作区间">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="#eab308" stroke="#ca8a04" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <span id="workspace-path" class="workspace-path"></span>
       </div>
       <div class="sidebar-body">
         <button id="new-chat" class="btn sidebar-btn">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/></svg>
-          新对话
+          <span data-i18n="sidebar.new_chat">新对话</span>
         </button>
         <div class="session-search-box">
-          <input type="text" id="session-search-input" class="session-search-field" placeholder="搜索历史对话..." />
+          <input type="text" id="session-search-input" class="session-search-field" data-i18n="sidebar.search" data-i18n-placeholder placeholder="搜索历史对话..." />
         </div>
         <div id="session-list" class="session-list"></div>
         <div class="sidebar-footer-actions">
-          <button id="delete-all-sessions-btn" class="btn sidebar-btn sidebar-icon-btn" title="清空所有会话">
+          <button id="delete-all-sessions-btn" class="btn sidebar-btn sidebar-icon-btn" data-i18n-title="sidebar.clear_all" title="清空所有会话">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           </button>
           <button id="settings-btn" class="btn sidebar-btn sidebar-settings-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            设置
+            <span data-i18n="sidebar.settings">设置</span>
           </button>
         </div>
       </div>
@@ -531,7 +548,7 @@
           <div class="welcome-icon">
             <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="GoodAgent" />
           </div>
-          <h1>GoodAgent</h1>
+          <h1 data-i18n="chat.welcome_title">GoodAgent</h1>
           <p class="description">任何事都可以找 GoodAgent</p>
         </div>
       </div>
@@ -542,45 +559,47 @@
         <div id="input-wrapper">
           <div class="input-row">
             <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.txt,.csv,.json,.md,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.doc,.docx" />
-            <button id="upload-btn" class="btn icon-btn" title="上传文件">
+            <button id="upload-btn" class="btn icon-btn" data-i18n-title="chat.upload" title="上传文件">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
             <textarea
               id="prompt-input"
+              data-i18n="chat.input_placeholder"
+              data-i18n-placeholder
               placeholder="向 GoodAgent 提问..."
               rows="1"
             ></textarea>
             <div id="input-actions">
-              <button id="send-btn" class="btn icon-btn" title="发送" disabled>
+              <button id="send-btn" class="btn icon-btn" data-i18n-title="chat.send" title="发送" disabled>
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5L14.5 8L1.5 14.5V9.5L10 8L1.5 6.5V1.5Z"/></svg>
               </button>
-              <button id="stop-btn" class="btn icon-btn hidden" title="停止">
+              <button id="stop-btn" class="btn icon-btn hidden" data-i18n-title="chat.stop" title="停止">
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
               </button>
             </div>
           </div>
           <div id="info-bar">
             <span id="info-model-name"></span>
-            <span id="task-indicator" class="task-indicator hidden" title="当前任务进度"></span>
+            <span id="task-indicator" class="task-indicator hidden" data-i18n-title="chat.task_progress" title="当前任务进度"></span>
             <span id="token-budget" class="token-budget hidden"></span>
-            <span id="context-usage" class="context-usage hidden" title="上下文使用量"></span>
+            <span id="context-usage" class="context-usage hidden" data-i18n-title="chat.context_usage" title="上下文使用量"></span>
             <div class="toggle-group">
-              <label class="reasoning-toggle" title="计划模式：只读分析，不修改文件">
-                <span class="reasoning-toggle-label">计划</span>
+              <label class="reasoning-toggle" data-i18n-title="chat.plan_hint" title="计划模式：只读分析，不修改文件">
+                <span class="reasoning-toggle-label" data-i18n="chat.plan">计划</span>
                 <div class="toggle-switch toggle-switch-sm">
                   <input type="checkbox" id="plan-mode-checkbox" />
                   <span class="toggle-slider"></span>
                 </div>
               </label>
-              <label class="reasoning-toggle" title="知识库 RAG 检索">
-                <span class="reasoning-toggle-label">知识库</span>
+              <label class="reasoning-toggle" data-i18n-title="chat.kb_hint" title="知识库 RAG 检索">
+                <span class="reasoning-toggle-label" data-i18n="chat.kb_toggle">知识库</span>
                 <div class="toggle-switch toggle-switch-sm">
                   <input type="checkbox" id="kb-toggle" />
                   <span class="toggle-slider"></span>
                 </div>
               </label>
-              <label id="reasoning-toggle" class="reasoning-toggle" title="深度推理">
-                <span class="reasoning-toggle-label">深度推理</span>
+              <label id="reasoning-toggle" class="reasoning-toggle" data-i18n-title="chat.reasoning_hint" title="深度推理">
+                <span class="reasoning-toggle-label" data-i18n="chat.reasoning">深度推理</span>
                 <div class="toggle-switch toggle-switch-sm">
                   <input type="checkbox" id="reasoning-checkbox" checked />
                   <span class="toggle-slider"></span>
@@ -597,25 +616,26 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="translations.js"></script>
   <script src="app.js"></script>
 
 <!-- Skill Editor Modal -->
 <div id="skill-editor-overlay" class="skill-editor-overlay hidden">
   <div class="skill-editor-card">
     <div class="skill-editor-header">
-      <h3 id="skill-editor-title">编辑技能</h3>
+      <h3 id="skill-editor-title" data-i18n="skill_editor.title">编辑技能</h3>
       <button id="skill-editor-close" class="skill-editor-close">×</button>
     </div>
     <div class="skill-editor-body">
-      <input id="skill-editor-name" class="form-input" placeholder="技能名称" style="width:100%;margin-bottom:8px;" readonly />
-      <input id="skill-editor-desc" class="form-input" placeholder="简短描述" style="width:100%;margin-bottom:8px;" />
-      <input id="skill-editor-triggers" class="form-input" placeholder="触发词（逗号分隔）" style="width:100%;margin-bottom:8px;" />
-      <textarea id="skill-editor-body" class="memory-editor" rows="18" placeholder="SKILL.md 正文..." style="width:100%;font-family:var(--font-mono);font-size:13px;tab-size:2;"></textarea>
+      <input id="skill-editor-name" class="form-input" data-i18n-placeholder="skill_editor.name_placeholder" placeholder="技能名称" style="width:100%;margin-bottom:8px;" readonly />
+      <input id="skill-editor-desc" class="form-input" data-i18n-placeholder="skill_editor.desc_placeholder" placeholder="简短描述" style="width:100%;margin-bottom:8px;" />
+      <input id="skill-editor-triggers" class="form-input" data-i18n-placeholder="skill_editor.triggers_placeholder" placeholder="触发词（逗号分隔）" style="width:100%;margin-bottom:8px;" />
+      <textarea id="skill-editor-body" class="memory-editor" rows="18" data-i18n-placeholder="skill_editor.body_placeholder" placeholder="SKILL.md 正文..." style="width:100%;font-family:var(--font-mono);font-size:13px;tab-size:2;"></textarea>
       <div id="skill-editor-status" class="settings-status hidden" style="margin-top:4px;"></div>
     </div>
     <div class="skill-editor-footer">
-      <button id="skill-editor-cancel" class="btn">取消</button>
-      <button id="skill-editor-save" class="btn primary">保存</button>
+      <button id="skill-editor-cancel" class="btn" data-i18n="common.cancel">取消</button>
+      <button id="skill-editor-save" class="btn primary" data-i18n="common.save">保存</button>
     </div>
   </div>
 </div>

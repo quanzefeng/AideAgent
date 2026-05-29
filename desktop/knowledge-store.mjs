@@ -24,7 +24,7 @@ if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 // ── Configuration ─────────────────────────────────────────
 
 let _vaultPath = "";
-let _config = { embeddingProvider: "local", maxNotes: 5, maxChars: 500 };
+let _config = { embeddingProvider: "local", maxNotes: 5, maxChars: 1000 };
 
 function loadConfig() {
   try {
@@ -55,8 +55,8 @@ export function setVault(path) {
 
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
-  if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(20, cfg.maxNotes));
-  if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(2000, cfg.maxChars));
+  if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
+  if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(10000, cfg.maxChars));
   saveConfig();
   return { ok: true, config: _config };
 }
