@@ -137,12 +137,12 @@ async function wxPollLoop() {
 }
 
 export function loadWxConfig() {
-  const p = join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config", "wechat.json");
+  const p = join(os.homedir(), ".goodagent", "config", "wechat.json");
   try { return JSON.parse(readFileSync(p, "utf8")); } catch { return {}; }
 }
 
 function saveWxConfig(cfg) {
-  const d = join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config");
+  const d = join(os.homedir(), ".goodagent", "config");
   try { mkdirSync(d, { recursive: true }); } catch { /* ignored */ }
   writeFileSync(join(d, "wechat.json"), JSON.stringify(cfg, null, 2));
 }
@@ -184,7 +184,7 @@ export function registerWechatIpc() {
     const pollAbort = getWxPollAbort();
     if (pollAbort) { pollAbort.abort("logout"); setWxPollAbort(null); }
     setWxBotToken(null); setWxBotId(null); setWxUserId(null);
-    try { unlinkSync(join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config", "wechat.json")); } catch { /* ignored */ }
+    try { unlinkSync(join(os.homedir(), ".goodagent", "config", "wechat.json")); } catch { /* ignored */ }
     sendToRenderer("wechat:bot-status", { status: "disconnected" });
     return { ok: true };
   });

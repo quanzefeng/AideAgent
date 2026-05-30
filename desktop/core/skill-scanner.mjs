@@ -1,12 +1,14 @@
 // ── Skill Scanner — scan SKILL.md files from installed dirs ──
 
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 
+const HOME = homedir();
 const SKILL_DIRS = [
-  join("C:", "Users", "7", ".agents", "skills"),
-  join("C:", "Users", "7", ".agents"),
-  join("C:", "Users", "7", ".claude", "skills"),
+  join(HOME, ".agents", "skills"),
+  join(HOME, ".agents"),
+  join(HOME, ".claude", "skills"),
 ];
 
 export function parseFrontMatter(text) {

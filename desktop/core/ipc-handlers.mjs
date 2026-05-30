@@ -359,8 +359,8 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("mcp:detect-local", async () => {
-    const HOME = process.env.USERPROFILE || homedir();
-    const APPDATA = process.env.APPDATA || join(HOME, "AppData", "Roaming");
+    const HOME = homedir();
+    const PLATFORM = process.platform;
     const found = [];
 
     function readMcpServers(filePath, source, opts = {}) {
@@ -408,7 +408,13 @@ export function registerIpcHandlers() {
     found.push(...readMcpServers(join(HOME, ".config", "opencode", "mcp.json"), "OpenCode"));
     found.push(...readMcpServers(join(HOME, ".config", "opencode", "opencode.json"), "OpenCode", { keys: ["m"] }));
 
-    for (const p of [join(APPDATA, "Claude", "claude_dotfiles", "mcp.json"), join(APPDATA, "Claude", "mcp.json")]) {
+    // Claude Desktop config paths (cross-platform)
+    const claudeConfigDir = PLATFORM === "darwin"
+      ? join(HOME, "Library", "Application Support", "Claude")
+      : PLATFORM === "win32"
+        ? join(process.env.APPDATA || join(HOME, "AppData", "Roaming"), "Claude")
+        : join(HOME, ".config", "Claude");
+    for (const p of [join(claudeConfigDir, "claude_dotfiles", "mcp.json"), join(claudeConfigDir, "mcp.json")]) {
       found.push(...readMcpServers(p, "Claude Desktop"));
     }
 
