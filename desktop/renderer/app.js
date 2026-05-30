@@ -685,20 +685,20 @@ async function fetchModels() {
   }
 
   if (models.length > 0) {
-    // Populate the model dropdown with fetched models
-    const select = document.getElementById("settings-model");
-    if (select) {
-      select.style.display = "";
-      select.innerHTML = "";
+    // Populate datalist with fetched models
+    const datalist = document.getElementById("model-suggestions");
+    if (datalist) {
+      datalist.innerHTML = "";
       models.forEach(m => {
         const opt = document.createElement("option");
         opt.value = m.id;
         opt.textContent = m.label;
-        select.appendChild(opt);
+        datalist.appendChild(opt);
       });
-      if (select.value === "" && models.length > 0) {
-        select.value = models[0].id;
-      }
+    }
+    // Auto-fill input with first model if empty
+    if (settingsModelInput && !settingsModelInput.value && models.length > 0) {
+      settingsModelInput.value = models[0].id;
     }
     if (settingsStatus) {
       settingsStatus.textContent = t("api.fetch_success", { count: models.length });
