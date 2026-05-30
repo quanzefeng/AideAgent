@@ -700,7 +700,6 @@ async function fetchModels() {
         select.value = models[0].id;
       }
     }
-    if (settingsModelInput) settingsModelInput.style.display = "none";
     if (settingsStatus) {
       settingsStatus.textContent = t("api.fetch_success", { count: models.length });
       settingsStatus.className = "settings-status success";
