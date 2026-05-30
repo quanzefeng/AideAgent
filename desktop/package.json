@@ -10,6 +10,7 @@
     "dist:win": "electron-builder --win nsis",
     "lint": "eslint *.mjs core/*.mjs",
     "lint:fix": "eslint --fix *.mjs core/*.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -48,6 +49,7 @@
     "electron": "^40.8.0",
     "electron-builder": "^26.0.0",
     "eslint": "^10.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.7"
   },
   "dependencies": {
