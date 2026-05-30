@@ -62,7 +62,7 @@ export function scanSkills() {
           path: skillPath,
           source: dir.includes(".agents") ? "agents" : "claude",
         });
-      } catch {}
+      } catch { /* ignored */ }
     }
   }
   skills.sort((a, b) => a.name.localeCompare(b.name));

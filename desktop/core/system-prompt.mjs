@@ -75,7 +75,7 @@ export function loadPromptProfiles() {
       const store = JSON.parse(raw);
       let migrated = false;
       if (store.profiles) {
-        for (const [id, prof] of Object.entries(store.profiles)) {
+        for (const prof of Object.values(store.profiles)) {
           if (prof && prof.sections && !prof.content) {
             prof.content = Object.entries(prof.sections)
               .filter(([, sec]) => sec.enabled && sec.content && sec.content.trim())
@@ -187,7 +187,7 @@ Working directory: ${WORKSPACE}`;
       ).join("\n");
       content += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
     }
-  } catch {}
+  } catch { /* ignored */ }
 
   let memorySections = [];
   try {
@@ -213,10 +213,10 @@ Working directory: ${WORKSPACE}`;
         try {
           const text = readFileSync(path, "utf8").trim();
           if (text) memorySections.push({ label, text });
-        } catch {}
+        } catch { /* ignored */ }
       }
-    } catch {}
-  } catch {}
+    } catch { /* ignored */ }
+  } catch { /* ignored */ }
 
   if (isPlanMode) {
     content += "\n\n## ⚠️ 计划模式\n当前处于计划模式。你只能读取和分析代码，绝对不能使用 file_write、file_edit、bash 等写操作工具。\n请先制定详细的实现计划（包括文件变更清单、步骤、依赖关系），等用户确认后再执行。";
@@ -261,7 +261,7 @@ Working directory: ${WORKSPACE}`;
         }).join("\n\n");
         content += `\n\n<knowledge-base>\n**用户知识库中的相关内容：**\n${kbContext}\n</knowledge-base>`;
       }
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   return { role: "system", content };

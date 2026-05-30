@@ -42,7 +42,8 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
 
       const cleanMsgs = isAnthropic ? msgs : msgs.map(m => {
         if (m.role === "assistant" && m.reasoning_content !== undefined) {
-          const { reasoning_content, ...rest } = m;
+          const rest = { ...m };
+          delete rest.reasoning_content;
           return rest;
         }
         return m;
@@ -131,7 +132,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
                 }
               }
             }
-          } catch {}
+          } catch { /* ignored */ }
         }
       }
 

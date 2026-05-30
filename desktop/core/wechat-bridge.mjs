@@ -1,12 +1,11 @@
 // ── WeChat iLink Bridge — QR Login + Bot ────────────────────
 
 import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import os from "node:os";
-import { app, BrowserWindow, ipcMain } from "electron";
-import sessionDb from "../session-db.mjs";
+import { app, ipcMain } from "electron";
 import {
   WX_BASE, WX_BOT_TYPE, WX_POLL_TIMEOUT, WX_MSG_CHUNK,
   MSG_ITEM_TEXT, MSG_TYPE_BOT, MSG_STATE_FINISH,
@@ -124,7 +123,7 @@ async function wxPollLoop() {
           await wxSendMessage(uid, reply, msg.context_token);
         } catch (err) {
           console.error("[wechat] reply:", err.message);
-          try { await wxSendMessage(uid, `[${err.message}]`, msg.context_token); } catch {}
+          try { await wxSendMessage(uid, `[${err.message}]`, msg.context_token); } catch { /* ignored */ }
         }
       }
     } catch (err) {
@@ -144,7 +143,7 @@ export function loadWxConfig() {
 
 function saveWxConfig(cfg) {
   const d = join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config");
-  try { mkdirSync(d, { recursive: true }); } catch {}
+  try { mkdirSync(d, { recursive: true }); } catch { /* ignored */ }
   writeFileSync(join(d, "wechat.json"), JSON.stringify(cfg, null, 2));
 }
 
@@ -185,7 +184,7 @@ export function registerWechatIpc() {
     const pollAbort = getWxPollAbort();
     if (pollAbort) { pollAbort.abort("logout"); setWxPollAbort(null); }
     setWxBotToken(null); setWxBotId(null); setWxUserId(null);
-    try { unlinkSync(join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config", "wechat.json")); } catch {}
+    try { unlinkSync(join(process.env.USERPROFILE || os.homedir(), ".goodagent", "config", "wechat.json")); } catch { /* ignored */ }
     sendToRenderer("wechat:bot-status", { status: "disconnected" });
     return { ok: true };
   });
@@ -217,6 +216,6 @@ export function autoStartWechat() {
         console.log("[wechat] auto-starting bot from saved config");
         wxPollLoop().catch(e => console.error("[wechat] auto-start:", e.message));
       }
-    } catch {}
+    } catch { /* ignored */ }
   });
 }

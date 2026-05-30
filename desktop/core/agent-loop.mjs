@@ -10,8 +10,6 @@ import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
   taskStore, getTodoList,
-  getEpisodicSearched, setEpisodicSearched,
-  _subAgentCtrls, _surfacedMemories,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS,
 } from "./state.mjs";
 
@@ -23,7 +21,7 @@ function getHistoryTitle(history) {
 }
 
 async function saveSession(id, history, title) {
-  try { await sessionDb.saveSession(id, history, title); } catch {}
+  try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
 }
 
 export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false) {
@@ -86,7 +84,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   if (!sysContent.includes("AskUserQuestion")) {
     sysContent += `\n\n**AskUserQuestion:** You can ask the user up to 4 multiple-choice questions when you need clarification. Use this instead of guessing. The user will see a dialog and respond.`;
   }
-  if (!sysContent.includes("\`Agent\`")) {
+  if (!sysContent.includes("`Agent`")) {
     sysContent += `\n\n**Agent (Sub-Agent):** You can launch read-only sub-agents (\`Agent\` tool) for parallel independent research. Sub-agents have access to file_read, grep, glob, web_search, web_fetch. Use them to search for information in parallel while you continue other work. A sub-agent returns a single text result. Example: \`Agent(description="search AI news", prompt="Search the web for the latest AI news this week and summarize the top 3 stories.")\``;
   }
   if (!sysContent.includes("Do NOT save")) {
@@ -131,7 +129,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     compressContext(msgs);
     sendContextUsage(msgs);
 
-    let content = "", reasoningContent = "", tcs = [];
+    let content, reasoningContent, tcs;
     try {
       const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
       const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning, kbEnabled);

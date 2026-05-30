@@ -42,7 +42,7 @@ export function toAnthropicMessages(msgs) {
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
           let input = {};
-          try { input = JSON.parse(tc.function.arguments); } catch {}
+          try { input = JSON.parse(tc.function.arguments); } catch { /* ignored */ }
           content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
         }
       }
@@ -97,7 +97,7 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
             if (tc.function?.arguments) tcAccum[tc.index].function.arguments += tc.function.arguments;
           }
         }
-      } catch {}
+      } catch { /* ignored */ }
     }
     buf = buf.split("\n").pop() || "";
   }
@@ -139,7 +139,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
-  let buf = "", content = "", currentEvent = "";
+  let buf = "", content = "";
   const tcAccum = {};
   let finishReason = null;
   while (true) {
@@ -150,7 +150,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     buf = lines.pop() || "";
     for (const line of lines) {
       const t = line.trim();
-      if (t.startsWith("event: ")) { currentEvent = t.slice(7).trim(); }
+      if (t.startsWith("event: ")) { /* event type not used */ }
       else if (t.startsWith("data: ")) {
         const d = t.slice(6).trim();
         if (!d) continue;
@@ -172,7 +172,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
           } else if (j.type === "message_delta") {
             finishReason = j.delta?.stop_reason;
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
     }
   }

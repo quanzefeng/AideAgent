@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
@@ -14,8 +14,8 @@ import {
   PS_EXE, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE, PS_UTF8_PREFIX,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
   taskStore, getTodoList, setTodoList,
-  _askId, _askResolvers, nextAskId,
-  _subAgentCtrls, getLastApiConfig,
+  _askResolvers, nextAskId,
+  getLastApiConfig,
 } from "./state.mjs";
 
 // Re-export for use by other modules

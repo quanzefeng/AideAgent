@@ -1,6 +1,6 @@
 // ── Token Budget & Context Compression ──────────────────────
 
-import { CONTEXT_WINDOW, CONTEXT_WARN_PCT, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.mjs";
+import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.mjs";
 
 const TOKEN_BUDGET_WARN = 16000;
 const TOKEN_BUDGET_HARD = 24000;

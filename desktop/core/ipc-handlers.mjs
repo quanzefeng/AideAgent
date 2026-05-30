@@ -1,6 +1,6 @@
 // ── IPC Handlers — All ipcMain.handle registrations ──────────
 
-import { ipcMain, BrowserWindow, dialog, app } from "electron";
+import { ipcMain, BrowserWindow, dialog } from "electron";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -10,7 +10,7 @@ import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop } from "./agent-loop.mjs";
-import { scanSkills, parseFrontMatter } from "./skill-scanner.mjs";
+import { scanSkills } from "./skill-scanner.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -20,10 +20,10 @@ import {
   getWorkspace, setWorkspace,
   getPlanMode, setPlanMode,
   pendingPerms, _askResolvers,
-  getLastApiConfig, setLastApiConfig,
-  sendToRenderer, genId,
+  setLastApiConfig,
+  sendToRenderer,
 } from "./state.mjs";
-import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT, bumpVersion } from "./system-prompt.mjs";
+import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
 
 function getHistoryTitle(history) {
   const firstUser = history.find(m => m.role === "user");
@@ -33,7 +33,7 @@ function getHistoryTitle(history) {
 }
 
 async function saveSession(id, history, title) {
-  try { await sessionDb.saveSession(id, history, title); } catch {}
+  try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
 }
 
 export function registerIpcHandlers() {
@@ -50,7 +50,7 @@ export function registerIpcHandlers() {
   ipcMain.handle("query:abort", () => {
     const abortCtrl = getAbortCtrl();
     if (abortCtrl) { abortCtrl.abort(); setAbortCtrl(null); }
-    for (const [id, ctrl] of _subAgentCtrls) { ctrl.abort(); }
+    for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
     _subAgentCtrls.clear();
   });
 
@@ -66,7 +66,7 @@ export function registerIpcHandlers() {
     taskStore.clear();
     setTodoList([]);
     _surfacedMemories.clear();
-    for (const [id, ctrl] of _subAgentCtrls) { ctrl.abort(); }
+    for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
     _subAgentCtrls.clear();
     sendToRenderer("task:clear", {});
   });
@@ -117,7 +117,7 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("session:search", async (_event, query, limit) => {
-    try { return sessionDb.searchMessages(query, limit); } catch (err) { return []; }
+    try { return sessionDb.searchMessages(query, limit); } catch { return []; }
   });
 
   ipcMain.handle("session:last", async (_event, limit) => {
@@ -153,7 +153,7 @@ export function registerIpcHandlers() {
   });
   ipcMain.handle("memory:search", async (_e, query) => memory.searchMemory(query || "", 10));
   ipcMain.handle("memory:check-dup", async (_e, type, text) => memory.checkDuplicate(type, text));
-  ipcMain.handle("memory:index", async (_e, source, content) => { memory.rebuildIndex(); return { ok: true }; });
+  ipcMain.handle("memory:index", async () => { memory.rebuildIndex(); return { ok: true }; });
 
   // ── Workspace IPC ────────────────────────────────────────
   ipcMain.handle("workspace:get", async () => getWorkspace());
@@ -181,7 +181,7 @@ export function registerIpcHandlers() {
 
   // ── Multi-file memory API ────────────────────────────────
   ipcMain.handle("memory:list-all", async () => {
-    try { return memory.listMemories(); } catch (e) { return []; }
+    try { return memory.listMemories(); } catch { return []; }
   });
   ipcMain.handle("memory:read-one", async (_e, filename) => {
     return memory.readMemory(filename);
@@ -294,7 +294,6 @@ export function registerIpcHandlers() {
     if (!skill) return null;
     try {
       const content = readFileSync(skill.path, "utf-8");
-      const meta = parseFrontMatter(content);
       const body = content.replace(/^---[\s\S]*?\n---\s*\n?/, "").trim();
       return { ...skill, body, content };
     } catch { return null; }
