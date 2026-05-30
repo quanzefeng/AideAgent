@@ -512,22 +512,51 @@ function updateConfigBanner() {
 }
 
 function getCurrentModelValue() {
-  if (settingsModelInput) return settingsModelInput.value;
-  return "";
+  if (settingsModelInput && settingsModelInput.style.display !== "none") {
+    return settingsModelInput.value;
+  }
+  return settingsModel?.value || "";
 }
 
 function populateModelDropdown(preset, selectedModel) {
-  if (!settingsModelInput) return;
-  settingsModelInput.value = selectedModel || "";
-  const datalist = document.getElementById("model-suggestions");
-  if (datalist) {
-    datalist.innerHTML = "";
-    if (preset && preset.models && preset.models.length > 0) {
-      preset.models.forEach(m => {
-        const opt = document.createElement("option");
-        opt.value = m.id;
-        datalist.appendChild(opt);
-      });
+  if (!settingsModel) return;
+  settingsModel.innerHTML = "";
+  if (preset && preset.models && preset.models.length > 0) {
+    preset.models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.label;
+      if (m.id === selectedModel) opt.selected = true;
+      settingsModel.appendChild(opt);
+    });
+    if (selectedModel && !preset.models.some(m => m.id === selectedModel)) {
+      const customOpt = document.createElement("option");
+      customOpt.value = selectedModel;
+      customOpt.textContent = selectedModel + " (自定义)";
+      customOpt.selected = true;
+      settingsModel.insertBefore(customOpt, settingsModel.firstChild);
+    }
+    // Add "自定义" option at the bottom
+    const customEntry = document.createElement("option");
+    customEntry.value = "__custom__";
+    customEntry.textContent = "✏️ 手动输入模型名称...";
+    settingsModel.appendChild(customEntry);
+    // Toggle to input when "自定义" is selected
+    settingsModel.addEventListener("change", () => {
+      if (settingsModel.value === "__custom__") {
+        settingsModel.style.display = "none";
+        settingsModelInput.style.display = "";
+        settingsModelInput.value = "";
+        settingsModelInput.focus();
+      }
+    });
+    settingsModel.style.display = "";
+    if (settingsModelInput) settingsModelInput.style.display = "none";
+  } else {
+    settingsModel.style.display = "none";
+    if (settingsModelInput) {
+      settingsModelInput.style.display = "";
+      settingsModelInput.value = selectedModel || "";
     }
   }
 }
@@ -539,8 +568,10 @@ function fillSettingsForm() {
     if (settingsProvider) settingsProvider.value = cfg.provider;
     const preset = PROVIDER_PRESETS[cfg.provider];
     if (settingsUrl) settingsUrl.value = cfg.apiUrl || (preset?.url ?? "");
-    const selectedModel = cfg.model || preset?.model || "";
-    populateModelDropdown(preset, selectedModel);
+    if (settingsModel || settingsModelInput) {
+      const selectedModel = cfg.model || preset?.model || "";
+      populateModelDropdown(preset, selectedModel);
+    }
     if (settingsKey) settingsKey.value = cfg.apiKey;
   } finally {
     _fillingForm = false;
@@ -682,20 +713,24 @@ async function fetchModels() {
   }
 
   if (models.length > 0) {
-    // Populate datalist with fetched models
-    const datalist = document.getElementById("model-suggestions");
-    if (datalist) {
-      datalist.innerHTML = "";
+    // Populate the select with fetched models
+    if (settingsModel) {
+      settingsModel.style.display = "";
+      settingsModel.innerHTML = "";
       models.forEach(m => {
         const opt = document.createElement("option");
         opt.value = m.id;
-        datalist.appendChild(opt);
+        opt.textContent = m.id;
+        settingsModel.appendChild(opt);
       });
+      // Add custom entry at bottom
+      const customEntry = document.createElement("option");
+      customEntry.value = "__custom__";
+      customEntry.textContent = "✏️ 手动输入模型名称...";
+      settingsModel.appendChild(customEntry);
+      if (models.length > 0) settingsModel.value = models[0].id;
     }
-    // Auto-fill if empty
-    if (settingsModelInput && !settingsModelInput.value) {
-      settingsModelInput.value = models[0].id;
-    }
+    if (settingsModelInput) settingsModelInput.style.display = "none";
     if (settingsStatus) {
       settingsStatus.textContent = t("api.fetch_success", { count: models.length });
       settingsStatus.className = "settings-status success";
