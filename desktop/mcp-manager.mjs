@@ -122,13 +122,13 @@ class McpManager {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: { name: "goodagent", version: "1.0" },
-      }, 15000);
+      }, 30000);
 
       // Step 2: Initialized notification
       this._notify(name, "notifications/initialized", {});
 
       // Step 3: List and cache tools
-      const listResult = await this._request(name, "tools/list", {}, 15000);
+      const listResult = await this._request(name, "tools/list", {}, 30000);
       server.tools = listResult.tools || [];
       server.status = "running";
 
@@ -185,7 +185,7 @@ class McpManager {
     };
 
     const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 15000);
+    const timeout = setTimeout(() => ac.abort(), 30000);
 
     try {
       // Step 1: Initialize
