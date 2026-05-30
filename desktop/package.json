@@ -8,6 +8,9 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:linux": "electron-builder --linux deb AppImage",
+    "dist:all": "electron-builder --win nsis --mac dmg --linux deb AppImage",
     "lint": "eslint *.mjs core/*.mjs",
     "lint:fix": "eslint --fix *.mjs core/*.mjs",
     "typecheck": "tsc --noEmit",
@@ -35,6 +38,18 @@
       "icon": "icon.ico",
       "artifactName": "GoodAgent-${version}-Windows-${arch}.${ext}",
       "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icon.icns",
+      "artifactName": "GoodAgent-${version}-macOS-${arch}.${ext}",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["deb", "AppImage"],
+      "icon": "icon.png",
+      "artifactName": "GoodAgent-${version}-Linux-${arch}.${ext}",
+      "category": "Development"
     },
     "nsis": {
       "oneClick": false,
