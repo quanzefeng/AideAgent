@@ -512,17 +512,17 @@ function updateConfigBanner() {
 }
 
 function getCurrentModelValue() {
-  if (settingsModelInput && settingsModelInput.style.display !== "none") {
-    return settingsModelInput.value;
+  // Input takes priority (user might type custom model)
+  if (settingsModelInput && settingsModelInput.style.display !== "none" && settingsModelInput.value.trim()) {
+    return settingsModelInput.value.trim();
   }
   return settingsModel?.value || "";
 }
 
 function populateModelDropdown(preset, selectedModel) {
   if (settingsModel && preset && preset.models && preset.models.length > 0) {
-    // Has preset models — show <select>, hide <input>
+    // Has preset models — show both <select> and <input>
     settingsModel.style.display = "";
-    if (settingsModelInput) settingsModelInput.style.display = "none";
     settingsModel.innerHTML = "";
     preset.models.forEach(m => {
       const opt = document.createElement("option");
@@ -538,8 +538,14 @@ function populateModelDropdown(preset, selectedModel) {
       customOpt.selected = true;
       settingsModel.insertBefore(customOpt, settingsModel.firstChild);
     }
+    // Also show input for manual entry
+    if (settingsModelInput) {
+      settingsModelInput.style.display = "";
+      settingsModelInput.value = "";
+      settingsModelInput.placeholder = t("api.model_placeholder");
+    }
   } else {
-    // No preset models — show <input> for manual entry, hide <select>
+    // No preset models — show only <input>
     if (settingsModel) settingsModel.style.display = "none";
     if (settingsModelInput) {
       settingsModelInput.style.display = "";
