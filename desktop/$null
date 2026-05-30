@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "D:\GoodAgent\desktop\list_kb_notes.py", line 19, in <module>
-    print(f"ID: {note_id}, Title: {title[:60]}{'...' if len(title) > 60 else ''}")
-UnicodeEncodeError: 'gbk' codec can't encode character '\U0001f35d' in position 28: illegal multibyte sequence
