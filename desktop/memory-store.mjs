@@ -7,7 +7,7 @@
  *   ...
  */
 
-import { join, basename } from "path";
+import { join } from "path";
 import { homedir } from "os";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, statSync } from "fs";
 import { DatabaseSync } from "node:sqlite";
@@ -70,7 +70,7 @@ function getFtsDb() {
 }
 
 function ftsDelete(filename) {
-  try { getFtsDb().prepare("DELETE FROM mem_fts WHERE filename = ?").run(filename); } catch {}
+  try { getFtsDb().prepare("DELETE FROM mem_fts WHERE filename = ?").run(filename); } catch { /* ignored */ }
 }
 
 function ftsInsert(filename, name, description, type, body) {
@@ -78,7 +78,7 @@ function ftsInsert(filename, name, description, type, body) {
     ftsDelete(filename);
     getFtsDb().prepare("INSERT INTO mem_fts(filename, name, description, type, body) VALUES (?,?,?,?,?)")
       .run(filename, name || "", description || "", type || "", body || "");
-  } catch {}
+  } catch { /* ignored */ }
 }
 
 // ── Frontmatter ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ function readIndex() {
 }
 
 function writeIndex(content) {
-  try { writeFileSync(INDEX_PATH, content, "utf-8"); } catch {}
+  try { writeFileSync(INDEX_PATH, content, "utf-8"); } catch { /* ignored */ }
 }
 
 function addToIndex(filename, name, description) {
@@ -159,7 +159,7 @@ export function listMemories() {
         const text = readFileSync(filePath, "utf-8");
         const meta = parseFrontMatter(text);
         let mtimeMs = 0;
-        try { mtimeMs = statSync(filePath).mtimeMs; } catch {}
+        try { mtimeMs = statSync(filePath).mtimeMs; } catch { /* ignored */ }
         if (!meta.name) meta.name = entry.replace(/\.md$/, "");
         results.push({
           filename: entry,
@@ -169,9 +169,9 @@ export function listMemories() {
           body: text.replace(/^---[\s\S]*?\n---\n?/, "").trim(),
           mtimeMs,
         });
-      } catch {}
+      } catch { /* ignored */ }
     }
-  } catch {}
+  } catch { /* ignored */ }
   // Sort newest-first by modification time
   return results.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
@@ -281,7 +281,7 @@ export function rebuildIndex() {
     for (const m of memories) {
       ftsInsert(m.filename, m.name, m.description, m.type, m.body);
     }
-  } catch {}
+  } catch { /* ignored */ }
   return { ok: true, count: memories.length };
 }
 
@@ -306,7 +306,7 @@ export function migrateFromOldFormat() {
         createMemory("user_profile", "About the user — preferences, background, knowledge", "user", content);
         migrated++;
       }
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   // Migrate MEMORY.md — split by ## headings
@@ -325,7 +325,7 @@ export function migrateFromOldFormat() {
           migrated++;
         }
       }
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   return { migrated, reason: migrated > 0 ? `migrated ${migrated} files` : "no old files found" };
@@ -388,4 +388,4 @@ export function checkDuplicate(type, text) {
 }
 
 // ── Index on load (lazy) ──────────────────────────────────────
-try { migrateFromOldFormat(); } catch {}
+try { migrateFromOldFormat(); } catch { /* ignored */ }

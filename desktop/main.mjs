@@ -91,14 +91,14 @@ app.whenReady().then(async () => {
 
   mcpManager.init().catch(e => console.error("[main] mcpManager.init error:", e.message));
 
-  try { sessionDb.migrateFromJson(join(app.getPath("userData"), "sessions")); } catch {}
+  try { sessionDb.migrateFromJson(join(app.getPath("userData"), "sessions")); } catch { /* ignored */ }
 
   try {
     const count = sessionDb.listSessions(1000).length;
     console.log("[startup] sessions in DB:", count);
-  } catch {}
+  } catch { /* ignored */ }
 
-  try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch {}
+  try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch { /* ignored */ }
   try { skills.reindexSkills(); } catch (e) { console.error("[skills-store] reindex:", e.message); }
 
   const CURATOR_INTERVAL = 6 * 60 * 60 * 1000;
@@ -116,8 +116,8 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("will-quit", () => {
-  try { sessionDb.close(); } catch {}
+  try { sessionDb.close(); } catch { /* ignored */ }
   try {
     import("./lsp-manager.mjs").then(m => m.default.shutdown()).catch(() => {});
-  } catch {}
+  } catch { /* ignored */ }
 });

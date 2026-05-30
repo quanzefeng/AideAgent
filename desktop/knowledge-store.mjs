@@ -32,13 +32,13 @@ function loadConfig() {
     const cfg = JSON.parse(raw);
     _vaultPath = cfg.vaultPath || "";
     _config = { ..._config, ...cfg };
-  } catch {}
+  } catch { /* ignored */ }
 }
 
 function saveConfig() {
   try {
     writeFileSync(CONFIG_PATH, JSON.stringify({ ..._config, vaultPath: _vaultPath }, null, 2), "utf-8");
-  } catch {}
+  } catch { /* ignored */ }
 }
 
 loadConfig();
@@ -59,15 +59,6 @@ export function setConfig(cfg) {
   if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(10000, cfg.maxChars));
   saveConfig();
   return { ok: true, config: _config };
-}
-
-// ── CJK Normalization for FTS5 ───────────────────────────
-
-function fts5Normalize(text) {
-  if (!text) return text;
-  return text
-    .replace(/([一-鿿㐀-䶿豈-﫿])([a-zA-Z0-9])/g, "$1 $2")
-    .replace(/([a-zA-Z0-9])([一-鿿㐀-䶿豈-﫿])/g, "$1 $2");
 }
 
 // Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
@@ -129,18 +120,6 @@ function extractTags(text) {
   return [...tags];
 }
 
-// ── Wikilink Parser ───────────────────────────────────────
-
-function extractWikilinks(text) {
-  const links = [];
-  const regex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-  let m;
-  while ((m = regex.exec(text)) !== null) {
-    links.push(m[1].trim());
-  }
-  return links;
-}
-
 // ── Database ──────────────────────────────────────────────
 
 let _db = null;
@@ -192,7 +171,7 @@ function getDb() {
           body TEXT
         )
       `);
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   _db.exec(`
@@ -210,7 +189,7 @@ function getDb() {
 // ── FTS Operations ────────────────────────────────────────
 
 function ftsDelete(relPath) {
-  try { getDb().prepare("DELETE FROM kb_fts WHERE rel_path = ?").run(relPath); } catch {}
+  try { getDb().prepare("DELETE FROM kb_fts WHERE rel_path = ?").run(relPath); } catch { /* ignored */ }
 }
 
 function ftsInsert(relPath, title, tags, body) {
@@ -235,7 +214,7 @@ function ftsSearch(query, limit) {
       return db.prepare(
         'SELECT rowid, rel_path, title, tags, snippet(kb_fts, 3, \'<mark>\', \'</mark>\', \'…\', 64) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
       ).all(matchExpr, limit);
-    } catch {}
+    } catch { /* ignored */ }
   }
   // LIKE fallback
   try {
@@ -285,7 +264,7 @@ async function getEmbedder() {
           console.log("[kb] Using Ollama embedder");
           return _embedder;
         }
-      } catch {}
+      } catch { /* ignored */ }
     }
 
     if (p === "deepseek") {
@@ -394,7 +373,6 @@ function scanVault(dir, baseDir) {
         const stat = statSync(fullPath);
         const content = readFileSync(fullPath, "utf-8");
         const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
-        const meta = parseFrontMatter(content);
         const title = extractTitle(content, entry.name);
         const tags = extractTags(content);
         // Strip frontmatter and markdown for body
@@ -414,7 +392,7 @@ function scanVault(dir, baseDir) {
           wordCount: body.length,
           mtimeMs: stat.mtimeMs,
         });
-      } catch {}
+      } catch { /* ignored */ }
     }
   }
   return results;
@@ -429,8 +407,8 @@ export async function rebuildIndex(progressCb) {
   const notes = scanVault(_vaultPath, _vaultPath);
 
   // Clear existing data
-  try { db.exec("DELETE FROM kb_fts"); } catch {}
-  try { db.exec("DELETE FROM kb_embeddings"); } catch {}
+  try { db.exec("DELETE FROM kb_fts"); } catch { /* ignored */ }
+  try { db.exec("DELETE FROM kb_embeddings"); } catch { /* ignored */ }
   db.exec("DELETE FROM kb_notes");
 
   let indexed = 0;
@@ -455,7 +433,7 @@ export async function rebuildIndex(progressCb) {
             .run(noteId, vectorToBuffer(embedding), EMBEDDING_DIM);
           embedded++;
         }
-      } catch {}
+      } catch { /* ignored */ }
 
       indexed++;
       if (progressCb) progressCb({ indexed, embedded, total: notes.length });
@@ -494,7 +472,7 @@ export async function search(query, limit = 5) {
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, searchLimit);
     }
-  } catch {}
+  } catch { /* ignored */ }
 
   // 3. Fuse with RRF — use rel_path as the join key (FTS rowid != kb_notes.id)
   const ftsIds = ftsResults.map((r, i) => {
@@ -533,7 +511,7 @@ export async function search(query, limit = 5) {
         snippet,
         rrfScore: score,
       });
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   return results;
@@ -608,7 +586,7 @@ export function createNote(relPath, content, tags = []) {
         try {
           getDb().prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
             .run(result.lastInsertRowid, vectorToBuffer(embedding), EMBEDDING_DIM);
-        } catch {}
+        } catch { /* ignored */ }
       }
     }).catch(() => {});
 
@@ -644,7 +622,7 @@ export function updateNote(relPath, content) {
             getDb().prepare("REPLACE INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
               .run(note.id, vectorToBuffer(embedding), EMBEDDING_DIM);
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
     }).catch(() => {});
 

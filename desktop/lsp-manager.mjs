@@ -5,7 +5,7 @@
  */
 import { spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { basename, extname, dirname, relative } from "node:path";
+import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const LANG_SERVERS = {
@@ -59,7 +59,7 @@ class LspManager {
             server.pending.get(msg.id)(msg);
             server.pending.delete(msg.id);
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
     });
 
@@ -180,7 +180,7 @@ class LspManager {
 
   shutdown() {
     for (const [, server] of this.servers) {
-      try { server.proc.kill(); } catch {}
+      try { server.proc.kill(); } catch { /* ignored */ }
     }
     this.servers.clear();
   }

@@ -65,7 +65,7 @@ class SessionDB {
     // Migration: add reasoning_content column if missing
     try {
       this.#db.exec("ALTER TABLE messages ADD COLUMN reasoning_content TEXT");
-    } catch {} // column already exists
+    } catch { /* ignored */ } // column already exists
 
     this.#db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -81,14 +81,14 @@ class SessionDB {
 
   close() {
     if (this.#db) {
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
       this.#db.close(); this.#db = null; this.#ready = false;
     }
   }
 
   forceCheckpoint() {
     if (this.#db) {
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
     }
   }
 
@@ -204,7 +204,7 @@ class SessionDB {
       this.#db.prepare("DELETE FROM sessions").run();
       this.#db.exec("COMMIT");
       // Force WAL checkpoint to persist changes to main DB file
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
     } catch (e) {
       this.#db.exec("ROLLBACK");
       throw e;
@@ -315,7 +315,7 @@ class SessionDB {
         try {
           const s = this.#db.prepare("SELECT title FROM sessions WHERE id = ?").get(r.session_id);
           sessionTitle = s?.title || "";
-        } catch {}
+        } catch { /* ignored */ }
         return { sessionId: r.session_id, sessionTitle, snippet: r.snippet, rank: r.rank };
       });
 
@@ -405,12 +405,12 @@ class SessionDB {
 
         // Don't overwrite if already migrated
         const exists = this.#db.prepare("SELECT id FROM sessions WHERE id = ?").get(data.id);
-        if (exists) { try { unlinkSync(join(jsonDir, f)); } catch {} continue; }
+        if (exists) { try { unlinkSync(join(jsonDir, f)); } catch { /* ignored */ } continue; }
 
         this.saveSession(data.id, data.history, data.title);
         count++;
         // Delete old JSON file after successful migration
-        try { unlinkSync(join(jsonDir, f)); } catch {}
+        try { unlinkSync(join(jsonDir, f)); } catch { /* ignored */ }
       } catch (err) {
         console.error(`[session-db] migration error ${f}:`, err.message);
       }

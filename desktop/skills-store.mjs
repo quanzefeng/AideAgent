@@ -5,9 +5,9 @@
  * Format follows Hermes/agentskills.io convention.
  */
 
-import { join, dirname } from "path";
+import { join } from "path";
 import { homedir } from "os";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { DatabaseSync } from "node:sqlite";
 
 const HOME = homedir();
@@ -96,7 +96,7 @@ function syncCuratorToDb(name) {
       skillsDb.prepare(`UPDATE skills SET usage_count=?, success_rate=?, last_used_at=? WHERE name=?`)
         .run(stats.usage_count || 0, stats.success_rate || 1, stats.last_used_at || 0, name);
     }
-  } catch {}
+  } catch { /* ignored */ }
 }
 
 /** Rebuild the entire SQLite index from flat files. */
@@ -115,7 +115,7 @@ function rebuildDbIndex() {
         const { meta, body } = parseFrontmatter(raw);
         syncSkillToDb(name, meta, body);
         syncCuratorToDb(name);
-      } catch {}
+      } catch { /* ignored */ }
     }
   } catch (e) { console.error("[skills-store] rebuildDbIndex:", e.message); }
 }
@@ -268,13 +268,13 @@ export function deleteSkill(name) {
     if (existsSync(archiveDest)) rmSync(archiveDest, { recursive: true, force: true });
     copyRecursive(skillDir, archiveDest);
     rmSync(skillDir, { recursive: true, force: true });
-  } catch (e) {
+  } catch {
     // Last resort: just delete
     rmSync(skillDir, { recursive: true, force: true });
   }
   // Remove from SQLite index
   if (skillsDb) {
-    try { skillsDb.prepare("DELETE FROM skills WHERE name=?").run(name); } catch {}
+    try { skillsDb.prepare("DELETE FROM skills WHERE name=?").run(name); } catch { /* ignored */ }
   }
   return { deleted: true };
 }
@@ -305,7 +305,7 @@ export function setSkillStatus(name, status) {
   }
   // Sync status to SQLite
   if (skillsDb) {
-    try { skillsDb.prepare("UPDATE skills SET status=? WHERE name=?").run(status, name); } catch {}
+    try { skillsDb.prepare("UPDATE skills SET status=? WHERE name=?").run(status, name); } catch { /* ignored */ }
   }
   return { name, status };
 }
@@ -486,7 +486,6 @@ export function runCurator() {
   let archived = 0;
   for (const skill of allSkills) {
     if (skill.status !== "active") continue;
-    const stats = curator[skill.name] || {};
     const daysSinceCreation = skill.created_at ? Math.floor((now - new Date(skill.created_at).getTime()) / 86400000) : 0;
     if (daysSinceCreation > curator.archiveAfterDays && skill.usage_count < 2) {
       setSkillStatus(skill.name, "archived");
@@ -539,8 +538,4 @@ export function setCuratorConfig(config) {
   if (config.archiveAfterDays != null) curator.archiveAfterDays = Math.max(1, Math.min(365, config.archiveAfterDays));
   saveCurator(curator);
   return { archiveAfterDays: curator.archiveAfterDays };
-}
-
-function rmdirSync(dir) {
-  try { rmSync(dir, { recursive: true, force: true }); } catch {}
 }

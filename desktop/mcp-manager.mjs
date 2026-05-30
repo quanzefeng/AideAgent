@@ -118,7 +118,7 @@ class McpManager {
 
     try {
       // Step 1: Initialize
-      const initResult = await this._request(name, "initialize", {
+      await this._request(name, "initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: { name: "goodagent", version: "1.0" },
@@ -276,7 +276,7 @@ class McpManager {
     const server = this.servers[name];
     if (!server) return;
     if (server.process && server.process.exitCode === null) {
-      try { server.process.stdin.end(); } catch {}
+      try { server.process.stdin.end(); } catch { /* ignored */ }
       server.process.kill();
     }
     // For remote servers there's no child process — just remove from map
