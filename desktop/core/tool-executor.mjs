@@ -332,6 +332,22 @@ export async function runTool(tc) {
         }, 120_000);
       });
     }
+    case "kb_search": {
+      try {
+        const { query, limit = 5 } = args;
+        if (!query) return { error: "query required" };
+        const results = await kb.search(query, limit);
+        if (results.length === 0) return { results: [], message: "No matching notes found in knowledge base." };
+        return {
+          results: results.map(r => ({
+            title: r.title,
+            path: r.rel_path,
+            snippet: (r.snippet || "").slice(0, 2000),
+          })),
+          count: results.length,
+        };
+      } catch (e) { return { error: e.message }; }
+    }
     case "kb_write": {
       try {
         const { path: notePath, content: noteContent, tags } = args;

@@ -1,0 +1,1031 @@
+Total notes: 196
+
+=== All Notes ===
+ID: 2922, Title: openwork
+   Path: .opencode/agents/openwork.md
+   Tags: []
+   Word count: 1492
+
+ID: 2923, Title: GetStarted
+   Path: .opencode/commands/GetStarted.md
+   Tags: []
+   Word count: 11
+
+ID: 2924, Title: learn-files
+   Path: .opencode/commands/learn-files.md
+   Tags: []
+   Word count: 114
+
+ID: 2925, Title: learn-plugins
+   Path: .opencode/commands/learn-plugins.md
+   Tags: []
+   Word count: 67
+
+ID: 2926, Title: learn-skills
+   Path: .opencode/commands/learn-skills.md
+   Tags: []
+   Word count: 91
+
+ID: 2927, Title: README
+   Path: .opencode/node_modules/@msgpackr-extract/msgpackr-extract-win32-x64/README.md
+   Tags: []
+   Word count: 79
+
+ID: 2928, Title: README
+   Path: .opencode/node_modules/@standard-schema/spec/README.md
+   Tags: []
+   Word count: 7277
+
+ID: 2929, Title: cross-spawn
+   Path: .opencode/node_modules/cross-spawn/README.md
+   Tags: []
+   Word count: 3970
+
+ID: 2930, Title: detect-libc
+   Path: .opencode/node_modules/detect-libc/README.md
+   Tags: []
+   Word count: 2966
+
+ID: 2931, Title: `effect` Core Package
+   Path: .opencode/node_modules/effect/README.md
+   Tags: []
+   Word count: 2606
+
+ID: 2932, Title: README
+   Path: .opencode/node_modules/fast-check/README.md
+   Tags: []
+   Word count: 40864
+
+ID: 2933, Title: find-my-way-ts
+   Path: .opencode/node_modules/find-my-way-ts/README.md
+   Tags: []
+   Word count: 302
+
+ID: 2934, Title: README
+   Path: .opencode/node_modules/ini/README.md
+   Tags: []
+   Word count: 2966
+
+ID: 2935, Title: isexe
+   Path: .opencode/node_modules/isexe/README.md
+   Tags: []
+   Word count: 1323
+
+ID: 2936, Title: kubernetes-types
+   Path: .opencode/node_modules/kubernetes-types/README.md
+   Tags: []
+   Word count: 981
+
+ID: 2937, Title: benchmark
+   Path: .opencode/node_modules/msgpackr/benchmark.md
+   Tags: []
+   Word count: 5588
+
+ID: 2938, Title: msgpackr
+   Path: .opencode/node_modules/msgpackr/README.md
+   Tags: []
+   Word count: 29638
+
+ID: 2939, Title: Security Policy
+   Path: .opencode/node_modules/msgpackr/SECURITY.md
+   Tags: []
+   Word count: 218
+
+ID: 2940, Title: README
+   Path: .opencode/node_modules/msgpackr-extract/README.md
+   Tags: []
+   Word count: 1003
+
+ID: 2941, Title: multipasta 🍝🤌🤌
+   Path: .opencode/node_modules/multipasta/README.md
+   Tags: []
+   Word count: 51
+
+ID: 2942, Title: node-gyp-build
+   Path: .opencode/node_modules/node-gyp-build-optional-packages/README.md
+   Tags: []
+   Word count: 2366
+
+ID: 2943, Title: path-key [![Build Status](https://travis-ci.org/sindresorhus...
+   Path: .opencode/node_modules/path-key/readme.md
+   Tags: []
+   Word count: 1254
+
+ID: 2944, Title: README
+   Path: .opencode/node_modules/pure-rand/README.md
+   Tags: []
+   Word count: 9435
+
+ID: 2945, Title: shebang-command [![Build Status](https://travis-ci.org/kevva...
+   Path: .opencode/node_modules/shebang-command/readme.md
+   Tags: []
+   Word count: 442
+
+ID: 2946, Title: shebang-regex [![Build Status](https://travis-ci.org/sindres...
+   Path: .opencode/node_modules/shebang-regex/readme.md
+   Tags: []
+   Word count: 606
+
+ID: 2947, Title: README
+   Path: .opencode/node_modules/toml/README.md
+   Tags: []
+   Word count: 3487
+
+ID: 2948, Title: LICENSE
+   Path: .opencode/node_modules/uuid/LICENSE.md
+   Tags: []
+   Word count: 1104
+
+ID: 2949, Title: uuid [![CI](https://github.com/uuidjs/uuid/workflows/CI/badg...
+   Path: .opencode/node_modules/uuid/README.md
+   Tags: []
+   Word count: 16403
+
+ID: 2950, Title: Changes
+   Path: .opencode/node_modules/which/CHANGELOG.md
+   Tags: []
+   Word count: 2425
+
+ID: 2951, Title: which
+   Path: .opencode/node_modules/which/README.md
+   Tags: []
+   Word count: 1294
+
+ID: 2952, Title: YAML <a href="https://www.npmjs.com/package/yaml"><img align...
+   Path: .opencode/node_modules/yaml/README.md
+   Tags: []
+   Word count: 6061
+
+ID: 2953, Title: README
+   Path: .opencode/node_modules/zod/README.md
+   Tags: []
+   Word count: 6073
+
+ID: 2954, Title: agent-creator
+   Path: .opencode/skills/agent-creator/SKILL.md
+   Tags: []
+   Word count: 1087
+
+ID: 2955, Title: command-creator
+   Path: .opencode/skills/command-creator/SKILL.md
+   Tags: []
+   Word count: 7468
+
+ID: 2956, Title: get-started
+   Path: .opencode/skills/get-started/SKILL.md
+   Tags: []
+   Word count: 522
+
+ID: 2957, Title: plugin-creator
+   Path: .opencode/skills/plugin-creator/SKILL.md
+   Tags: []
+   Word count: 970
+
+ID: 2958, Title: skill-creator
+   Path: .opencode/skills/skill-creator/SKILL.md
+   Tags: []
+   Word count: 2547
+
+ID: 2959, Title: workspace-guide
+   Path: .opencode/skills/workspace-guide/SKILL.md
+   Tags: []
+   Word count: 1512
+
+ID: 2960, Title: AI新闻
+   Path: skills/AI新闻.md
+   Tags: []
+   Word count: 471
+
+ID: 2961, Title: github一周热点
+   Path: skills/github一周热点.md
+   Tags: []
+   Word count: 1151
+
+ID: 2962, Title: 大模型资讯
+   Path: skills/大模型资讯.md
+   Tags: []
+   Word count: 233
+
+ID: 2963, Title: 太空火箭资讯
+   Path: skills/太空火箭资讯.md
+   Tags: []
+   Word count: 116
+
+ID: 2964, Title: 提示词生成
+   Path: skills/提示词生成.md
+   Tags: []
+   Word count: 232
+
+ID: 2965, Title: 知识点分析
+   Path: skills/知识点分析.md
+   Tags: []
+   Word count: 51
+
+ID: 2966, Title: 网页总结
+   Path: skills/网页总结.md
+   Tags: []
+   Word count: 374
+
+ID: 2967, Title: 视频分析
+   Path: skills/视频分析.md
+   Tags: []
+   Word count: 133
+
+ID: 2968, Title: 测试笔记
+   Path: test/test_note.md
+   Tags: []
+   Word count: 70
+
+ID: 2969, Title: AI 技术工具教程
+   Path: 互联网/自媒体/AI 技术工具教程.md
+   Tags: []
+   Word count: 2231
+
+ID: 2970, Title: AI自媒体
+   Path: 互联网/自媒体/AI自媒体.md
+   Tags: []
+   Word count: 1995
+
+ID: 2971, Title: 🎯 AI 自媒体博主起步指南
+   Path: 互联网/自媒体/🎯 AI 自媒体博主起步指南.md
+   Tags: []
+   Word count: 1851
+
+ID: 2972, Title: 景嘉微 (300474) 深度分析报告
+   Path: 人工智能/AI公司信息/景嘉微.md
+   Tags: []
+   Word count: 3021
+
+ID: 2973, Title: 海光信息 (688041) 深度分析报告
+   Path: 人工智能/AI公司信息/海光信息.md
+   Tags: []
+   Word count: 3570
+
+ID: 2974, Title: 龙芯中科 (688047) 深度分析报告
+   Path: 人工智能/AI公司信息/龙芯中科.md
+   Tags: []
+   Word count: 3293
+
+ID: 2975, Title: 2.12 AI新闻
+   Path: 人工智能/AI新闻/2.12 AI新闻.md
+   Tags: []
+   Word count: 3859
+
+ID: 2976, Title: 全球人工智能领域24小时最新进展报告（2026年2月13日-2月14日）
+   Path: 人工智能/AI新闻/2.14 AI新闻.md
+   Tags: []
+   Word count: 8496
+
+ID: 2977, Title: Agent Teams 文档分析报告
+   Path: 人工智能/claude code/Agent-Teams-分析报告.md
+   Tags: []
+   Word count: 3716
+
+ID: 2978, Title: Claude Code 2026 超详细安装教程｜Windows/Mac 一站式搞定，新手必看！
+   Path: 人工智能/claude code/Claude Code 2026 超详细安装教程.md
+   Tags: []
+   Word count: 2679
+
+ID: 2979, Title: Claude Code 与 App 开发对话记录
+   Path: 人工智能/claude code/Claude Code App开发对话记录.md
+   Tags: []
+   Word count: 3158
+
+ID: 2980, Title: Claude Code App 练手项目推荐
+   Path: 人工智能/claude code/Claude Code App练手项目推荐.md
+   Tags: []
+   Word count: 1533
+
+ID: 2981, Title: Claude Code 使用技巧
+   Path: 人工智能/claude code/Claude Code 使用技巧.md
+   Tags: []
+   Word count: 4258
+
+ID: 2982, Title: Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！
+   Path: 人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md
+   Tags: []
+   Word count: 2989
+
+ID: 2983, Title: claude code安装
+   Path: 人工智能/claude code/claude code安装.md
+   Tags: []
+   Word count: 2630
+
+ID: 2984, Title: 启用自动权限模式
+   Path: 人工智能/claude code/claude code技巧.md
+   Tags: []
+   Word count: 7274
+
+ID: 2985, Title: Claude Code 子代理 文档 - 分析报告
+   Path: 人工智能/claude code/Claude-Code-子代理-文档分析报告.md
+   Tags: []
+   Word count: 4071
+
+ID: 2986, Title: GSD (Get Shit Done) - Claude Code 完整使用教程
+   Path: 人工智能/claude code/GSD-Claude-Code 使用教程.md
+   Tags: []
+   Word count: 7296
+
+ID: 2987, Title: gstack Skills 功能一览表
+   Path: 人工智能/claude code/gstack-skills.md
+   Tags: []
+   Word count: 4438
+
+ID: 2988, Title: Connect Claude Code to tools via MCP 分析报告
+   Path: 人工智能/claude code/MCP文档分析报告.md
+   Tags: []
+   Word count: 2198
+
+ID: 2989, Title: 1. 克隆仓库（放用户配置目录，方便更新）
+   Path: 人工智能/claude code/Superpowers安装.md
+   Tags: []
+   Word count: 4504
+
+ID: 2990, Title: GitHub Desktop 完整提交流程
+   Path: 人工智能/GitHub/GitHub Desktop 完整提交流程.md
+   Tags: []
+   Word count: 221
+
+ID: 2991, Title: Next.js 个人博客开发完整教程
+   Path: 人工智能/GitHub/Next.js个人博客开发完整教程.md
+   Tags: []
+   Word count: 11578
+
+ID: 2992, Title: Ollama 配置
+   Path: 人工智能/hermes/Hermes Agent 配置 Ollama 本地模型.md
+   Tags: []
+   Word count: 2376
+
+ID: 2993, Title: Hermes Web UI 安装与使用总结
+   Path: 人工智能/hermes/hermes-web-ui安装与使用总结.md
+   Tags: []
+   Word count: 2888
+
+ID: 2994, Title: 在 Ubuntu 上安装 Hermes Agent（Nous Research 的那个自改进 AI Agent）非常简单
+   Path: 人工智能/hermes/在 Ubuntu 上成功安装 Hermes Agent 指南.md
+   Tags: []
+   Word count: 1867
+
+ID: 2995, Title: 群聊配置
+   Path: 人工智能/hermes/群聊配置.md
+   Tags: []
+   Word count: 1320
+
+ID: 2996, Title: 配对模式
+   Path: 人工智能/hermes/配对模式.md
+   Tags: []
+   Word count: 1313
+
+ID: 2997, Title: Windows 11 + RTX 5060Ti 16GB：Hugging Face模型下载、量化与本地部署完整教程
+   Path: 人工智能/llama.cpp/Windows 11 + RTX 5060Ti 16GB：Hugging Face模型下载、量化与本地部署完整教程.md
+   Tags: []
+   Word count: 5350
+
+ID: 2998, Title: llama.cpp 上下文长度设置
+   Path: 人工智能/llama.cpp/上下文长度设置.md
+   Tags: []
+   Word count: 897
+
+ID: 2999, Title: LM Studio Qwen3.6 35B A3B 加载设置
+   Path: 人工智能/LM studio/LM Studio Qwen3.6 35B A3B 加载设置.md
+   Tags: []
+   Word count: 1360
+
+ID: 3000, Title: 核心权威知识库 (优先级排序)
+   Path: 人工智能/LM studio/LM studio系统提示词.md
+   Tags: []
+   Word count: 1109
+
+ID: 3001, Title: Ollama：C 盘与 D 盘冲突及解决思路
+   Path: 人工智能/ollama/Ollama 升级（保留 D 盘模型）流程.md
+   Tags: []
+   Word count: 1593
+
+ID: 3002, Title: Modelfile generated by ollama show
+   Path: 人工智能/ollama/Ollama 模型参数调整：从查看参数到创建自定义模型.md
+   Tags: []
+   Word count: 4027
+
+ID: 3003, Title: Ollama 自定义 GGUF 模型
+   Path: 人工智能/ollama/Ollama 自定义 GGUF 模型.md
+   Tags: []
+   Word count: 2067
+
+ID: 3004, Title: open webui 更新
+   Path: 人工智能/ollama/open webui 更新.md
+   Tags: []
+   Word count: 2368
+
+ID: 3005, Title: Open WebUI 更新指南总结
+   Path: 人工智能/ollama/Open WebUI 更新总结.md
+   Tags: []
+   Word count: 1200
+
+ID: 3006, Title: open WebUI打开方法
+   Path: 人工智能/ollama/open WebUI打开方法.md
+   Tags: []
+   Word count: 530
+
+ID: 3007, Title: open webui虚拟环境安装
+   Path: 人工智能/ollama/open webui虚拟环境安装.md
+   Tags: []
+   Word count: 2943
+
+ID: 3008, Title: 🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～
+   Path: 人工智能/openclaw/OpenClaw 安装教程 - 飞书版.md
+   Tags: ["AI","OpenClaw","效率工具","科技教程","自我提升","数码好物","程序员","飞书"]
+   Word count: 3570
+
+ID: 3009, Title: 🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～
+   Path: 人工智能/openclaw/openclaw-install-guide-xiaohongshu.md
+   Tags: ["AI","OpenClaw","效率工具","科技教程","自我提升","数码好物","程序员"]
+   Word count: 3288
+
+ID: 3010, Title: OpenClaw-OpenCode-Claude-Code对比
+   Path: 人工智能/openclaw/OpenClaw-OpenCode-Claude-Code对比.md
+   Tags: []
+   Word count: 2376
+
+ID: 3011, Title: openclaw公众号风格改写
+   Path: 人工智能/openclaw/openclaw公众号风格改写.md
+   Tags: []
+   Word count: 121
+
+ID: 3012, Title: openclaw功能
+   Path: 人工智能/openclaw/openclaw功能.md
+   Tags: []
+   Word count: 1843
+
+ID: 3013, Title: 帮助/测试 CLI 是否可用
+   Path: 人工智能/openclaw/openclaw安装skills.md
+   Tags: []
+   Word count: 3671
+
+ID: 3014, Title: openclaw定时任务路径
+   Path: 人工智能/openclaw/openclaw定时任务路径.md
+   Tags: []
+   Word count: 31
+
+ID: 3015, Title: openclaw对接飞书的原因
+   Path: 人工智能/openclaw/openclaw对接飞书的原因.md
+   Tags: []
+   Word count: 4006
+
+ID: 3016, Title: openclaw接入企业微信
+   Path: 人工智能/openclaw/openclaw接入企业微信.md
+   Tags: []
+   Word count: 2504
+
+ID: 3017, Title: openclaw更新
+   Path: 人工智能/openclaw/openclaw更新.md
+   Tags: []
+   Word count: 44
+
+ID: 3018, Title: playwright启动服务
+   Path: 人工智能/openclaw/playwright启动服务.md
+   Tags: []
+   Word count: 210
+
+ID: 3019, Title: 管理员 PowerShell
+   Path: 人工智能/openclaw/windows中npm安装openclaw.md
+   Tags: []
+   Word count: 2942
+
+ID: 3020, Title: MCP 与 Skills 对比及选择
+   Path: 人工智能/opencode/MCP 与 Skills 对比及选择.md
+   Tags: []
+   Word count: 2131
+
+ID: 3021, Title: oh my opencode的mcp位置
+   Path: 人工智能/opencode/oh my opencode的mcp位置.md
+   Tags: []
+   Word count: 87
+
+ID: 3022, Title: OpenCode 命令使用教程
+   Path: 人工智能/opencode/opencode命令使用教程.md
+   Tags: []
+   Word count: 12243
+
+ID: 3023, Title: opencode的mcp配置
+   Path: 人工智能/opencode/opencode的mcp配置.md
+   Tags: []
+   Word count: 1115
+
+ID: 3024, Title: 输出类似：C:\Users\xiaoz\AppData\Roaming\npm\node_modules
+   Path: 人工智能/opencode/opencode的skills安装位置.md
+   Tags: []
+   Word count: 1804
+
+ID: 3025, Title: 浏览器自动化技能汇总
+   Path: 人工智能/opencode/浏览器自动化技能汇总.md
+   Tags: []
+   Word count: 3269
+
+ID: 3026, Title: PyTorch 学习路径：从 Python 基础到 NumPy 及 PyTorch 入门
+   Path: 人工智能/Pythoch学习路径.md
+   Tags: []
+   Word count: 2512
+
+ID: 3027, Title: hugging face token
+   Path: 人工智能/vLLM/hugging face token.md
+   Tags: []
+   Word count: 36
+
+ID: 3028, Title: WSL2 + vLLM 环境配置记录
+   Path: 人工智能/vLLM/WSL+vLLM+环境配置记录.md
+   Tags: []
+   Word count: 2380
+
+ID: 3029, Title: 教育升学咨询
+   Path: 人工智能/提示词工程/AI智能体提示词模板/专业咨询类/教育升学咨询.md
+   Tags: []
+   Word count: 1722
+
+ID: 3030, Title: 法律咨询
+   Path: 人工智能/提示词工程/AI智能体提示词模板/专业咨询类/法律咨询.md
+   Tags: []
+   Word count: 1996
+
+ID: 3031, Title: 项目管理智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/任务规划类/项目管理智能体.md
+   Tags: []
+   Word count: 2935
+
+ID: 3032, Title: 资深供应链管理专家
+   Path: 人工智能/提示词工程/AI智能体提示词模板/供应链管理类/制造业供应链协调智能体.md
+   Tags: []
+   Word count: 3602
+
+ID: 3033, Title: 日常健康管理智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/健康咨询类/日常健康管理智能体.md
+   Tags: []
+   Word count: 1958
+
+ID: 3034, Title: AI自媒体内容创作专家 - 角色设定
+   Path: 人工智能/提示词工程/AI智能体提示词模板/内容创作类/人工智能自媒体智能体提示词.md
+   Tags: ["短视频制作","电商运营","AI工具"]
+   Word count: 2747
+
+ID: 3035, Title: 企业品牌文案
+   Path: 人工智能/提示词工程/AI智能体提示词模板/内容创作类/企业品牌文案.md
+   Tags: []
+   Word count: 1617
+
+ID: 3036, Title: 新媒体文案创作
+   Path: 人工智能/提示词工程/AI智能体提示词模板/内容创作类/新媒体文案创作.md
+   Tags: ["秋冬保湿","无添加面膜","平价面膜","护肤好物分享"]
+   Word count: 1534
+
+ID: 3037, Title: 企业 IT 支持客服
+   Path: 人工智能/提示词工程/AI智能体提示词模板/客服咨询类/企业 IT 支持客服.md
+   Tags: []
+   Word count: 1463
+
+ID: 3038, Title: 电商平台售后客服
+   Path: 人工智能/提示词工程/AI智能体提示词模板/客服咨询类/电商平台售后客服.md
+   Tags: []
+   Word count: 1207
+
+ID: 3039, Title: K12 学科辅导智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/教育教学类/K12 学科辅导智能体.md
+   Tags: []
+   Word count: 2321
+
+ID: 3040, Title: 职业技能培训智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/教育教学类/职业技能培训智能体.md
+   Tags: []
+   Word count: 1439
+
+ID: 3041, Title: 销售数据分析
+   Path: 人工智能/提示词工程/AI智能体提示词模板/数据分析类/销售数据分析.md
+   Tags: []
+   Word count: 1718
+
+ID: 3042, Title: 电商运营智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/电商运营类/电商运营智能体.md
+   Tags: []
+   Word count: 2780
+
+ID: 3043, Title: Python 开发辅助智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/编程开发类/Python 开发辅助智能体.md
+   Tags: []
+   Word count: 1759
+
+ID: 3044, Title: 企业品牌舆情监测智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/舆情分析类/企业品牌舆情监测智能体.md
+   Tags: []
+   Word count: 2757
+
+ID: 3045, Title: 平面设计需求转化智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/设计辅助类/平面设计需求转化智能体.md
+   Tags: ["FF8C9E","FFD166"]
+   Word count: 2606
+
+ID: 3046, Title: 个人理财咨询智能体
+   Path: 人工智能/提示词工程/AI智能体提示词模板/金融理财类/个人理财咨询智能体.md
+   Tags: []
+   Word count: 2338
+
+ID: 3047, Title: AI消息提取模板
+   Path: 人工智能/提示词工程/信息提取类/AI消息提取模板.md
+   Tags: []
+   Word count: 490
+
+ID: 3048, Title: 🔍 万能信息提取模板
+   Path: 人工智能/提示词工程/信息提取类/信息提取模板1.md
+   Tags: []
+   Word count: 239
+
+ID: 3049, Title: 实例1
+   Path: 人工智能/提示词工程/信息提取类/实例1.md
+   Tags: []
+   Word count: 28
+
+ID: 3050, Title: 一、通用基础版（适用于快速获取某内容/对象的核心知识）
+   Path: 人工智能/提示词工程/信息提取类/知识获取模板.md
+   Tags: []
+   Word count: 2025
+
+ID: 3051, Title: 资深社交媒体数据分析师
+   Path: 人工智能/提示词工程/信息提取类/社交媒体信息提取模板.md
+   Tags: []
+   Word count: 506
+
+ID: 3052, Title: 元提示词
+   Path: 人工智能/提示词工程/元提示词.md
+   Tags: []
+   Word count: 1627
+
+ID: 3053, Title: AI视频逆推提示词1
+   Path: 人工智能/提示词工程/内容创作类/AI视频逆推提示词1.md
+   Tags: []
+   Word count: 519
+
+ID: 3054, Title: 📝 万能内容创作模板
+   Path: 人工智能/提示词工程/内容创作类/内容创作模版1.md
+   Tags: ["writing","creation","generic"]
+   Word count: 566
+
+ID: 3055, Title: 分镜精细化逆推元提示词
+   Path: 人工智能/提示词工程/内容创作类/分镜精细化逆推元提示词.md
+   Tags: []
+   Word count: 310
+
+ID: 3056, Title: 电影分析与 AI 提示词逆向工程
+   Path: 人工智能/提示词工程/内容创作类/电影分析与 AI 提示词逆向工程.md
+   Tags: []
+   Word count: 573
+
+ID: 3057, Title: 文档总结模板
+   Path: 人工智能/提示词工程/内容总结类/文档总结模板.md
+   Tags: []
+   Word count: 152
+
+ID: 3058, Title: 文章总结模板
+   Path: 人工智能/提示词工程/内容总结类/文章总结模板.md
+   Tags: []
+   Word count: 158
+
+ID: 3059, Title: 新闻总结模板
+   Path: 人工智能/提示词工程/内容总结类/新闻总结模板.md
+   Tags: []
+   Word count: 139
+
+ID: 3060, Title: 网页总结模板
+   Path: 人工智能/提示词工程/内容总结类/网页总结模板.md
+   Tags: []
+   Word count: 116
+
+ID: 3061, Title: 深度视频内容分析专家
+   Path: 人工智能/提示词工程/内容总结类/视频总结模板.md
+   Tags: []
+   Word count: 1067
+
+ID: 3062, Title: 分析自身提示词
+   Path: 人工智能/提示词工程/分析自身提示词.md
+   Tags: []
+   Word count: 38
+
+ID: 3063, Title: AI公司研究提示词
+   Path: 人工智能/提示词工程/数据整理类/AI公司研究提示词.md
+   Tags: []
+   Word count: 1349
+
+ID: 3064, Title: 全面了解上市公司的AI提示词模板（可直接复制使用）
+   Path: 人工智能/提示词工程/数据整理类/全面了解上市公司的AI提示词模板（可直接复制使用）.md
+   Tags: []
+   Word count: 3572
+
+ID: 3065, Title: 📊 万能数据整理模板
+   Path: 人工智能/提示词工程/数据整理类/数据整理模板1.md
+   Tags: ["data","cleaning","formatting","organization"]
+   Word count: 326
+
+ID: 3066, Title: 分析总结国内外当日重大财经新闻提示词
+   Path: 人工智能/提示词工程/数据整理类/整理财经新闻提示词.md
+   Tags: []
+   Word count: 2690
+
+ID: 3067, Title: 最强思考提示词
+   Path: 人工智能/提示词工程/最强思考提示词.md
+   Tags: []
+   Word count: 9
+
+ID: 3068, Title: 详简程度提示词
+   Path: 人工智能/提示词工程/详简程度提示词.md
+   Tags: []
+   Word count: 143
+
+ID: 3069, Title: 🧠 万能逻辑推理模板
+   Path: 人工智能/提示词工程/逻辑推理类/逻辑推理模板1.md
+   Tags: []
+   Word count: 426
+
+ID: 3070, Title: 高效使用AI的方法
+   Path: 人工智能/提示词工程/高效使用AI的方法.md
+   Tags: []
+   Word count: 189
+
+ID: 3071, Title: 十四种关系：
+   Path: 哲学/哲学思维方法.md
+   Tags: []
+   Word count: 3865
+
+ID: 3072, Title: 商业化思维
+   Path: 商业/创业方法论/商业化思维.md
+   Tags: []
+   Word count: 3216
+
+ID: 3073, Title: 微信小程序合规运营
+   Path: 商业/创业方法论/微信小程序合规运营.md
+   Tags: []
+   Word count: 2082
+
+ID: 3074, Title: 视频内容解构、总结与深度批判性分析：Chris Koerner 被动收入方法论
+   Path: 商业/创业方法论/视频内容解构、总结与深度批判性分析：Chris Koerner 被动收入方法论.md
+   Tags: []
+   Word count: 2954
+
+ID: 3075, Title: AI制作爆款短视频：核心逻辑、操作方法与深度分析
+   Path: 商业/自媒体/AI制作爆款短视频：核心逻辑、操作方法与深度分析.md
+   Tags: []
+   Word count: 2584
+
+ID: 3076, Title: 抖音视频《51分钟生意系统课》核心解构、总结与深度分析
+   Path: 商业/营销/抖音视频《51分钟生意系统课》核心解构、总结与深度分析.md
+   Tags: []
+   Word count: 2204
+
+ID: 3077, Title: 数据宝地址
+   Path: 商业/财经/数据宝地址.md
+   Tags: []
+   Word count: 40
+
+ID: 3078, Title: 学习计划
+   Path: 学习计划.md
+   Tags: []
+   Word count: 86
+
+ID: 3079, Title: 三十六计解析
+   Path: 心理学/36计/三十六计解析.md
+   Tags: []
+   Word count: 3596
+
+ID: 3080, Title: 事物规律和心理学
+   Path: 心理学/心理学/事物规律和心理学.md
+   Tags: []
+   Word count: 5352
+
+ID: 3081, Title: 📚 第一部分：画像的基石（数据维度）
+   Path: 心理学/心理学/构建世界最全面客户画像.md
+   Tags: []
+   Word count: 1334
+
+ID: 3082, Title: 一、初始问题：表达卡顿、逻辑不清、前后不连贯
+   Path: 心理学/表达能力/提升语言表达能力.md
+   Tags: []
+   Word count: 7335
+
+ID: 3083, Title: 线代学习指南
+   Path: 数学/线性代数/线代学习指南.md
+   Tags: []
+   Word count: 3723
+
+ID: 3084, Title: AI 新闻摘要
+   Path: 物理/AI_news_summary.md
+   Tags: []
+   Word count: 1004
+
+ID: 3085, Title: 2025年1月—2026年2月重大进展汇总（权威版）
+   Path: 生物/生物计算/生物计算新闻.md
+   Tags: []
+   Word count: 13149
+
+ID: 3086, Title: 多元素元组，省略括号
+   Path: 编程/python/Python 元组知识.md
+   Tags: []
+   Word count: 6991
+
+ID: 3087, Title: 1. 无参数、无返回值的函数
+   Path: 编程/python/Python 函数的定义与调用.md
+   Tags: []
+   Word count: 3998
+
+ID: 3088, Title: ✅ 合法变量名
+   Path: 编程/python/Python 变量命名规则.md
+   Tags: []
+   Word count: 2034
+
+ID: 3089, Title: Python 流程控制语法详解
+   Path: 编程/python/Python 流程控制语法.md
+   Tags: []
+   Word count: 2753
+
+ID: 3090, Title: 调用示例1：传入0个参数（args为空元组）
+   Path: 编程/python/python函数参数/Python 函数可变位置参数.md
+   Tags: []
+   Word count: 2516
+
+ID: 3091, Title: 调用示例1：传入0个关键字参数（kwargs为空字典）
+   Path: 编程/python/python函数参数/Python 函数可变关键字参数.md
+   Tags: []
+   Word count: 4627
+
+ID: 3092, Title: 调用函数，接收返回值
+   Path: 编程/python/python函数参数/Python 函数返回值.md
+   Tags: []
+   Word count: 6668
+
+ID: 3093, Title: 定义函数：2个必选参数a和b，功能是计算两数之和
+   Path: 编程/python/python函数参数/python函数的必选参数.md
+   Tags: []
+   Word count: 2074
+
+ID: 3094, Title: 定义函数：a是必选参数，b是默认参数（默认值为10）
+   Path: 编程/python/python函数参数/python函数的默认参数.md
+   Tags: []
+   Word count: 2671
+
+ID: 3095, Title: 正向索引获取元素
+   Path: 编程/python/python列表知识.md
+   Tags: []
+   Word count: 11386
+
+ID: 3096, Title: 显示已安装的版本
+   Path: 计算机/node.js/Node.js安装和更新方法.md
+   Tags: []
+   Word count: 1518
+
+ID: 3097, Title: Ubuntu 文件系统完全指南：与 Windows 的差异、挂载与文件查找
+   Path: 计算机/ubuntu/Ubuntu 文件系统完全指南：与 Windows 的差异、挂载与文件查找.md
+   Tags: []
+   Word count: 3756
+
+ID: 3098, Title: Windows 安装 SearXNG MCP 完整指南
+   Path: 计算机/Windows 系统下 SearXNG MCP 完整安装指南.md
+   Tags: []
+   Word count: 5233
+
+ID: 3099, Title: AI 资讯站 — 操作总结与技术文档
+   Path: 计算机/个人项目/AI资讯站-操作总结.md
+   Tags: []
+   Word count: 4005
+
+ID: 3100, Title: AI 资讯站 — 项目分析与改进建议
+   Path: 计算机/个人项目/AI资讯站-项目分析与改进建议.md
+   Tags: []
+   Word count: 2609
+
+ID: 3101, Title: GitHub 本周 AI 热点项目报告
+   Path: 计算机/个人项目/github-ai-hotspot-report-2026-05-13.md
+   Tags: []
+   Word count: 4598
+
+ID: 3102, Title: Windows 11 台式机+笔记本
+   Path: 计算机/系统知识/Windows 11 台式机+笔记本.md
+   Tags: []
+   Word count: 5040
+
+ID: 3103, Title: 远程操控电脑
+   Path: 计算机/系统知识/远程操控电脑.md
+   Tags: []
+   Word count: 80
+
+ID: 3104, Title: CMD 与 PowerShell 中文件夹切换
+   Path: 计算机/终端知识/CMD 与 PowerShell 中文件夹切换.md
+   Tags: []
+   Word count: 1554
+
+ID: 3105, Title: CMD 和 PowerShell 中创建 Python 虚拟环境
+   Path: 计算机/终端知识/CMD 和 PowerShell 中创建 Python 虚拟环境.md
+   Tags: []
+   Word count: 2124
+
+ID: 3106, Title: 方式1：使用简写命令 md
+   Path: 计算机/终端知识/CMD 和 PowerShell 创建文件夹.md
+   Tags: []
+   Word count: 877
+
+ID: 3107, Title: npm 安装方法技巧
+   Path: 计算机/终端知识/npm 安装方法技巧.md
+   Tags: []
+   Word count: 1840
+
+ID: 3108, Title: 清华镜像源
+   Path: 计算机/终端知识/清华镜像源.md
+   Tags: []
+   Word count: 481
+
+ID: 3109, Title: VLESS + Reality自建节点
+   Path: 计算机/网络/VLESS + Reality自建节点.md
+   Tags: []
+   Word count: 3051
+
+ID: 3110, Title: AI未来发展
+   Path: 附件文件夹/AI未来发展.md
+   Tags: []
+   Word count: 6263
+
+ID: 3111, Title: A股上市公司名单
+   Path: 附件文件夹/A股上市公司名单.md
+   Tags: []
+   Word count: 89031
+
+ID: 3112, Title: 我的技术博客网址
+   Path: 附件文件夹/我的技术博客网址.md
+   Tags: []
+   Word count: 41
+
+ID: 3113, Title: 花生AI
+   Path: 附件文件夹/花生AI.md
+   Tags: []
+   Word count: 12
+
+ID: 3114, Title: 超详细 Markdown 从入门到精通教程
+   Path: 附件文件夹/超详细 Markdown 从入门到精通教程.md
+   Tags: []
+   Word count: 3554
+
+ID: 3115, Title: 跨平台影响力与商业模式深度拆解：以“秋芝2046”为例
+   Path: 附件文件夹/跨平台影响力与商业模式深度拆解：以“秋芝2046”为例.md
+   Tags: []
+   Word count: 3281
+
+ID: 3116, Title: 附件1
+   Path: 附件文件夹/附件1.md
+   Tags: []
+   Word count: 481
+
+ID: 3117, Title: placeholder
+   Path: temp/placeholder.md
+   Tags: []
+   Word count: 11
+
+
+=== Directory Structure Analysis ===
+Top-level directories:
+  人工智能: 99 notes
+  .opencode: 38 notes
+  计算机: 14 notes
+  编程: 10 notes
+  skills: 8 notes
+  附件文件夹: 7 notes
+  商业: 6 notes
+  心理学: 4 notes
+  互联网: 3 notes
+  test: 1 notes
+  哲学: 1 notes
+  数学: 1 notes
+  物理: 1 notes
+  生物: 1 notes
+  temp: 1 notes
+
+=== Tag Analysis ===
+Most common tags:
+  []: 189 notes
+  ["AI": 2 notes
+  "OpenClaw": 2 notes
+  "效率工具": 2 notes
+  "科技教程": 2 notes
+  "自我提升": 2 notes
+  "数码好物": 2 notes
+  "程序员": 1 notes
+  "飞书"]: 1 notes
+  "程序员"]: 1 notes
+
+=== Claude Code Related Notes ===
+Found 14 Claude-related notes:
+  ID: 2977, Title: Agent Teams 文档分析报告, Path: 人工智能/claude code/Agent-Teams-分析报告.md
+  ID: 2978, Title: Claude Code 2026 超详细安装教程｜Windows/Mac 一站式搞定，新手必看！, Path: 人工智能/claude code/Claude Code 2026 超详细安装教程.md
+  ID: 2979, Title: Claude Code 与 App 开发对话记录, Path: 人工智能/claude code/Claude Code App开发对话记录.md
+  ID: 2980, Title: Claude Code App 练手项目推荐, Path: 人工智能/claude code/Claude Code App练手项目推荐.md
+  ID: 2981, Title: Claude Code 使用技巧, Path: 人工智能/claude code/Claude Code 使用技巧.md
+  ID: 2982, Title: Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！, Path: 人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md
+  ID: 2983, Title: claude code安装, Path: 人工智能/claude code/claude code安装.md
+  ID: 2984, Title: 启用自动权限模式, Path: 人工智能/claude code/claude code技巧.md
+  ID: 2985, Title: Claude Code 子代理 文档 - 分析报告, Path: 人工智能/claude code/Claude-Code-子代理-文档分析报告.md
+  ID: 2986, Title: GSD (Get Shit Done) - Claude Code 完整使用教程, Path: 人工智能/claude code/GSD-Claude-Code 使用教程.md
+  ID: 2987, Title: gstack Skills 功能一览表, Path: 人工智能/claude code/gstack-skills.md
+  ID: 2988, Title: Connect Claude Code to tools via MCP 分析报告, Path: 人工智能/claude code/MCP文档分析报告.md
+  ID: 2989, Title: 1. 克隆仓库（放用户配置目录，方便更新）, Path: 人工智能/claude code/Superpowers安装.md
+  ID: 3010, Title: OpenClaw-OpenCode-Claude-Code对比, Path: 人工智能/openclaw/OpenClaw-OpenCode-Claude-Code对比.md

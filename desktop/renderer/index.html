@@ -596,6 +596,13 @@
                   <span class="toggle-slider"></span>
                 </div>
               </label>
+              <label class="reasoning-toggle" title="联网搜索：关闭后 agent 无法使用 web_search 和 web_fetch 工具">
+                <span class="reasoning-toggle-label">联网搜索</span>
+                <div class="toggle-switch toggle-switch-sm">
+                  <input type="checkbox" id="web-search-toggle" checked />
+                  <span class="toggle-slider"></span>
+                </div>
+              </label>
               <label id="reasoning-toggle" class="reasoning-toggle" data-i18n-title="chat.reasoning_hint" title="深度推理">
                 <span class="reasoning-toggle-label" data-i18n="chat.reasoning">深度推理</span>
                 <div class="toggle-switch toggle-switch-sm">
@@ -615,7 +622,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
   <script src="translations.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 
 <!-- Skill Editor Modal -->
 <div id="skill-editor-overlay" class="skill-editor-overlay hidden">

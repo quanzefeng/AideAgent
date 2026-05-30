@@ -54,6 +54,7 @@ USE THE TOOLS. Don't just suggest — actually run commands, read files, make ch
 5. Use \`file_edit\` or \`file_write\` for code changes.
 6. Keep responses concise with Markdown formatting.
 7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).
+8. **Knowledge Base Rule:** A \`<knowledge-base>\` section in this prompt contains the user's Obsidian notes relevant to the question. Use it directly. Do NOT use \`glob\`, \`file_read\`, \`bash\`, or any filesystem tool to search for knowledge base files. If the knowledge base content answers the question, use it. If it's insufficient, use the \`kb_search\` tool to search for more notes. If still insufficient, say "知识库中没有更详细的信息" and offer to search the web.
 
 If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
 
@@ -119,7 +120,7 @@ export function savePromptProfiles(data) {
   }
 }
 
-export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false) {
+export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false, webSearchEnabled = true) {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
   const allSkills = scanSkills();
@@ -250,8 +251,8 @@ Working directory: ${WORKSPACE}`;
   if (kbEnabled && kb.getVault()) {
     try {
       const kbCfg = kb.getConfig();
-      const maxNotes = kbCfg.maxNotes || 5;
-      const maxChars = kbCfg.maxChars || 500;
+      const maxNotes = kbCfg.maxNotes || 10;
+      const maxChars = kbCfg.maxChars || 10000;
       const kbResults = await kb.search(userPrompt, maxNotes);
       if (kbResults.length > 0) {
         const kbContext = kbResults.map(r => {
@@ -262,6 +263,10 @@ Working directory: ${WORKSPACE}`;
         content += `\n\n<knowledge-base>\n**用户知识库中的相关内容：**\n${kbContext}\n</knowledge-base>`;
       }
     } catch { /* ignored */ }
+  }
+
+  if (!webSearchEnabled) {
+    content += "\n\n## 🚫 联网搜索已关闭\n用户关闭了联网搜索功能。你不能使用 web_search、web_fetch 工具，也不能通过 bash 执行 curl、Invoke-WebRequest、wget 等命令进行联网。请仅基于本地文件、知识库和已有信息回答。如果信息不足，请告知用户需要联网搜索才能获取更多信息。";
   }
 
   return { role: "system", content };

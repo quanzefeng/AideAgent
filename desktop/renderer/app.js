@@ -1,3 +1,8 @@
+/* ── Import modules ───────────────────────────────────── */
+import './modules/font-settings.mjs';
+import './modules/workspace.mjs';
+import { initKnowledgeBase } from './modules/knowledge-base.mjs';
+
 /* ── Configure marked.js ──────────────────────────────── */
 marked.setOptions({
   breaks: true,
@@ -883,7 +888,8 @@ async function submitQuery() {
     const reasoning = loadReasoningEnabled();
     const agentName = loadAgentName();
     const kbEnabled = document.getElementById("kb-toggle")?.checked || false;
-    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, planModeCheckbox.checked);
+    const webSearchEnabled = document.getElementById("web-search-toggle")?.checked ?? true;
+    await window.goodAgent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, planModeCheckbox.checked, webSearchEnabled);
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -1804,31 +1810,7 @@ if (resetUserAvatarBtn) {
   resetUserAvatarBtn.addEventListener("click", resetUserAvatar);
 }
 
-/* ── Font Settings ──────────────────────────────────── */
-function applyChatFont(fontValue) {
-  document.documentElement.style.setProperty("--chat-font", fontValue);
-}
-
-function loadChatFont() {
-  return localStorage.getItem(FONT_KEY) || "'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif";
-}
-
-const fontSelect = document.getElementById("font-select");
-if (fontSelect) {
-  // Set current value
-  fontSelect.value = loadChatFont();
-  // Apply on change
-  fontSelect.addEventListener("change", () => {
-    const val = fontSelect.value;
-    localStorage.setItem(FONT_KEY, val);
-    applyChatFont(val);
-  });
-  // Render each option in its own font
-  Array.from(fontSelect.options).forEach(opt => {
-    opt.style.fontFamily = opt.value;
-  });
-}
-applyChatFont(loadChatFont());
+/* ── Font Settings (imported from modules/font-settings.mjs) ── */
 
 /* ── Skills ──────────────────────────────────────────── */
 const SKILLS_KEY = "goodagent_enabled_skills";
@@ -3276,180 +3258,10 @@ document.querySelector('.settings-tab[data-tab="agent-skills"]')?.addEventListen
 
 initWechatStatus();
 
-/* ── Workspace ────────────────────────────────────────── */
-async function initWorkspace() {
-  try {
-    const ws = await window.goodAgent.workspaceGet();
-    const el = document.getElementById("workspace-path");
-    if (el) el.textContent = ws || t("misc.not_set");
-  } catch {}
-}
+/* ── Workspace (imported from modules/workspace.mjs) ── */
 
-document.getElementById("workspace-bar")?.addEventListener("click", async () => {
-  try {
-    const result = await window.goodAgent.workspacePick();
-    if (result?.ok && result.workspace) {
-      const el = document.getElementById("workspace-path");
-      if (el) el.textContent = result.workspace;
-    }
-  } catch {}
-});
-
-initWorkspace();
-
-/* ── Knowledge Base Panel ──────────────────────────────── */
-let _kbPanelLoaded = false;
-
-async function loadKnowledgeBasePanel() {
-  if (_kbPanelLoaded) return;
-  _kbPanelLoaded = true;
-
-  const vaultPath = document.getElementById("kb-vault-path");
-  const embeddingSelect = document.getElementById("kb-embedding-provider");
-  const statusEl = document.getElementById("kb-status");
-  const scanBtn = document.getElementById("kb-scan-btn");
-  const testSearchBtn = document.getElementById("kb-test-search-btn");
-  const testArea = document.getElementById("kb-test-area");
-  const testQuery = document.getElementById("kb-test-query");
-  const testResults = document.getElementById("kb-test-results");
-  const maxNotes = document.getElementById("kb-max-notes");
-  const maxChars = document.getElementById("kb-max-chars");
-  const pickBtn = document.getElementById("kb-pick-vault-btn");
-
-  // Load current state
-  try {
-    const vault = await window.goodAgent.kbGetVault();
-    if (vaultPath) vaultPath.value = vault || "";
-    const cfg = await window.goodAgent.kbConfig();
-    if (embeddingSelect) embeddingSelect.value = cfg.embeddingProvider || "local";
-    if (maxNotes) maxNotes.value = cfg.maxNotes || 5;
-    if (maxChars) maxChars.value = cfg.maxChars || 500;
-    const status = await window.goodAgent.kbStatus();
-    if (statusEl) {
-      statusEl.textContent = status.noteCount > 0
-        ? t("kb.indexed", {count: status.noteCount, embedded: status.embeddedCount})
-        : t("kb.not_indexed");
-    }
-  } catch {}
-
-  // Pick vault
-  pickBtn?.addEventListener("click", async () => {
-    try {
-      const result = await window.goodAgent.kbPickVault();
-      if (result?.canceled) return;
-      if (result?.ok && result.vault) {
-        vaultPath.value = result.vault;
-        // Auto-scan after picking
-        scanBtn?.click();
-      } else if (result?.error) {
-        statusEl.textContent = t("kb.error", {error: result.error});
-      }
-    } catch (e) {
-      console.error("[kb] pick vault error:", e);
-      statusEl.textContent = t("kb.pick_fail", {error: e.message});
-    }
-  });
-
-  // Save config on change
-  embeddingSelect?.addEventListener("change", async () => {
-    await window.goodAgent.kbSetConfig({ embeddingProvider: embeddingSelect.value });
-  });
-  maxNotes?.addEventListener("change", async () => {
-    await window.goodAgent.kbSetConfig({ maxNotes: parseInt(maxNotes.value) || 5 });
-  });
-  maxChars?.addEventListener("change", async () => {
-    await window.goodAgent.kbSetConfig({ maxChars: parseInt(maxChars.value) || 500 });
-  });
-
-  // Scan
-  scanBtn?.addEventListener("click", async () => {
-    if (!vaultPath.value) { statusEl.textContent = t("kb.select_vault"); return; }
-    scanBtn.disabled = true;
-scanBtn.textContent = t("kb.indexing");
-                statusEl.textContent = t("kb.scanning");
-    try {
-      const result = await window.goodAgent.kbScan();
-      if (result.error) {
-        statusEl.textContent = t("kb.error", {error: result.error});
-      } else {
-        statusEl.textContent = t("kb.index_success", {count: result.indexed, embedded: result.embedded});
-      }
-    } catch (e) {
-      statusEl.textContent = t("kb.error", {error: e.message});
-    }
-    scanBtn.disabled = false;
-    scanBtn.textContent = t("kb.scan_btn");
-  });
-
-  // Test search
-  testSearchBtn?.addEventListener("click", () => {
-    testArea.style.display = testArea.style.display === "none" ? "block" : "none";
-    if (testArea.style.display === "block") testQuery?.focus();
-  });
-
-  testQuery?.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter") {
-      const query = testQuery.value.trim();
-      if (!query) return;
-      testResults.innerHTML = `<div style='color:var(--text-muted);font-size:12px;'>${t("kb.searching")}</div>`;
-      try {
-        const results = await window.goodAgent.kbSearch(query, 5);
-        if (results.length === 0) {
-          testResults.innerHTML = `<div style='color:var(--text-muted);font-size:12px;'>${t("kb.no_results")}</div>`;
-          return;
-        }
-        testResults.innerHTML = results.map(r => `
-          <div class="kb-result-item">
-            <div class="kb-result-title">${r.title || r.rel_path}</div>
-            <div class="kb-result-path">${r.rel_path}</div>
-            <div class="kb-result-snippet">${r.snippet || ""}</div>
-          </div>
-        `).join("");
-      } catch (e) {
-        testResults.innerHTML = `<div style='color:var(--danger);font-size:12px;'>${e.message}</div>`;
-      }
-    }
-  });
-}
-
-document.querySelector('.settings-tab[data-tab="knowledge-base"]')
-  ?.addEventListener("click", loadKnowledgeBasePanel);
-
-// Direct pick vault handler (fallback in case lazy-load fails)
-document.getElementById("kb-pick-vault-btn")?.addEventListener("click", async () => {
-  try {
-    const result = await window.goodAgent.kbPickVault();
-    if (result?.canceled) return;
-    if (result?.ok && result.vault) {
-      const vp = document.getElementById("kb-vault-path");
-      if (vp) vp.value = result.vault;
-      document.getElementById("kb-scan-btn")?.click();
-    }
-  } catch (e) {
-    console.error("[kb] pick vault fallback error:", e);
-  }
-});
-
-document.getElementById("kb-clear-vault-btn")?.addEventListener("click", async () => {
-  try {
-    await window.goodAgent.kbSetVault("");
-    const vp = document.getElementById("kb-vault-path");
-    if (vp) vp.value = "";
-    const st = document.getElementById("kb-status");
-    if (st) st.textContent = t("kb.unconfigured");
-  } catch (e) {
-    console.error("[kb] clear vault error:", e);
-  }
-});
-
-// KB toggle init
-const _kbToggle = document.getElementById("kb-toggle");
-if (_kbToggle) {
-  _kbToggle.checked = localStorage.getItem("goodagent_kb_enabled") === "true";
-  _kbToggle.addEventListener("change", () => {
-    localStorage.setItem("goodagent_kb_enabled", _kbToggle.checked);
-  });
-}
+/* ── Knowledge Base (imported from modules/knowledge-base.mjs) ── */
+initKnowledgeBase();
 
 /* ── Language Switching ─────────────────────────────── */
 (function initLanguage() {

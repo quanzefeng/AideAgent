@@ -500,9 +500,15 @@ export async function search(query, limit = 5) {
     try {
       const note = db.prepare("SELECT * FROM kb_notes WHERE id = ?").get(id);
       if (!note) continue;
-      // Find FTS snippet for this note (use rel_path since FTS rowid != kb_notes.id)
-      const ftsMatch = ftsResults.find(r => r.rel_path === note.rel_path);
-      const snippet = ftsMatch?.snippet || note.title;
+      // Read full note content from file, fallback to FTS snippet
+      let snippet = note.title;
+      try {
+        const fullPath = join(_vaultPath, note.rel_path);
+        snippet = readFileSync(fullPath, "utf-8");
+      } catch {
+        const ftsMatch = ftsResults.find(r => r.rel_path === note.rel_path);
+        snippet = ftsMatch?.snippet || note.title;
+      }
       results.push({
         id: note.id,
         rel_path: note.rel_path,

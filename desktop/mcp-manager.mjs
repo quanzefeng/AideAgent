@@ -422,10 +422,13 @@ class McpManager {
   }
 
   /** Get all tool definitions in OpenAI function-calling format. */
-  listAllToolDefs() {
+  listAllToolDefs({ excludeServers = [], excludeCategories = [] } = {}) {
     const defs = [];
-    for (const [, server] of Object.entries(this.servers)) {
+    for (const [serverName, server] of Object.entries(this.servers)) {
       if (server.status !== "running") continue;
+      if (excludeServers.includes(serverName)) continue;
+      const cfg = this.loadConfig().servers?.[serverName] || {};
+      if (excludeCategories.length > 0 && excludeCategories.includes(cfg.category)) continue;
       for (const tool of server.tools) {
         defs.push({
           type: "function",

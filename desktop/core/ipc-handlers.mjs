@@ -37,12 +37,12 @@ async function saveSession(id, history, title) {
 }
 
 export function registerIpcHandlers() {
-  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm }) => {
+  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true }) => {
     setPlanMode(!!pm);
     console.log("[plan-mode] query:submit planMode =", getPlanMode(), "pm =", pm);
     if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
     sendToRenderer("stream:start", {});
-    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode()); }
+    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled); }
     catch (err) { sendToRenderer("stream:error", { message: err.message }); }
     sendToRenderer("stream:done", {});
   });

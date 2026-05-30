@@ -280,6 +280,21 @@ export const TOOL_DEFS = [
   {
     type: "function",
     function: {
+      name: "kb_search",
+      description: "Search the user's knowledge base (Obsidian vault) for notes matching a query. Returns relevant snippets. Use this when the system prompt's <knowledge-base> section doesn't have enough detail, or when you need to find specific information from the user's notes.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query (keywords or question)" },
+          limit: { type: "number", description: "Max notes to return (default 5)" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "kb_write",
       description: "Create or update a note in the user's knowledge base (Obsidian vault). Use this to save important findings, research results, or organized knowledge.",
       parameters: {

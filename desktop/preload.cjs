@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   version: process.versions.electron,
   respondPermission: (id, allow) => ipcRenderer.invoke("permission:respond", { id, allow }),
   onPermissionRequest: (cb) => ipcRenderer.on("permission:request", (_event, d) => cb(d)),
-  submitQuery: (prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode }),
+  submitQuery: (prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled }),
   setPlanMode: (enabled) => ipcRenderer.invoke("plan-mode:set", enabled),
   getPlanMode: () => ipcRenderer.invoke("plan-mode:get"),
   abortQuery: () => ipcRenderer.invoke("query:abort"),

@@ -4,17 +4,19 @@ import mcpManager from "../mcp-manager.mjs";
 import { TOOL_DEFS } from "./tool-definitions.mjs";
 import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer } from "./state.mjs";
 
-export function getAllToolDefs(kbEnabled = true) {
+export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   const planMode = getPlanMode();
   let builtins = kbEnabled ? TOOL_DEFS : TOOL_DEFS.filter(t => t.function.name !== "kb_write");
+  if (!webSearchEnabled) builtins = builtins.filter(t => t.function.name !== "web_search" && t.function.name !== "web_fetch");
   if (planMode) builtins = builtins.filter(t => PLAN_MODE_READONLY.has(t.function.name));
-  const mcpDefs = mcpManager.listAllToolDefs();
+  const mcpFilter = webSearchEnabled ? {} : { excludeCategories: ["web-search"] };
+  const mcpDefs = mcpManager.listAllToolDefs(mcpFilter);
   console.log("[plan-mode] getAllToolDefs planMode =", planMode, "builtins =", builtins.length, "mcp =", planMode ? 0 : mcpDefs.length);
   return planMode ? builtins : [...builtins, ...mcpDefs];
 }
 
-export function toAnthropicTools(kbEnabled = true) {
-  return getAllToolDefs(kbEnabled).map(t => ({
+export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {
+  return getAllToolDefs(kbEnabled, webSearchEnabled).map(t => ({
     name: t.function.name,
     description: t.function.description,
     input_schema: t.function.parameters,
@@ -54,8 +56,8 @@ export function toAnthropicMessages(msgs) {
   return { messages, system };
 }
 
-export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true) {
-  const toolDefs = getAllToolDefs(kbEnabled);
+export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
+  const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
   const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   if (reasoning) body.reasoning_effort = "high";
@@ -104,9 +106,9 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   return { content, reasoningContent, finishReason, tcs: Object.values(tcAccum) };
 }
 
-export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true) {
+export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
   const { messages, system } = toAnthropicMessages(msgs);
-  const toolDefs = toAnthropicTools(kbEnabled);
+  const toolDefs = toAnthropicTools(kbEnabled, webSearchEnabled);
   console.log("[anthropicCall] tools sent to LLM:", toolDefs.map(t => t.name).join(", "));
   const base = apiUrl.replace(/\/+$/, "");
   const endpoint = base.endsWith("/v1/messages") ? base

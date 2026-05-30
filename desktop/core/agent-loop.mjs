@@ -24,7 +24,7 @@ async function saveSession(id, history, title) {
   try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
 }
 
-export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false) {
+export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true) {
   let abortCtrl = getAbortCtrl();
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
@@ -59,7 +59,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     userMessage = { role: "user", content: prompt };
   }
 
-  const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode);
+  const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled);
 
   // ── Inject task/todo status into system context ──
   let sysContent = sysPrompt.content;
@@ -132,7 +132,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     let content, reasoningContent, tcs;
     try {
       const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-      const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning, kbEnabled);
+      const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning, kbEnabled, webSearchEnabled);
       content = result.content;
       reasoningContent = result.reasoningContent || "";
       allText += result.content;
