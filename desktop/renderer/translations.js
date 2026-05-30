@@ -329,6 +329,7 @@ const translations = {
 
     // ── Status ──
     "status.thinking": "思考中...",
+    "status.stopped": "已停止",
     "status.ready": "就绪",
     "status.tasks": "{count} 个任务",
     "status.todos": "{count} 个 todo",
@@ -767,6 +768,7 @@ const translations = {
 
     // ── Status ──
     "status.thinking": "Thinking...",
+    "status.stopped": "Stopped",
     "status.ready": "Ready",
     "status.tasks": "{count} tasks",
     "status.todos": "{count} todos",

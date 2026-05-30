@@ -398,6 +398,16 @@ function finishAssistantMessage(msgEl) {
   const thinking = msgEl.querySelector(".thinking-collapsible");
   if (thinking) thinking.removeAttribute("open");
 
+  // If message only has thinking indicator (no content), replace it
+  const textEl = msgEl.querySelector(".message-text");
+  if (textEl && textEl.querySelector(".thinking-indicator")) {
+    if (state.currentText) {
+      textEl.innerHTML = renderMarkdown(state.currentText);
+    } else {
+      textEl.innerHTML = `<span style="color:var(--text-muted);font-size:13px;">${t("status.stopped")}</span>`;
+    }
+  }
+
   // 添加复制/下载操作栏（避免重复添加）
   if (!msgEl.querySelector(".message-actions")) {
     const actions = document.createElement("div");
