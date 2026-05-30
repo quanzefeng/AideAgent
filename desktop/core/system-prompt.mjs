@@ -1,0 +1,268 @@
+// ── System Prompt Builder + Prompt Profile Store ────────────
+
+import { join, dirname } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { app } from "electron";
+import os from "node:os";
+import sessionDb from "../session-db.mjs";
+import * as skills from "../skills-store.mjs";
+import * as kb from "../knowledge-store.mjs";
+import mcpManager from "../mcp-manager.mjs";
+import { scanSkills } from "./skill-scanner.mjs";
+import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.mjs";
+import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD } from "./token-budget.mjs";
+
+export function bumpVersion(ver) {
+  const parts = ver.split(".").map(Number);
+  parts[2] = (parts[2] || 0) + 1;
+  return parts.join(".");
+}
+
+const DEFAULT_PROMPT = `You are GoodAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is GoodAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called GoodAgent.
+
+1. First explore the project with \`dir\` or \`Get-ChildItem\`.
+2. Understand the user's request clearly before taking action.
+3. Plan your approach, then use the available tools to execute it.
+4. Show relevant code when explaining changes.
+5. Iterate based on user feedback to refine the result.
+
+**Available tools:**
+- \`bash\` — Run PowerShell commands (dir, git, npm, etc.)
+- \`file_read\` — Read file contents
+- \`file_write\` — Create or overwrite files
+- \`file_edit\` — Replace exact text in files
+- \`grep\` — Regex search in files
+- \`glob\` — Find files by name pattern
+- \`web_fetch\` — Fetch and extract content from any URL
+- \`web_search\` — Search the internet for current information
+- \`skill\` — Load a user-installed skill (SKILL.md workflow)
+- \`TaskCreate\` — Create tasks to track complex multi-step work
+- \`TaskUpdate\` — Update task status (pending/in_progress/completed/deleted)
+- \`TaskList\` — List all tasks to see progress
+- \`TodoWrite\` — Update a lightweight session todo checklist
+- \`write_memory\` — Save important facts to permanent memory
+- \`create_skill\` — Create or update reusable skill workflows
+- \`Agent\` — Launch a read-only sub-agent for parallel research, code exploration, or web searches
+- \`AskUserQuestion\` — Ask the user clarifying multiple-choice questions
+
+USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
+
+1. USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
+2. First explore the project with \`dir\` or \`Get-ChildItem\`.
+3. When you need current information, news, or docs — use \`web_search\` and \`web_fetch\`.
+4. Show relevant code when explaining.
+5. Use \`file_edit\` or \`file_write\` for code changes.
+6. Keep responses concise with Markdown formatting.
+7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).
+
+If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
+
+You are running on Windows as a desktop AI coding agent.`;
+
+export { DEFAULT_PROMPT };
+
+function _initPromptStorePath() {
+  if (!getPromptStorePath()) {
+    setPromptStorePath(join(app.getPath("userData"), "system-prompt-profiles.json"));
+  }
+}
+
+export function loadPromptProfiles() {
+  _initPromptStorePath();
+  try {
+    if (existsSync(getPromptStorePath())) {
+      const raw = readFileSync(getPromptStorePath(), "utf-8");
+      const store = JSON.parse(raw);
+      let migrated = false;
+      if (store.profiles) {
+        for (const [id, prof] of Object.entries(store.profiles)) {
+          if (prof && prof.sections && !prof.content) {
+            prof.content = Object.entries(prof.sections)
+              .filter(([, sec]) => sec.enabled && sec.content && sec.content.trim())
+              .map(([, sec]) => sec.content.trim())
+              .join("\n\n");
+            delete prof.sections;
+            migrated = true;
+          }
+        }
+      }
+      if (migrated) {
+        savePromptProfiles(store);
+        console.log("[main] Migrated profiles from sections to single content");
+      }
+      return store;
+    }
+  } catch (e) {
+    console.error("[main] Failed to load prompt profiles:", e.message);
+  }
+  return {
+    activeProfile: "default",
+    profiles: {
+      default: {
+        id: "default",
+        name: "默认",
+        enabled: true,
+        content: DEFAULT_PROMPT,
+      },
+    },
+  };
+}
+
+export function savePromptProfiles(data) {
+  _initPromptStorePath();
+  try {
+    const dir = dirname(getPromptStorePath());
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(getPromptStorePath(), JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("[main] Failed to save prompt profiles:", e.message);
+  }
+}
+
+export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false) {
+  const WORKSPACE = getWorkspace();
+  const sessionId = getSessionId();
+  const allSkills = scanSkills();
+  const filterSkills = enabledSkills && enabledSkills.length > 0
+    ? allSkills.filter(s => enabledSkills.includes(s.name))
+    : allSkills;
+  const skillList = filterSkills.length > 0
+    ? filterSkills.map(s => `  - \`${s.name}\`: ${s.description || "(no description)"}`).join("\n")
+    : "  (no skills enabled)";
+
+  let content = "";
+  try {
+    const store = loadPromptProfiles();
+    const profileId = store.activeProfile || "default";
+    const profile = store.profiles[profileId];
+    if (profile && profile.enabled) {
+      if (profile.content && profile.content.trim()) {
+        content = profile.content.trim();
+        content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
+      }
+    }
+  } catch (e) {
+    console.error("[main] Failed to load prompt profiles:", e.message);
+  }
+
+  if (!content) {
+    content = DEFAULT_PROMPT;
+  }
+
+  const mcpServers = mcpManager.listServers().filter(s => s.status === "running");
+  let mcpSection = "";
+  if (mcpServers.length > 0) {
+    const lines = [];
+    for (const server of mcpServers) {
+      const toolNames = server.tools.map(t => `\`${t.name}\``).join(", ");
+      lines.push(`  - **${server.name}**: ${toolNames}`);
+    }
+    mcpSection = `\n\n**MCP servers:**
+${lines.join("\n")}\n
+You can use the MCP tools listed above just like any other tool.`;
+  }
+
+  content += `\n\n**Enabled skills (user-selected):**
+${skillList}
+${mcpSection}
+
+Working directory: ${WORKSPACE}`;
+
+  if (agentName && agentName !== "GoodAgent") {
+    content = content.replace(/GoodAgent/g, agentName);
+  }
+
+  content += `\n\n**Memory:** You have persistent memory via \`write_memory\`. Save facts that are NOT derivable from code or git history.\n\n**Do NOT save:** code patterns/architecture (read the files), git history (git log is authoritative), debug solutions (fix is in code), CLAUDE.md content, or temporary task state. **DO save:** user preferences, project context (deadlines, stakeholder decisions), feedback/corrections, external system pointers.\n\nWhen a memory names a specific file or function, verify it exists before acting — memories can be stale.\n\nYou also have \`create_skill\` — use it when you notice repeated task patterns.`;
+
+  const skillsCtx = skills.buildSkillsContext();
+  if (skillsCtx) content += skillsCtx;
+
+  content += `\n\n**IMPORTANT: Before answering any user request, check both "Enabled skills" and "Available Skills" sections above. If a skill matches the user's request, you MUST call \`skill\` (for installed skills) or \`invoke_skill\` (for agent skills) with that skill name to load its full instructions, then follow them. Do not ignore matching skills.**`;
+
+  try {
+    const patterns = skills.detectPatterns(sessionDb);
+    if (patterns.length > 0) {
+      const hints = patterns.slice(0, 3).map(p =>
+        `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`
+      ).join("\n");
+      content += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
+    }
+  } catch {}
+
+  let memorySections = [];
+  try {
+    const episodicSearched = _episodicSearched;
+    if (userPrompt && !episodicSearched) {
+      import("./state.mjs").then(m => m.setEpisodicSearched(true));
+      const results = sessionDb.searchMessages(userPrompt, 8);
+      if (results.length > 0) {
+        const lines = results.map(r =>
+          `- [${r.sessionTitle}] ${(r.snippet || "").replace(/<\/?mark>/g, "")}`
+        ).join("\n");
+        memorySections.push(`\n\n<memory-context>\n**以下是你的记忆——你过去与用户的对话中与此问题相关的部分：**\n${lines}\n</memory-context>`);
+      }
+    }
+    const last = sessionDb.getLastSession(4, sessionId);
+    if (last?.messages?.length) {
+      const lines = last.messages.map(m => `- ${m.role}: ${(m.content || "").slice(0, 200)}`).join("\n");
+      memorySections.push(`\n\n<memory-context>\n**上一段对话的延续——你的记忆：** [${last.title}]\n${lines}\n</memory-context>`);
+    }
+    try {
+      const HOME = os.homedir();
+      for (const [label, path] of [["USER.md", join(HOME, ".goodagent", "memories", "USER.md")], ["MEMORY.md", join(HOME, ".goodagent", "memories", "MEMORY.md")]]) {
+        try {
+          const text = readFileSync(path, "utf8").trim();
+          if (text) memorySections.push({ label, text });
+        } catch {}
+      }
+    } catch {}
+  } catch {}
+
+  if (isPlanMode) {
+    content += "\n\n## ⚠️ 计划模式\n当前处于计划模式。你只能读取和分析代码，绝对不能使用 file_write、file_edit、bash 等写操作工具。\n请先制定详细的实现计划（包括文件变更清单、步骤、依赖关系），等用户确认后再执行。";
+  }
+
+  let baseTokens = estimateTokens(content);
+  const memoryBudget = TOKEN_BUDGET_WARN - baseTokens;
+
+  if (memoryBudget > 500) {
+    for (const sec of memorySections) {
+      if (typeof sec === 'string') {
+        content += sec;
+      } else {
+        const trimmed = sec.text.length > 2000 ? sec.text.slice(0, 2000) : sec.text;
+        content += `\n\n<memory-context>\n**${sec.label} — 你的永久记忆：**\n${trimmed}\n</memory-context>`;
+      }
+    }
+  } else {
+    for (const sec of memorySections) {
+      const space = TOKEN_BUDGET_HARD - estimateTokens(content);
+      if (space < 200) break;
+      if (typeof sec === 'string') {
+        content += trimToBudget(sec, Math.max(200, space - 100));
+      } else {
+        const trimmed = sec.text.length > 800 ? sec.text.slice(0, 800) : sec.text;
+        content += `\n\n<memory-context>\n**${sec.label} (摘要):**\n${trimmed}\n</memory-context>`;
+      }
+    }
+  }
+
+  if (kbEnabled && kb.getVault()) {
+    try {
+      const kbCfg = kb.getConfig();
+      const maxNotes = kbCfg.maxNotes || 5;
+      const maxChars = kbCfg.maxChars || 500;
+      const kbResults = await kb.search(userPrompt, maxNotes);
+      if (kbResults.length > 0) {
+        const kbContext = kbResults.map(r => {
+          let snippet = r.snippet || "";
+          if (snippet.length > maxChars) snippet = snippet.slice(0, maxChars) + "...";
+          return `**[${r.title}]** (${r.rel_path})\n${snippet}`;
+        }).join("\n\n");
+        content += `\n\n<knowledge-base>\n**用户知识库中的相关内容：**\n${kbContext}\n</knowledge-base>`;
+      }
+    } catch {}
+  }
+
+  return { role: "system", content };
+}
