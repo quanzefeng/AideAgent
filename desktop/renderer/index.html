@@ -99,6 +99,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             <span data-i18n="settings.language">语言</span>
           </div>
+          <div class="settings-tab" data-tab="about">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span data-i18n="settings.about">关于</span>
+          </div>
         </div>
 
         <!-- Right Content Area -->
@@ -114,7 +118,8 @@
                   <option value="deepseek" data-i18n="provider.deepseek">DeepSeek</option>
                   <option value="glm" data-i18n="provider.glm">GLM (智谱)</option>
                   <option value="qwen" data-i18n="provider.qwen">Qwen (通义千问)</option>
-                  <option value="mimo" data-i18n="provider.mimo">MiMo (小米)</option>
+                  <option value="llamacpp" data-i18n="provider.llamacpp">llama.cpp (本地)</option>
+                  <option value="minimax" data-i18n="provider.minimax">MiniMax</option>
                   <option value="claude" data-i18n="provider.claude">Claude (Anthropic)</option>
                   <option value="lmstudio" data-i18n="provider.lmstudio">LM Studio（本地）</option>
                   <option value="ollama" data-i18n="provider.ollama">Ollama（本地）</option>
@@ -482,6 +487,60 @@
               </select>
             </div>
             <p class="hint" data-i18n="lang.hint" style="margin-top:12px;">切换语言后立即生效</p>
+          </div>
+
+          <!-- 关于 Panel -->
+          <div class="settings-panel" id="panel-about">
+            <div style="text-align:center;padding:24px 0 16px;">
+              <img src="avatar.jpg" alt="GoodAgent" style="width:64px;height:64px;border-radius:16px;margin-bottom:12px;" />
+              <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0 0 4px;">GoodAgent</h2>
+              <p id="about-version" style="font-size:13px;color:var(--text-light);margin:0;"></p>
+            </div>
+
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;margin-bottom:12px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <span style="font-size:14px;font-weight:600;color:var(--text-primary);" data-i18n="about.update">软件更新</span>
+                <button id="update-check-btn" class="btn btn-sm" data-i18n="about.check_update">检查更新</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <label class="reasoning-toggle">
+                  <span class="reasoning-toggle-label" data-i18n="about.auto_check">启动时自动检查</span>
+                  <div class="toggle-switch toggle-switch-sm">
+                    <input type="checkbox" id="auto-update-checkbox" />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+              </div>
+              <div id="update-status" style="font-size:13px;color:var(--text-light);min-height:20px;" data-i18n="about.status_idle">当前已是最新版本</div>
+              <div id="update-progress-container" class="hidden" style="margin-top:8px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-light);margin-bottom:4px;">
+                  <span id="update-progress-text" data-i18n="about.downloading">下载中...</span>
+                  <span id="update-progress-percent">0%</span>
+                </div>
+                <div style="background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden;">
+                  <div id="update-progress-bar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;border-radius:4px;"></div>
+                </div>
+              </div>
+              <button id="update-install-btn" class="btn primary hidden" style="width:100%;margin-top:8px;" data-i18n="about.install_update">立即安装并重启</button>
+            </div>
+
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;" data-i18n="about.changelog">更新日志</div>
+              <div id="changelog-content" style="font-size:13px;color:var(--text-secondary);line-height:1.6;max-height:200px;overflow-y:auto;">
+                <p style="margin:0 0 8px;"><strong>v1.0.1</strong></p>
+                <ul style="margin:0;padding-left:16px;">
+                  <li>初始版本发布</li>
+                </ul>
+              </div>
+            </div>
+
+            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">联系方式</div>
+              <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
+                <p style="margin:0;">微信：q2993919594</p>
+                <p style="margin:0;">谷歌邮箱：zefengquan5@gmail.com</p>
+              </div>
+            </div>
           </div>
 
         </div>

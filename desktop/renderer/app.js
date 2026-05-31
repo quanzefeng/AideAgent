@@ -36,7 +36,8 @@ const PROVIDER_PRESETS = {
   deepseek:  { name: t("provider.deepseek"),   url: "https://api.deepseek.com",      model: "deepseek-v4-flash",                  models: [{id:"deepseek-v4-flash",label:t("model.deepseek_v4_flash")},{id:"deepseek-v4-pro",label:t("model.deepseek_v4_pro")}], format: "openai" },
   glm:       { name: t("provider.glm"),        url: "https://open.bigmodel.cn/api/paas/v4", model: "GLM-4.7-Flash",                  models: [{id:"GLM-4.7-Flash",label:t("model.glm_4_7_flash")},{id:"GLM-4-Plus",label:t("model.glm_4_plus")},{id:"GLM-4-Air",label:t("model.glm_4_air")}], format: "openai" },
   qwen:      { name: t("provider.qwen"),       url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",          models: [{id:"qwen3.7-max",label:t("model.qwen3_7_max")},{id:"qwen-plus",label:t("model.qwen_plus")},{id:"qwen-turbo",label:t("model.qwen_turbo")}], format: "openai" },
-  mimo:      { name: t("provider.mimo"),        url: "https://api.mimo.xiaomi.com/v1", model: "MiMo-7B-RL",         models: [{id:"MiMo-7B-RL",label:t("model.mimo_7b_rl")},{id:"MiMo-7B-SFT",label:t("model.mimo_7b_sft")}], format: "openai" },
+  llamacpp:  { name: t("provider.llamacpp"),   url: "http://127.0.0.1:8080/v1",       model: "",                                   models: [], format: "openai" },
+  minimax:   { name: t("provider.minimax"),    url: "https://api.minimaxi.com/anthropic",  model: "MiniMax-M2.7",                       models: [{id:"MiniMax-M2.7",label:t("model.minimax_m2_7")},{id:"MiniMax-M2.7-highspeed",label:t("model.minimax_m2_7_highspeed")}], format: "anthropic" },
   claude:    { name: t("provider.claude"),      url: "https://api.anthropic.com",     model: "claude-sonnet-4-20250514",            models: [{id:"claude-sonnet-4-20250514",label:t("model.claude_sonnet_4")},{id:"claude-opus-4-20250514",label:t("model.claude_opus_4")},{id:"claude-haiku-4.5-20250514",label:t("model.claude_haiku_4_5")}], format: "anthropic" },
   lmstudio:  { name: t("provider.lmstudio"),   url: "http://localhost:1234/v1",      model: "",                                   models: [], format: "openai" },
   ollama:    { name: t("provider.ollama"),      url: "http://localhost:11434/v1",     model: "",                                   models: [], format: "openai" },
@@ -506,10 +507,33 @@ function showWelcome() {
 }
 
 /* ── Settings Persistence ─────────────────────────────── */
+// Encrypted API key cache (loaded async from main process)
+const _apiKeyCache = {}; // { provider: key }
+
+async function initApiKeys() {
+  const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
+  if (provider) {
+    try {
+      const key = await window.goodAgent.loadApiKey(provider);
+      if (key) {
+        _apiKeyCache[provider] = key;
+      } else {
+        // Migrate old plaintext key from localStorage
+        const legacyKey = localStorage.getItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key") || "";
+        if (legacyKey) {
+          _apiKeyCache[provider] = legacyKey;
+          await window.goodAgent.saveApiKey(provider, legacyKey);
+          localStorage.removeItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key");
+        }
+      }
+    } catch { /* ignored */ }
+  }
+}
+
 function loadApiConfig() {
   const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
   const prefix = provider ? `goodagent_${provider}_` : "goodagent_";
-  const apiKey = localStorage.getItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key") || "";
+  const apiKey = _apiKeyCache[provider] || "";
   return {
     provider,
     apiUrl: localStorage.getItem(`${prefix}api_url`) || "",
@@ -519,13 +543,18 @@ function loadApiConfig() {
   };
 }
 
-function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat) {
+async function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat) {
   const prefix = provider ? `goodagent_${provider}_` : "goodagent_";
   if (apiUrl) localStorage.setItem(`${prefix}api_url`, apiUrl);
   localStorage.setItem(STORAGE_KEYS.PROVIDER, provider);
   if (model) localStorage.setItem(`${prefix}model`, model);
   if (apiFormat) localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
-  if (apiKey) localStorage.setItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key", apiKey);
+  if (apiKey) {
+    _apiKeyCache[provider] = apiKey;
+    await window.goodAgent.saveApiKey(provider, apiKey);
+    // Remove legacy plaintext key
+    localStorage.removeItem(provider ? `goodagent_api_key_${provider}` : "goodagent_api_key");
+  }
 }
 
 function clearApiConfig() {
@@ -650,7 +679,7 @@ function normalizeApiUrl(url) {
   return url + "/chat/completions";
 }
 
-function saveSettingsForm() {
+async function saveSettingsForm() {
   const provider = settingsProvider?.value || "";
   const rawUrl = (settingsUrl?.value || "").trim();
   const model = getCurrentModelValue().trim();
@@ -673,7 +702,7 @@ function saveSettingsForm() {
     settingsUrl.value = apiUrl;
   }
 
-  saveApiConfig(provider, apiUrl, model, apiKey, apiFormat);
+  await saveApiConfig(provider, apiUrl, model, apiKey, apiFormat);
   // Sync to WeChat bot config so WeChat uses updated API
   window.goodAgent.syncApiToWechat?.({ apiUrl, apiKey, model, apiFormat }).catch(() => {});
   updateConfigBanner();
@@ -2372,8 +2401,9 @@ initUserAvatarUI();
 applyUserName(loadUserName());
 updateConfigBanner();
 
-// Apply saved API config status
-const cfg = loadApiConfig();
+// Load encrypted API keys then apply config
+initApiKeys().then(() => {
+  const cfg = loadApiConfig();
 // Auto-sync to WeChat bot on startup
 if (cfg.apiUrl && cfg.apiKey) {
   window.goodAgent.syncApiToWechat?.({ apiUrl: cfg.apiUrl, apiKey: cfg.apiKey, model: cfg.model, apiFormat: cfg.apiFormat || "openai" }).catch(() => {});
@@ -2392,6 +2422,7 @@ if (hasApiConfig()) {
 
 // Load saved session list
 refreshSessionList();
+}); // end initApiKeys().then()
 
 /* ════════════════════════════════════════════════
    WeChat iLink QR Login + Bot
@@ -2551,6 +2582,106 @@ initWechatStatus();
 /* ── Knowledge Base (imported from modules/knowledge-base.mjs) ── */
 initKnowledgeBase();
 initMemoryPanel();
+
+/* ── About / Update Panel ─────────────────────────── */
+(function initAboutPanel() {
+  const AUTO_UPDATE_KEY = "goodagent_auto_update";
+
+  const checkBtn = document.getElementById("update-check-btn");
+  const autoCheckbox = document.getElementById("auto-update-checkbox");
+  const statusEl = document.getElementById("update-status");
+  const progressContainer = document.getElementById("update-progress-container");
+  const progressBar = document.getElementById("update-progress-bar");
+  const progressText = document.getElementById("update-progress-text");
+  const progressPercent = document.getElementById("update-progress-percent");
+  const installBtn = document.getElementById("update-install-btn");
+  const changelogEl = document.getElementById("changelog-content");
+  const versionEl = document.getElementById("about-version");
+
+  // Load current version
+  window.goodAgent.updateCheckVersion().then(v => {
+    if (versionEl) versionEl.textContent = t("about.version", { version: v || "1.0.1" });
+  }).catch(() => {});
+
+  // Load auto-check preference
+  const autoEnabled = localStorage.getItem(AUTO_UPDATE_KEY) === "true";
+  if (autoCheckbox) autoCheckbox.checked = autoEnabled;
+
+  autoCheckbox?.addEventListener("change", () => {
+    localStorage.setItem(AUTO_UPDATE_KEY, autoCheckbox.checked);
+  });
+
+  // Manual check button
+  checkBtn?.addEventListener("click", async () => {
+    checkBtn.disabled = true;
+    statusEl.textContent = t("about.checking");
+    statusEl.style.color = "var(--text-light)";
+    try {
+      await window.goodAgent.updateCheckForUpdates();
+    } catch (e) {
+      statusEl.textContent = t("about.check_failed", { error: e.message });
+      statusEl.style.color = "var(--danger)";
+    }
+    checkBtn.disabled = false;
+  });
+
+  // Install button
+  installBtn?.addEventListener("click", () => {
+    window.goodAgent.updateInstall();
+  });
+
+  // Listen for status updates from main process
+  window.goodAgent.onUpdateStatus?.((data) => {
+    switch (data.status) {
+      case "checking":
+        statusEl.textContent = t("about.checking");
+        statusEl.style.color = "var(--text-light)";
+        progressContainer?.classList.add("hidden");
+        installBtn?.classList.add("hidden");
+        break;
+      case "available":
+        statusEl.textContent = t("about.new_version", { version: data.version });
+        statusEl.style.color = "var(--primary)";
+        progressContainer?.classList.remove("hidden");
+        installBtn?.classList.add("hidden");
+        if (data.releaseNotes && changelogEl) {
+          changelogEl.innerHTML = marked.parse(data.releaseNotes);
+        }
+        break;
+      case "not-available":
+        statusEl.textContent = t("about.status_idle");
+        statusEl.style.color = "var(--text-light)";
+        progressContainer?.classList.add("hidden");
+        installBtn?.classList.add("hidden");
+        break;
+      case "downloaded":
+        statusEl.textContent = t("about.downloaded", { version: data.version });
+        statusEl.style.color = "#22c55e";
+        progressContainer?.classList.add("hidden");
+        installBtn?.classList.remove("hidden");
+        break;
+      case "error":
+        statusEl.textContent = t("about.check_failed", { error: data.message });
+        statusEl.style.color = "var(--danger)";
+        progressContainer?.classList.add("hidden");
+        installBtn?.classList.add("hidden");
+        break;
+    }
+  });
+
+  // Listen for download progress
+  window.goodAgent.onUpdateProgress?.((data) => {
+    if (progressBar) progressBar.style.width = Math.round(data.percent) + "%";
+    if (progressPercent) progressPercent.textContent = Math.round(data.percent) + "%";
+  });
+
+  // Auto-check on startup if enabled
+  if (autoEnabled) {
+    setTimeout(() => {
+      window.goodAgent.updateCheckForUpdates().catch(() => {});
+    }, 3000);
+  }
+})();
 
 /* ── Language Switching ─────────────────────────────── */
 (function initLanguage() {

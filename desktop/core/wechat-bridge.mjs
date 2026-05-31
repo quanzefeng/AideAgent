@@ -100,6 +100,12 @@ function extractText(itemList) {
 }
 
 async function wxPollLoop() {
+  // Prevent duplicate poll loops
+  const existing = getWxPollAbort();
+  if (existing && !existing.signal.aborted) {
+    console.log("[wechat] poll loop already running, skipping duplicate");
+    return;
+  }
   setWxPollAbort(new AbortController());
   let buf = "", fails = 0;
   console.log("[wechat] poll loop started");

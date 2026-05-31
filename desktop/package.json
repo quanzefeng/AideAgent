@@ -17,6 +17,11 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "quanzefeng",
+    "repo": "GoodAgent"
+  },
   "build": {
     "appId": "com.goodagent.desktop",
     "productName": "GoodAgent",
@@ -24,6 +29,7 @@
     "files": [
       "main.mjs",
       "preload.cjs",
+      "update-manager.mjs",
       "renderer/**"
     ],
     "extraResources": [
@@ -46,7 +52,10 @@
       "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": ["deb", "AppImage"],
+      "target": [
+        "deb",
+        "AppImage"
+      ],
       "icon": "icon.png",
       "artifactName": "GoodAgent-${version}-Linux-${arch}.${ext}",
       "category": "Development"
@@ -69,6 +78,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
+    "electron-updater": "^6.8.3",
     "qrcode": "^1.5.4"
   }
 }

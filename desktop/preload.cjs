@@ -110,4 +110,16 @@ contextBridge.exposeInMainWorld("goodAgent", {
   kbCreateNote: (path, content, tags) => ipcRenderer.invoke("kb:create-note", { path, content, tags }),
   kbUpdateNote: (path, content) => ipcRenderer.invoke("kb:update-note", { path, content }),
   kbDeleteNote: (path) => ipcRenderer.invoke("kb:delete-note", path),
+
+  // Update Manager
+  updateCheckVersion: () => ipcRenderer.invoke("update:get-version"),
+  updateCheckForUpdates: () => ipcRenderer.invoke("update:check"),
+  updateInstall: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (cb) => ipcRenderer.on("update:status", (_e, d) => cb(d)),
+  onUpdateProgress: (cb) => ipcRenderer.on("update:progress", (_e, d) => cb(d)),
+
+  // Encrypted API Key Storage
+  saveApiKey: (provider, key) => ipcRenderer.invoke("api-key:save", { provider, key }),
+  loadApiKey: (provider) => ipcRenderer.invoke("api-key:load", { provider }),
+  deleteApiKey: (provider) => ipcRenderer.invoke("api-key:delete", { provider }),
 });

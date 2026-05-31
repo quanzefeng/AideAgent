@@ -1,6 +1,6 @@
 // ── IPC Handlers — All ipcMain.handle registrations ──────────
 
-import { ipcMain, BrowserWindow, dialog } from "electron";
+import { ipcMain, BrowserWindow, dialog, safeStorage } from "electron";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -478,5 +478,55 @@ export function registerIpcHandlers() {
     } catch (e) {
       return { success: false, error: e.message };
     }
+  });
+
+  // ── Encrypted API Key Storage ──────────────────────────────
+  const KEY_STORE_PATH = join(homedir(), ".goodagent", "api-keys.enc");
+
+  function loadKeyStore() {
+    try {
+      if (existsSync(KEY_STORE_PATH)) {
+        const data = readFileSync(KEY_STORE_PATH);
+        if (safeStorage.isEncryptionAvailable()) {
+          return JSON.parse(safeStorage.decryptString(data));
+        }
+        // Fallback: try reading as plaintext (migration)
+        return JSON.parse(data.toString("utf8"));
+      }
+    } catch { /* ignored */ }
+    return {};
+  }
+
+  function saveKeyStore(store) {
+    const json = JSON.stringify(store);
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(json);
+      writeFileSync(KEY_STORE_PATH, encrypted);
+    } else {
+      // Fallback: plaintext (no encryption available)
+      writeFileSync(KEY_STORE_PATH, json, "utf8");
+    }
+  }
+
+  ipcMain.handle("api-key:save", (_event, { provider, key }) => {
+    if (!provider || !key) return { error: "provider and key required" };
+    const store = loadKeyStore();
+    store[provider] = key;
+    saveKeyStore(store);
+    return { ok: true };
+  });
+
+  ipcMain.handle("api-key:load", (_event, { provider }) => {
+    if (!provider) return null;
+    const store = loadKeyStore();
+    return store[provider] || null;
+  });
+
+  ipcMain.handle("api-key:delete", (_event, { provider }) => {
+    if (!provider) return { error: "provider required" };
+    const store = loadKeyStore();
+    delete store[provider];
+    saveKeyStore(store);
+    return { ok: true };
   });
 }

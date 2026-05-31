@@ -11,6 +11,7 @@ import * as skills from "./skills-store.mjs";
 import { setMainWindow, PROJECT_ROOT } from "./core/state.mjs";
 import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.mjs";
+import { initUpdateManager } from "./update-manager.mjs";
 
 const isDev = process.argv.includes("--dev");
 
@@ -73,6 +74,9 @@ function createWindow() {
   mainWindow.on("closed", () => { setMainWindow(null); });
 
   setMainWindow(mainWindow);
+
+  // Initialize update manager
+  initUpdateManager(mainWindow);
 }
 
 // ── App Lifecycle ──────────────────────────────────────────

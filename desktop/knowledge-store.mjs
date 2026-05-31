@@ -21,10 +21,17 @@ const EMBEDDING_DIM = 384; // Unified dimension for all providers
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
+function isSafeVaultPath(relPath) {
+  if (!relPath || typeof relPath !== "string") return false;
+  if (relPath.includes("..") || relPath.startsWith("/") || relPath.startsWith("\\")) return false;
+  const resolved = join(_vaultPath, relPath);
+  return resolved.startsWith(_vaultPath);
+}
+
 // ── Configuration ─────────────────────────────────────────
 
 let _vaultPath = "";
-let _config = { embeddingProvider: "local", maxNotes: 5, maxChars: 1000 };
+let _config = { embeddingProvider: "local", maxNotes: 20, maxChars: 20000 };
 
 function loadConfig() {
   try {
@@ -56,7 +63,7 @@ export function setVault(path) {
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
   if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
-  if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(10000, cfg.maxChars));
+  if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(50000, cfg.maxChars));
   saveConfig();
   return { ok: true, config: _config };
 }
@@ -561,8 +568,9 @@ export function getNote(relPath) {
   } catch { return null; }
 }
 
-export function createNote(relPath, content, tags = []) {
+export async function createNote(relPath, content, tags = []) {
   if (!_vaultPath) return { error: "vault not set" };
+  if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
   const fullPath = join(_vaultPath, relPath);
 
   try {
@@ -586,22 +594,22 @@ export function createNote(relPath, content, tags = []) {
 
     ftsInsert(relPath, title, noteTags, body);
 
-    // Generate embedding (async, best-effort)
-    embedText(title + "\n" + body.slice(0, 1000)).then(embedding => {
+    // Generate embedding (block until done so search is consistent)
+    try {
+      const embedding = await embedText(title + "\n" + body.slice(0, 1000));
       if (embedding) {
-        try {
-          getDb().prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
-            .run(result.lastInsertRowid, vectorToBuffer(embedding), EMBEDDING_DIM);
-        } catch { /* ignored */ }
+        getDb().prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
+          .run(result.lastInsertRowid, vectorToBuffer(embedding), EMBEDDING_DIM);
       }
-    }).catch(() => {});
+    } catch { /* ignored */ }
 
     return { ok: true, relPath, title };
   } catch (e) { return { error: e.message }; }
 }
 
-export function updateNote(relPath, content) {
+export async function updateNote(relPath, content) {
   if (!_vaultPath) return { error: "vault not set" };
+  if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
   const fullPath = join(_vaultPath, relPath);
 
   try {
@@ -619,18 +627,17 @@ export function updateNote(relPath, content) {
 
     ftsInsert(relPath, title, tags, body);
 
-    // Update embedding
-    embedText(title + "\n" + body.slice(0, 1000)).then(embedding => {
+    // Update embedding (block until done so search is consistent)
+    try {
+      const embedding = await embedText(title + "\n" + body.slice(0, 1000));
       if (embedding) {
-        try {
-          const note = getDb().prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
-          if (note) {
-            getDb().prepare("REPLACE INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
-              .run(note.id, vectorToBuffer(embedding), EMBEDDING_DIM);
-          }
-        } catch { /* ignored */ }
+        const note = getDb().prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
+        if (note) {
+          getDb().prepare("REPLACE INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
+            .run(note.id, vectorToBuffer(embedding), EMBEDDING_DIM);
+        }
       }
-    }).catch(() => {});
+    } catch { /* ignored */ }
 
     return { ok: true, relPath, title };
   } catch (e) { return { error: e.message }; }
@@ -638,6 +645,7 @@ export function updateNote(relPath, content) {
 
 export function deleteNote(relPath) {
   if (!_vaultPath) return { error: "vault not set" };
+  if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
   const fullPath = join(_vaultPath, relPath);
 
   try {

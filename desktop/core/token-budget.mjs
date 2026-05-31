@@ -56,7 +56,8 @@ export function compressContext(msgs, budget) {
   const afterTruncation = estimateMessageTokens(msgs);
   if (afterTruncation.totalTokens <= budget) return { estimatedTokens: afterTruncation.totalTokens, compressed: true, removedMessages: 0 };
 
-  const systemEnd = msgs.findIndex(m => m.role !== "system") || 1;
+  const systemEnd = msgs.findIndex(m => m.role !== "system");
+  if (systemEnd === -1) return { estimatedTokens: afterPruning.totalTokens, compressed: true, removedMessages };
   while (msgs.length > systemEnd + 10) {
     msgs.splice(systemEnd, 1);
     removedMessages++;

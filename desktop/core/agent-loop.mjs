@@ -232,7 +232,7 @@ ${convText}
         stream: false,
       };
       const endpoint = apiFormat === "anthropic"
-        ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "") + "/v1/messages"
+        ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
         : apiUrl;
       const headers = apiFormat === "anthropic"
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
