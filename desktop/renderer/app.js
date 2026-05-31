@@ -1236,11 +1236,10 @@ function completeToolCall(name, result) {
   const el = document.getElementById(`tool-${state._toolCallCount}`);
   if (!el) return;
   const statusIcon = result?.error ? "❌" : "✅";
-  const summary = result?.error
-    ? `<span style="color:var(--danger);">${sanitize(String(result.error).slice(0, 200))}</span>`
-    : `<span style="color:var(--success);">${t("thinking.done")}</span>`;
   el.querySelector(".tool-entry-status").textContent = `${statusIcon} ${t("thinking.done")}`;
-  el.querySelector(".tool-entry-result").innerHTML = summary;
+  if (result?.error) {
+    el.querySelector(".tool-entry-result").innerHTML = `<span style="color:var(--danger);">${sanitize(String(result.error).slice(0, 200))}</span>`;
+  }
   el.classList.add("tool-done");
   scrollToBottom();
 }
