@@ -409,8 +409,11 @@
                 <select id="kb-embedding-provider" class="form-select">
                   <option value="local" data-i18n="kb.local_model">本地 MiniLM-L6（离线，推荐）</option>
                   <option value="ollama" data-i18n="kb.ollama_model">Ollama（需本地运行）</option>
-                  <option value="deepseek" data-i18n="kb.deepseek_model">DeepSeek API</option>
                 </select>
+              </div>
+              <div class="form-row" id="kb-ollama-model-row" style="display:none;">
+                <label class="form-label">Ollama 模型名</label>
+                <select id="kb-ollama-model" class="form-select"></select>
               </div>
               <div id="kb-status" class="settings-status" style="margin:8px 0;" data-i18n="kb.unconfigured">未配置</div>
               <div style="display:flex;gap:8px;">
@@ -429,6 +432,14 @@
                 <div class="form-row">
                   <label class="form-label" data-i18n="kb.max_chars">单篇最大字数</label>
                   <input type="number" id="kb-max-chars" class="form-input" value="1000" min="100" max="10000" style="width:80px;" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label" data-i18n="kb.max_body_chars">嵌入最大字符数 (0=自动)</label>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="number" id="kb-max-body-chars" class="form-input" value="0" min="0" max="100000" style="width:100px;" />
+                    <button id="kb-max-body-chars-save-btn" class="btn" data-i18n="common.save">保存</button>
+                    <span id="kb-auto-detected-chars" style="font-size:12px;color:var(--text-muted);"></span>
+                  </div>
                 </div>
               </div>
             </div>

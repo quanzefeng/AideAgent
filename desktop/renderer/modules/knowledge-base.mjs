@@ -14,16 +14,49 @@ export async function loadKnowledgeBasePanel() {
   const testResults = document.getElementById("kb-test-results");
   const maxNotes = document.getElementById("kb-max-notes");
   const maxChars = document.getElementById("kb-max-chars");
+  const maxBodyChars = document.getElementById("kb-max-body-chars");
+  const maxBodyCharsSaveBtn = document.getElementById("kb-max-body-chars-save-btn");
+  const autoDetectedSpan = document.getElementById("kb-auto-detected-chars");
   const pickBtn = document.getElementById("kb-pick-vault-btn");
+  const ollamaModelRow = document.getElementById("kb-ollama-model-row");
+  const ollamaModelSelect = document.getElementById("kb-ollama-model");
+
+  async function fetchOllamaModels(selectedModel) {
+    if (!ollamaModelSelect) return;
+    ollamaModelSelect.innerHTML = '<option value="">检测中…</option>';
+    try {
+      const models = await window.goodAgent.kbOllamaModels();
+      ollamaModelSelect.innerHTML = models.length > 0
+        ? models.map(m => `<option value="${m}">${m}</option>`).join("")
+        : '<option value="nomic-embed-text">nomic-embed-text</option>';
+    } catch {
+      ollamaModelSelect.innerHTML = '<option value="nomic-embed-text">nomic-embed-text</option>';
+    }
+    if (selectedModel) ollamaModelSelect.value = selectedModel;
+  }
 
   try {
     const vault = await window.goodAgent.kbGetVault();
     if (vaultPath) vaultPath.value = vault || "";
     const cfg = await window.goodAgent.kbConfig();
     if (embeddingSelect) embeddingSelect.value = cfg.embeddingProvider || "local";
+    const savedModel = cfg.ollamaEmbedModel || "nomic-embed-text";
+    if (cfg.embeddingProvider === "ollama") {
+      if (ollamaModelRow) ollamaModelRow.style.display = "block";
+      await fetchOllamaModels(savedModel);
+    } else if (ollamaModelRow) {
+      ollamaModelRow.style.display = "none";
+    }
     if (maxNotes) maxNotes.value = cfg.maxNotes || 5;
     if (maxChars) maxChars.value = cfg.maxChars || 500;
+    if (maxBodyChars) maxBodyChars.value = cfg.maxBodyChars || 0;
     const status = await window.goodAgent.kbStatus();
+    if (autoDetectedSpan) {
+      // Show auto-detected value as a hint next to the input
+      if (status.autoDetectedMaxBodyChars > 0) {
+        autoDetectedSpan.textContent = t("kb.auto_chars").replace("{n}", status.autoDetectedMaxBodyChars);
+      }
+    }
     if (statusEl) {
       statusEl.textContent = status.noteCount > 0
         ? t("kb.indexed").replace("{count}", status.noteCount).replace("{embedded}", status.embeddedCount)
@@ -48,13 +81,27 @@ export async function loadKnowledgeBasePanel() {
   });
 
   embeddingSelect?.addEventListener("change", async () => {
+    const isOllama = embeddingSelect.value === "ollama";
+    if (ollamaModelRow) ollamaModelRow.style.display = isOllama ? "block" : "none";
+    if (isOllama) await fetchOllamaModels();
     await window.goodAgent.kbSetConfig({ embeddingProvider: embeddingSelect.value });
+  });
+  ollamaModelSelect?.addEventListener("change", async () => {
+    await window.goodAgent.kbSetConfig({ ollamaEmbedModel: ollamaModelSelect.value || "nomic-embed-text" });
   });
   maxNotes?.addEventListener("change", async () => {
     await window.goodAgent.kbSetConfig({ maxNotes: parseInt(maxNotes.value) || 5 });
   });
   maxChars?.addEventListener("change", async () => {
     await window.goodAgent.kbSetConfig({ maxChars: parseInt(maxChars.value) || 500 });
+  });
+  maxBodyCharsSaveBtn?.addEventListener("click", async () => {
+    const val = parseInt(maxBodyChars.value) || 0;
+    await window.goodAgent.kbSetConfig({ maxBodyChars: val });
+    // Brief visual feedback
+    const orig = maxBodyCharsSaveBtn.textContent;
+    maxBodyCharsSaveBtn.textContent = "✓";
+    setTimeout(() => { maxBodyCharsSaveBtn.textContent = t("common.save"); }, 1500);
   });
 
   scanBtn?.addEventListener("click", async () => {

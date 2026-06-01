@@ -250,6 +250,7 @@ export function registerIpcHandlers() {
   ipcMain.handle("kb:status", async () => kb.getStatus());
   ipcMain.handle("kb:search", async (_e, query, limit) => kb.search(query, limit));
   ipcMain.handle("kb:list", async (_e, offset, limit) => kb.listNotes(offset, limit));
+  ipcMain.handle("kb:ollama-models", async () => kb.listOllamaModels());
   ipcMain.handle("kb:get-note", async (_e, path) => kb.getNote(path));
   ipcMain.handle("kb:create-note", async (_e, { path: notePath, content, tags }) => kb.createNote(notePath, content, tags));
   ipcMain.handle("kb:update-note", async (_e, { path: notePath, content }) => kb.updateNote(notePath, content));

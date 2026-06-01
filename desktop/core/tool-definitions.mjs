@@ -308,6 +308,20 @@ export const TOOL_DEFS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "kb_get_note",
+      description: "Read the full content of a specific note from the user's knowledge base. Use this after kb_search to get the complete text of a note.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative path of the note (e.g. 'folder/note.md')" },
+        },
+        required: ["path"],
+      },
+    },
+  },
   // ── LSP Tool ──
   {
     type: "function",

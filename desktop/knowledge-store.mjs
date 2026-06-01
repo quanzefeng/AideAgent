@@ -9,9 +9,12 @@
  */
 
 import { join, relative, extname, basename, dirname } from "path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "os";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from "fs";
 import { DatabaseSync } from "node:sqlite";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const HOME = homedir();
 const DATA_DIR = join(HOME, ".goodagent");
@@ -31,7 +34,11 @@ function isSafeVaultPath(relPath) {
 // ── Configuration ─────────────────────────────────────────
 
 let _vaultPath = "";
-let _config = { embeddingProvider: "local", maxNotes: 20, maxChars: 20000 };
+let _config = { embeddingProvider: "local", ollamaEmbedModel: "nomic-embed-text", maxNotes: 20, maxChars: 20000, maxBodyChars: 0 };
+// maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
+
+// Cached auto-detected limit (computed in getEmbedder when provider is ollama)
+let _autoDetectedMaxBodyChars = 0;
 
 function loadConfig() {
   try {
@@ -62,10 +69,22 @@ export function setVault(path) {
 
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
+  if (cfg.ollamaEmbedModel && cfg.ollamaEmbedModel !== _config.ollamaEmbedModel) {
+    _config.ollamaEmbedModel = cfg.ollamaEmbedModel;
+    _embedderReady = false; // re-init with new model name
+  }
   if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
   if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(50000, cfg.maxChars));
+  if (cfg.maxBodyChars !== undefined) _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(cfg.maxBodyChars) || 0));
   saveConfig();
   return { ok: true, config: _config };
+}
+
+// Effective max body chars: user override > auto-detected > 1500 fallback
+export function getEffectiveMaxBodyChars() {
+  if (_config.maxBodyChars > 0) return _config.maxBodyChars;
+  if (_autoDetectedMaxBodyChars > 0) return _autoDetectedMaxBodyChars;
+  return 1500; // safe fallback before any detection
 }
 
 // Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
@@ -236,6 +255,20 @@ function ftsSearch(query, limit) {
   } catch { return []; }
 }
 
+// ── Local Model Path Resolution ──────────────────────────
+
+function getLocalModelPath() {
+  // In packaged app, extraResources land in process.resourcesPath
+  const prodPath = join(process.resourcesPath || "", "models", "all-MiniLM-L6-v2");
+  if (existsSync(join(prodPath, "config.json"))) return prodPath;
+
+  // In dev, models are stored relative to this file: desktop/models/
+  const devPath = join(__dirname, "..", "models", "all-MiniLM-L6-v2");
+  if (existsSync(join(devPath, "config.json"))) return devPath;
+
+  return null;
+}
+
 // ── Embedding Provider ────────────────────────────────────
 
 let _embedder = null;
@@ -253,9 +286,12 @@ async function getEmbedder() {
     if (p === "local") {
       try {
         const { pipeline } = await import("@huggingface/transformers");
-        _embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+        const localPath = getLocalModelPath();
+        _embedder = localPath
+          ? await pipeline("feature-extraction", localPath, { local_files_only: true })
+          : await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
         _embedderReady = true;
-        console.log("[kb] Using local MiniLM-L6 embedder");
+        console.log("[kb] Using local MiniLM-L6 embedder" + (localPath ? " (bundled)" : " (downloaded)"));
         return _embedder;
       } catch (e) {
         console.log("[kb] Local embedder unavailable:", e.message);
@@ -264,31 +300,54 @@ async function getEmbedder() {
 
     if (p === "ollama") {
       try {
+        const ollamaModel = _config.ollamaEmbedModel || "nomic-embed-text";
         const res = await fetch("http://localhost:11434/api/embed", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "nomic-embed-text", input: "test" }),
+          body: JSON.stringify({ model: ollamaModel, input: "test", options: { num_gpu: 99 } }),
           signal: AbortSignal.timeout(5000),
         });
         if (res.ok) {
-          _embedder = { type: "ollama", model: "nomic-embed-text" };
+          _embedder = { type: "ollama", model: ollamaModel };
           _embedderReady = true;
-          console.log("[kb] Using Ollama embedder");
+          console.log("[kb] Using Ollama embedder:", ollamaModel);
+          // Auto-detect model context length (only if user hasn't overridden)
+          if (_config.maxBodyChars === 0) {
+            const ctx = await detectModelContext(ollamaModel);
+            // 85% of context to leave tokenization headroom; assumes ~1.2 tok/char
+            _autoDetectedMaxBodyChars = Math.floor(ctx * 0.85);
+            console.log(`[kb] Auto-detected max body chars: ${_autoDetectedMaxBodyChars} (model context: ${ctx})`);
+          }
           return _embedder;
         }
       } catch { /* ignored */ }
     }
 
-    if (p === "deepseek") {
-      _embedder = { type: "deepseek" };
-      _embedderReady = true;
-      console.log("[kb] Using DeepSeek embedder");
-      return _embedder;
-    }
   }
 
   console.log("[kb] No embedder available, vector search disabled");
   return null;
+}
+
+// Query Ollama /api/show for the model's actual context length
+// Different model architectures use different keys: bert.context_length, qwen2.context_length, llama.context_length
+async function detectModelContext(modelName) {
+  try {
+    const res = await fetch("http://localhost:11434/api/show", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: modelName }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return 2048;
+    const data = await res.json();
+    return data.model_info?.["bert.context_length"]
+        || data.model_info?.["nomic-bert.context_length"]
+        || data.model_info?.["qwen2.context_length"]
+        || data.model_info?.["qwen3.context_length"]
+        || data.model_info?.["llama.context_length"]
+        || 2048;
+  } catch { return 2048; }
 }
 
 async function embedText(text) {
@@ -300,7 +359,7 @@ async function embedText(text) {
       const res = await fetch("http://localhost:11434/api/embed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "nomic-embed-text", input: text }),
+        body: JSON.stringify({ model: _embedder.model, input: text, options: { num_gpu: 99 } }),
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) return null;
@@ -311,11 +370,6 @@ async function embedText(text) {
       const result = new Float32Array(EMBEDDING_DIM);
       for (let i = 0; i < Math.min(vec.length, EMBEDDING_DIM); i++) result[i] = vec[i];
       return result;
-    }
-
-    if (embedder.type === "deepseek") {
-      // Will be handled by main process passing API key
-      return null;
     }
 
     // Local HuggingFace transformer
@@ -425,6 +479,7 @@ export async function rebuildIndex(progressCb) {
 
   let indexed = 0;
   let embedded = 0;
+  let failed = 0;
 
   for (const note of notes) {
     try {
@@ -437,24 +492,34 @@ export async function rebuildIndex(progressCb) {
       // Insert into FTS
       ftsInsert(note.relPath, note.title, note.tags, note.body);
 
-      // Generate embedding
-      try {
-        const embedding = await embedText(note.title + "\n" + note.body.slice(0, 5000));
-        if (embedding) {
-          db.prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
-            .run(noteId, vectorToBuffer(embedding), EMBEDDING_DIM);
-          embedded++;
-        }
-      } catch { /* ignored */ }
+      // Generate embedding with retry (recovers from Ollama cold-start timeouts)
+      // Simple head truncation: text is capped at maxBodyChars (auto-detected from model context
+      // on first Ollama call, or set manually in KB settings)
+      const max = getEffectiveMaxBodyChars();
+      const text = (note.title + "\n" + note.body).slice(0, max);
+      let embedding = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        embedding = await embedText(text);
+        if (embedding) break;
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+      }
+      if (embedding) {
+        db.prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
+          .run(noteId, vectorToBuffer(embedding), EMBEDDING_DIM);
+        embedded++;
+      } else {
+        console.error(`[kb] Embed failed after 3 attempts: ${note.relPath}`);
+        failed++;
+      }
 
       indexed++;
-      if (progressCb) progressCb({ indexed, embedded, total: notes.length });
+      if (progressCb) progressCb({ indexed, embedded, failed, total: notes.length });
     } catch (e) {
       console.error(`[kb] Failed to index ${note.relPath}:`, e.message);
     }
   }
 
-  return { ok: true, indexed, embedded, total: notes.length };
+  return { ok: true, indexed, embedded, failed, total: notes.length };
 }
 
 // ── Hybrid Search ─────────────────────────────────────────
@@ -601,7 +666,8 @@ export async function createNote(relPath, content, tags = []) {
 
     // Generate embedding (block until done so search is consistent)
     try {
-      const embedding = await embedText(title + "\n" + body.slice(0, 5000));
+      const max = getEffectiveMaxBodyChars();
+      const embedding = await embedText(title + "\n" + body.slice(0, max));
       if (embedding) {
         getDb().prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
           .run(result.lastInsertRowid, vectorToBuffer(embedding), EMBEDDING_DIM);
@@ -634,7 +700,8 @@ export async function updateNote(relPath, content) {
 
     // Update embedding (block until done so search is consistent)
     try {
-      const embedding = await embedText(title + "\n" + body.slice(0, 5000));
+      const max = getEffectiveMaxBodyChars();
+      const embedding = await embedText(title + "\n" + body.slice(0, max));
       if (embedding) {
         const note = getDb().prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
         if (note) {
@@ -670,6 +737,19 @@ export function deleteNote(relPath) {
   } catch (e) { return { error: e.message }; }
 }
 
+// ── Ollama Model Discovery ────────────────────────────────
+
+export async function listOllamaModels() {
+  try {
+    const res = await fetch("http://localhost:11434/api/tags", {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || []).map(m => m.name);
+  } catch { return []; }
+}
+
 // ── Status ────────────────────────────────────────────────
 
 export function getStatus() {
@@ -682,6 +762,9 @@ export function getStatus() {
       noteCount,
       embeddedCount,
       embeddingProvider: _config.embeddingProvider,
+      maxBodyChars: _config.maxBodyChars,
+      autoDetectedMaxBodyChars: _autoDetectedMaxBodyChars,
+      effectiveMaxBodyChars: getEffectiveMaxBodyChars(),
     };
   } catch { return { vault: _vaultPath, noteCount: 0, embeddedCount: 0 }; }
 }

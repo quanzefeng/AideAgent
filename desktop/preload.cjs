@@ -110,6 +110,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   kbCreateNote: (path, content, tags) => ipcRenderer.invoke("kb:create-note", { path, content, tags }),
   kbUpdateNote: (path, content) => ipcRenderer.invoke("kb:update-note", { path, content }),
   kbDeleteNote: (path) => ipcRenderer.invoke("kb:delete-note", path),
+  kbOllamaModels: () => ipcRenderer.invoke("kb:ollama-models"),
 
   // Update Manager
   updateCheckVersion: () => ipcRenderer.invoke("update:get-version"),

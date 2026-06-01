@@ -6,7 +6,7 @@ import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer } from "./state.mjs";
 
 export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   const planMode = getPlanMode();
-  let builtins = kbEnabled ? TOOL_DEFS : TOOL_DEFS.filter(t => t.function.name !== "kb_write");
+  let builtins = kbEnabled ? TOOL_DEFS : TOOL_DEFS.filter(t => t.function.name !== "kb_write" && t.function.name !== "kb_search");
   if (!webSearchEnabled) builtins = builtins.filter(t => t.function.name !== "web_search" && t.function.name !== "web_fetch");
   if (planMode) builtins = builtins.filter(t => PLAN_MODE_READONLY.has(t.function.name));
   const mcpFilter = webSearchEnabled ? {} : { excludeCategories: ["web-search"] };

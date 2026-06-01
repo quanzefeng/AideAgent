@@ -17,7 +17,9 @@
     "lint:fix": "eslint --fix *.mjs core/*.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "download-model": "node scripts/download-model.mjs",
+    "postinstall": "node scripts/download-model.mjs"
   },
   "publish": {
     "provider": "github",
@@ -39,6 +41,10 @@
       {
         "from": "../dist",
         "to": "cli-dist"
+      },
+      {
+        "from": "models",
+        "to": "models"
       }
     ],
     "icon": "icon.ico",

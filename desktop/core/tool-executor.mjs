@@ -374,12 +374,25 @@ export async function runTool(tc) {
         if (!notePath || !noteContent) return { error: "path and content required" };
         const existing = kb.getNote(notePath);
         if (existing) {
-          const result = kb.updateNote(notePath, noteContent);
+          const result = await kb.updateNote(notePath, noteContent);
           return { ...result, action: "updated", path: notePath };
         } else {
-          const result = kb.createNote(notePath, noteContent, tags || []);
+          const result = await kb.createNote(notePath, noteContent, tags || []);
           return { ...result, action: "created", path: notePath };
         }
+      } catch (e) { return { error: e.message }; }
+    }
+    case "kb_get_note": {
+      try {
+        const { path: notePath } = args;
+        if (!notePath) return { error: "path required" };
+        const note = kb.getNote(notePath);
+        if (!note) return { error: `Note not found: ${notePath}` };
+        return {
+          path: note.rel_path,
+          title: note.title,
+          content: note.content.slice(0, kb.getConfig().maxChars || 10000),
+        };
       } catch (e) { return { error: e.message }; }
     }
     case "lsp": {
