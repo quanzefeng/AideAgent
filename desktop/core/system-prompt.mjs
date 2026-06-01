@@ -262,8 +262,8 @@ Working directory: ${WORKSPACE}`;
   if (kbEnabled && kb.getVault()) {
     try {
       const kbCfg = kb.getConfig();
-      const maxNotes = kbCfg.maxNotes || 10;
-      const maxChars = kbCfg.maxChars || 10000;
+      const maxNotes = kbCfg.maxNotes ?? 20;
+      const maxChars = kbCfg.maxChars ?? 20000;
       const kbResults = await kb.search(userPrompt, maxNotes);
       if (kbResults.length > 0) {
         const kbContext = kbResults.map(r => {

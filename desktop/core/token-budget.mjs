@@ -2,8 +2,8 @@
 
 import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.mjs";
 
-const TOKEN_BUDGET_WARN = 16000;
-const TOKEN_BUDGET_HARD = 24000;
+const TOKEN_BUDGET_WARN = 50000;
+const TOKEN_BUDGET_HARD = 80000;
 
 export function estimateTokens(text) {
   if (!text) return 0;

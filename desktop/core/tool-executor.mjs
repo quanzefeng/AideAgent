@@ -342,7 +342,7 @@ export async function runTool(tc) {
           results: results.map(r => ({
             title: r.title,
             path: r.rel_path,
-            snippet: (r.snippet || "").slice(0, 2000),
+            snippet: (r.snippet || "").slice(0, kb.getConfig().maxChars || 10000),
           })),
           count: results.length,
         };

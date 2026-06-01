@@ -203,8 +203,13 @@ function ftsInsert(relPath, title, tags, body) {
   try {
     ftsDelete(relPath);
     // Space CJK characters so unicode61 tokenizes them individually
+    // Prepend filename (without extension) to title so filenames are searchable
+    const filenameOnly = basename(relPath, ".md");
+    const spacedFilename = spaceCJK(filenameOnly);
+    const spacedTitle = spaceCJK(title || "");
+    const finalTitle = (spacedFilename + " " + spacedTitle).trim();
     getDb().prepare("INSERT INTO kb_fts(rel_path, title, tags, body) VALUES (?,?,?,?)")
-      .run(relPath, spaceCJK(title || ""), spaceCJK((tags || []).join(" ")), spaceCJK(body || ""));
+      .run(relPath, finalTitle, spaceCJK((tags || []).join(" ")), spaceCJK(body || ""));
   } catch (e) {
     console.error("[kb] ftsInsert error:", e.message);
   }
@@ -219,15 +224,15 @@ function ftsSearch(query, limit) {
       const spacedTerms = terms.map(t => '"' + spaceCJK(t) + '"');
       const matchExpr = spacedTerms.join(" ");
       return db.prepare(
-        'SELECT rowid, rel_path, title, tags, snippet(kb_fts, 3, \'<mark>\', \'</mark>\', \'…\', 64) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
+        'SELECT rowid, rel_path, title, tags, snippet(kb_fts, 3, \'<mark>\', \'</mark>\', \'…\', 256) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
       ).all(matchExpr, limit);
     } catch { /* ignored */ }
   }
   // LIKE fallback
   try {
     return db.prepare(
-      "SELECT id as rowid, rel_path, title, tags, body as snippet FROM kb_fts WHERE title LIKE ? OR tags LIKE ? OR body LIKE ? LIMIT ?"
-    ).all("%" + query + "%", "%" + query + "%", "%" + query + "%", limit);
+      "SELECT id as rowid, rel_path, title, tags, body as snippet FROM kb_fts WHERE title LIKE ? OR tags LIKE ? OR body LIKE ? OR rel_path LIKE ? LIMIT ?"
+    ).all("%" + query + "%", "%" + query + "%", "%" + query + "%", "%" + query + "%", limit);
   } catch { return []; }
 }
 
@@ -434,7 +439,7 @@ export async function rebuildIndex(progressCb) {
 
       // Generate embedding
       try {
-        const embedding = await embedText(note.title + "\n" + note.body.slice(0, 1000));
+        const embedding = await embedText(note.title + "\n" + note.body.slice(0, 5000));
         if (embedding) {
           db.prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
             .run(noteId, vectorToBuffer(embedding), EMBEDDING_DIM);
@@ -596,7 +601,7 @@ export async function createNote(relPath, content, tags = []) {
 
     // Generate embedding (block until done so search is consistent)
     try {
-      const embedding = await embedText(title + "\n" + body.slice(0, 1000));
+      const embedding = await embedText(title + "\n" + body.slice(0, 5000));
       if (embedding) {
         getDb().prepare("INSERT INTO kb_embeddings(note_id, embedding, dim) VALUES (?,?,?)")
           .run(result.lastInsertRowid, vectorToBuffer(embedding), EMBEDDING_DIM);
@@ -629,7 +634,7 @@ export async function updateNote(relPath, content) {
 
     // Update embedding (block until done so search is consistent)
     try {
-      const embedding = await embedText(title + "\n" + body.slice(0, 1000));
+      const embedding = await embedText(title + "\n" + body.slice(0, 5000));
       if (embedding) {
         const note = getDb().prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
         if (note) {

@@ -24,7 +24,7 @@ export function setWorkspace(ws) { WORKSPACE = ws; }
 export function getWorkspace() { return WORKSPACE; }
 
 // ── Constants ───────────────────────────────────────────────
-export const MAX_OUTPUT = 12000;
+export const MAX_OUTPUT = 60000;
 export const DANGEROUS = [/rm\s+-rf/i, /Remove-Item.*-Recurse/i, /del\s+\/f/i, /rd\s+\/s/i, /format\s+\w:/i, /diskpart/i];
 export const GIT_SAFE = /^git\s+(add|status|diff|commit|branch|checkout|log|show|stash|fetch|pull|push|merge|rebase|reset|remote|tag)/i;
 export const GH_SAFE = /^gh\s+(pr|issue|repo|gist|auth|api|browse|codespace|secret|gpg|ssh|config|extension)/i;
