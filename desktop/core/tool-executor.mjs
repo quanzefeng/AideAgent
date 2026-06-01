@@ -11,7 +11,7 @@ import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
 import {
-  PS_EXE, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE, PS_UTF8_PREFIX,
+  SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
   taskStore, getTodoList, setTodoList,
   _askResolvers, nextAskId,
@@ -19,7 +19,7 @@ import {
 } from "./state.mjs";
 
 // Re-export for use by other modules
-export { runPowerShell, isDangerous, requestPermission };
+export { runShell, isDangerous, requestPermission };
 
 function isDangerous(cmd) {
   if (GIT_SAFE.test(cmd.trim())) return false;
@@ -35,12 +35,16 @@ function requestPermission(cmd) {
   });
 }
 
-function runPowerShell(command, opts = {}) {
+// Cross-platform shell execution.
+// Windows: invokes pwsh / powershell.exe via -Command
+// POSIX:   invokes /bin/bash via -c
+// Resolves with { out, err, code } on success, { error } on spawn failure.
+function runShell(command, opts = {}) {
   return new Promise(resolve => {
     try {
-      const psArgs = ["-NoProfile", "-Command", PS_UTF8_PREFIX + command];
-      const child = spawn(PS_EXE, psArgs, {
-        cwd: getWorkspace(), shell: true, timeout: opts.timeout || 60000,
+      const args = SHELL.buildArgs(command);
+      const child = spawn(SHELL.exe, args, {
+        cwd: getWorkspace(), shell: false, timeout: opts.timeout || 60000,
       });
       const chunks = { out: [], err: [] };
       child.stdout.on("data", c => chunks.out.push(c));
@@ -54,6 +58,9 @@ function runPowerShell(command, opts = {}) {
     } catch (e) { resolve({ error: e.message }); }
   });
 }
+
+// Backward-compat alias — the old name still works.
+export const runPowerShell = runShell;
 
 // Lazy imports for circular dependency avoidance
 let _runSubAgent = null;
@@ -106,7 +113,7 @@ export async function runTool(tc) {
         const ok = await requestPermission(args.command);
         if (!ok) return { error: "User denied this command" };
       }
-      const r = await runPowerShell(args.command);
+      const r = await runShell(args.command);
       if (r.error) return { error: r.error };
       const outStr = r.err ? r.out + "\n--- stderr ---\n" + r.err : r.out;
       const truncated = outStr.length > MAX_OUTPUT ? outStr.slice(0, MAX_OUTPUT) + `\n...(truncated ${outStr.length} chars)` : outStr;
@@ -139,9 +146,16 @@ export async function runTool(tc) {
       try {
         const dir = args.path || getWorkspace();
         const esc = s => String(s).replace(/'/g, "''");
-        const filter = args.include ? `-Include '${esc(args.include)}'` : "";
-        const cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}' | Select-Object -First 100 | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }`;
-        const r = await runPowerShell(cmd, { timeout: 15000 });
+        let cmd;
+        if (IS_WINDOWS) {
+          const filter = args.include ? `-Include '${esc(args.include)}'` : "";
+          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}' | Select-Object -First 100 | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }`;
+        } else {
+          // POSIX: grep -rn supports --include='*.ext' glob for filtering
+          const include = args.include ? `--include='${esc(args.include)}'` : "";
+          cmd = `grep -rn ${include} '${esc(args.pattern)}' '${esc(dir)}' 2>/dev/null | head -n 100`;
+        }
+        const r = await runShell(cmd, { timeout: 15000 });
         if (r.error) return { error: r.error };
         return { matches: r.out.trim().split("\n").filter(Boolean) };
       } catch (e) { return { error: e?.message || String(e) }; }
@@ -150,8 +164,14 @@ export async function runTool(tc) {
       try {
         const dir = args.path || getWorkspace();
         const esc = s => String(s).replace(/'/g, "''");
-        const cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse -Filter '${esc(args.pattern)}' | Select-Object -First 200 -ExpandProperty FullName`;
-        const r = await runPowerShell(cmd, { timeout: 15000 });
+        let cmd;
+        if (IS_WINDOWS) {
+          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse -Filter '${esc(args.pattern)}' | Select-Object -First 200 -ExpandProperty FullName`;
+        } else {
+          // POSIX: find -name 'pattern' (also use -path for ** support; basic -name is enough here)
+          cmd = `find '${esc(dir)}' -name '${esc(args.pattern)}' 2>/dev/null | head -n 200`;
+        }
+        const r = await runShell(cmd, { timeout: 15000 });
         if (r.error) return { error: r.error };
         return { files: r.out.trim().split("\n").filter(Boolean).map(s => s.trim()) };
       } catch (e) { return { error: e?.message || String(e) }; }
@@ -378,25 +398,25 @@ export async function runTool(tc) {
     case "git_diff": {
       try {
         const cmd = args.staged ? "git diff --cached" : (args.file ? `git diff -- "${args.file}"` : "git diff");
-        const r = await runPowerShell(cmd);
-        const stat = await runPowerShell("git diff --stat");
+        const r = await runShell(cmd);
+        const stat = await runShell("git diff --stat");
         return { diff: r.out || "(no changes)", stats: stat.out || "" };
       } catch (e) { return { error: e.message }; }
     }
     case "git_commit": {
       try {
         if (args.files && args.files.length > 0) {
-          for (const f of args.files) await runPowerShell(`git add "${f}"`);
+          for (const f of args.files) await runShell(`git add "${f}"`);
         } else {
-          await runPowerShell("git add -A");
+          await runShell("git add -A");
         }
         let msg = args.message;
         if (!msg) {
-          const diff = await runPowerShell("git diff --cached");
+          const diff = await runShell("git diff --cached");
           return { needsMessage: true, diff: (diff.out || "").slice(0, 8000), hint: "请根据以上 diff 生成 commit message，然后再次调用 git_commit 并传入 message 参数。" };
         }
         const flag = args.amend ? "--amend" : "";
-        const r = await runPowerShell(`git commit ${flag} -m "${msg.replace(/"/g, '\\"')}"`);
+        const r = await runShell(`git commit ${flag} -m "${msg.replace(/"/g, '\\"')}"`);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
@@ -404,10 +424,10 @@ export async function runTool(tc) {
       try {
         let r;
         switch (args.action) {
-          case "list": r = await runPowerShell("git branch"); break;
-          case "current": r = await runPowerShell("git branch --show-current"); break;
-          case "create": r = await runPowerShell(`git checkout -b "${args.name}"`); break;
-          case "switch": r = await runPowerShell(`git checkout "${args.name}"`); break;
+          case "list": r = await runShell("git branch"); break;
+          case "current": r = await runShell("git branch --show-current"); break;
+          case "create": r = await runShell(`git checkout -b "${args.name}"`); break;
+          case "switch": r = await runShell(`git checkout "${args.name}"`); break;
           default: return { error: `Unknown action: ${args.action}` };
         }
         return { output: r.out || r.err, success: r.code === 0 };
@@ -460,7 +480,7 @@ export async function runTool(tc) {
           }
           default: return { error: `Unknown gh_pr action: ${args.action}` };
         }
-        const r = await runPowerShell(cmd);
+        const r = await runShell(cmd);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
@@ -507,7 +527,7 @@ export async function runTool(tc) {
           }
           default: return { error: `Unknown gh_issue action: ${args.action}` };
         }
-        const r = await runPowerShell(cmd);
+        const r = await runShell(cmd);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
@@ -546,7 +566,7 @@ export async function runTool(tc) {
           }
           default: return { error: `Unknown gh_repo action: ${args.action}` };
         }
-        const r = await runPowerShell(cmd);
+        const r = await runShell(cmd);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }

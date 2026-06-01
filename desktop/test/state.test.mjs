@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { genId, DANGEROUS, GIT_SAFE, GH_SAFE, PLAN_MODE_READONLY, SUB_AGENT_TOOL_NAMES, MAX_TURNS, CONTEXT_WINDOW } from "../core/state.mjs";
+import { genId, DANGEROUS, GIT_SAFE, GH_SAFE, PLAN_MODE_READONLY, SUB_AGENT_TOOL_NAMES, MAX_TURNS, CONTEXT_WINDOW, IS_WINDOWS } from "../core/state.mjs";
 
 describe("State", () => {
   describe("genId", () => {
@@ -17,16 +17,32 @@ describe("State", () => {
 
   describe("DANGEROUS patterns", () => {
     it("matches dangerous commands", () => {
-      expect(DANGEROUS.some(r => r.test("rm -rf /"))).toBe(true);
-      expect(DANGEROUS.some(r => r.test("Remove-Item -Recurse C:\\temp"))).toBe(true);
-      expect(DANGEROUS.some(r => r.test("del /f file.txt"))).toBe(true);
-      expect(DANGEROUS.some(r => r.test("format c:"))).toBe(true);
-      expect(DANGEROUS.some(r => r.test("diskpart"))).toBe(true);
+      if (IS_WINDOWS) {
+        expect(DANGEROUS.some(r => r.test("rm -rf C:\\temp"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("Remove-Item -Recurse C:\\temp"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("del /f file.txt"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("format c:"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("diskpart"))).toBe(true);
+      } else {
+        // POSIX
+        expect(DANGEROUS.some(r => r.test("rm -rf /"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("rm -rf /etc"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("sudo rm -rf /home"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("dd if=/dev/zero of=/dev/sda"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("mkfs.ext4 /dev/sda1"))).toBe(true);
+        expect(DANGEROUS.some(r => r.test("chmod -R 777 /"))).toBe(true);
+      }
     });
 
     it("does not match safe commands", () => {
       expect(DANGEROUS.some(r => r.test("ls -la"))).toBe(false);
       expect(DANGEROUS.some(r => r.test("cat file.txt"))).toBe(false);
+      if (!IS_WINDOWS) {
+        // POSIX-specific safe cases
+        expect(DANGEROUS.some(r => r.test("rm -rf /tmp/build"))).toBe(false);
+        expect(DANGEROUS.some(r => r.test("rm -rf /var/tmp/cache"))).toBe(false);
+        expect(DANGEROUS.some(r => r.test("chown -R me:me /home/me/proj"))).toBe(false);
+      }
     });
   });
 

@@ -10,8 +10,28 @@ export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = dirname(__dirname);
 export const isDev = process.argv.includes("--dev");
 
-// Prefer pwsh (PowerShell 7+ with native UTF-8) over powershell.exe
-export const PS_EXE = (() => { try { execSync("where pwsh", { stdio: "ignore" }); return "pwsh"; } catch { return "powershell"; } })();
+// ── Shell Selection (cross-platform) ────────────────────────
+// Windows: PowerShell (prefer pwsh, fall back to powershell.exe)
+// Linux / macOS: bash
+export const IS_WINDOWS = process.platform === "win32";
+
+export const PS_EXE = (() => {
+  if (!IS_WINDOWS) return null;
+  try { execSync("where pwsh", { stdio: "ignore" }); return "pwsh"; } catch { return "powershell"; }
+})();
+
+// Single source of truth for shell invocation.
+// On Windows: { exe: "pwsh"/"powershell", buildArgs: cmd => [...] }
+// On POSIX:  { exe: "bash", buildArgs: cmd => ["-c", cmd] }
+export const SHELL = IS_WINDOWS
+  ? {
+      exe: PS_EXE,
+      buildArgs: (cmd) => ["-NoProfile", "-Command", PS_UTF8_PREFIX + cmd],
+    }
+  : {
+      exe: "/bin/bash",
+      buildArgs: (cmd) => ["-c", cmd],
+    };
 
 // ── Window ──────────────────────────────────────────────────
 export let mainWindow = null;
@@ -25,7 +45,31 @@ export function getWorkspace() { return WORKSPACE; }
 
 // ── Constants ───────────────────────────────────────────────
 export const MAX_OUTPUT = 60000;
-export const DANGEROUS = [/rm\s+-rf/i, /Remove-Item.*-Recurse/i, /del\s+\/f/i, /rd\s+\/s/i, /format\s+\w:/i, /diskpart/i];
+// Dangerous command patterns, per-platform.
+// Windows: catch raw `rm -rf` (PowerShell alias for Remove-Item), Remove-Item -Recurse,
+//   del /f, rd /s, format <drive>:, diskpart.
+// POSIX: catch `rm -rf` only when targeting root, sudo rm, dd to block devices, mkfs,
+//   writes to /dev/sd*, chmod 777 /, chown of system paths.
+export const DANGEROUS = IS_WINDOWS
+  ? [
+      /rm\s+-rf/i,
+      /Remove-Item.*-Recurse/i,
+      /del\s+\/f/i,
+      /rd\s+\/s/i,
+      /format\s+\w:/i,
+      /diskpart/i,
+    ]
+  : [
+      // /tmp and /var/tmp are scratch spaces; otherwise a top-level rm -rf is lethal.
+      /rm\s+-rf\s+\/(?!tmp\b|var\/tmp)/i,
+      /sudo\s+rm\s+-rf/i,
+      /dd\s+if=.+of=\/dev\//i,
+      /\bmkfs\b/i,
+      />\s*\/dev\/sd[a-z]/i,
+      /\bchmod\s+-R\s+777\s+\//i,
+      // chown -R of system paths (not /home or /Users).
+      /\bchown\s+-R\s+.+\s+\/(?!home|Users)/i,
+    ];
 export const GIT_SAFE = /^git\s+(add|status|diff|commit|branch|checkout|log|show|stash|fetch|pull|push|merge|rebase|reset|remote|tag)/i;
 export const GH_SAFE = /^gh\s+(pr|issue|repo|gist|auth|api|browse|codespace|secret|gpg|ssh|config|extension)/i;
 export const PS_UTF8_PREFIX = '$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ';
