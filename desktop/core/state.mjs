@@ -5,6 +5,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import { loadWorkspaceConfig, saveWorkspaceConfig } from "./workspace-config.mjs";
 
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = dirname(__dirname);
@@ -39,9 +40,30 @@ export function setMainWindow(win) { mainWindow = win; }
 export function getMainWindow() { return mainWindow; }
 
 // ── Workspace ───────────────────────────────────────────────
+// WORKSPACE is the single source of truth for the user's project
+// root. Initial value is the launch dir (or install dir when
+// packaged); once `initWorkspaceFromConfig()` runs in app.whenReady,
+// it is overridden by the persisted config (if any).
 export let WORKSPACE = process.cwd();
-export function setWorkspace(ws) { WORKSPACE = ws; }
+export function setWorkspace(ws) {
+  WORKSPACE = ws;
+  // Persist synchronously — setWorkspace is called only from IPC
+  // handlers (workspace:pick / workspace:set) which already validate
+  // the path, so this is a single, predictable write per user action.
+  saveWorkspaceConfig({ current: ws });
+}
 export function getWorkspace() { return WORKSPACE; }
+
+/**
+ * Load the persisted workspace config and override WORKSPACE if
+ * a valid path is found. Call this once from main.mjs inside
+ * `app.whenReady()` (before createWindow) so that the renderer
+ * sees the user's last chosen project on launch.
+ */
+export function initWorkspaceFromConfig() {
+  const cfg = loadWorkspaceConfig();
+  if (cfg?.current) WORKSPACE = cfg.current;
+}
 
 // ── Constants ───────────────────────────────────────────────
 export const MAX_OUTPUT = 60000;

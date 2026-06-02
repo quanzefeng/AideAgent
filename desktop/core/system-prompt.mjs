@@ -67,6 +67,28 @@ You are running on Windows as a desktop AI coding agent.`;
 
 export { DEFAULT_PROMPT };
 
+// ── AGENTS.md / CLAUDE.md auto-loading ────────────────────
+function loadContextMd() {
+  const WORKSPACE = getWorkspace();
+  const files = [
+    { path: join(WORKSPACE, "AGENTS.md"), label: "项目" },
+    { path: join(WORKSPACE, "CLAUDE.md"), label: "项目" },
+    { path: join(os.homedir(), ".goodagent", "CLAUDE.md"), label: "全局" },
+  ];
+  const parts = [];
+  for (const { path, label } of files) {
+    try {
+      if (existsSync(path)) {
+        const raw = readFileSync(path, "utf-8").replace(/\r\n/g, "\n").trim();
+        if (raw) parts.push(`<context-md source="${path}" type="${label}">\n${raw}\n</context-md>`);
+      }
+    } catch { /* skip unreadable files */ }
+  }
+  return parts.length > 0
+    ? "\n\n## 项目上下文（自动加载自 AGENTS.md / CLAUDE.md）\n" + parts.join("\n\n")
+    : "";
+}
+
 function _initPromptStorePath() {
   if (!getPromptStorePath()) {
     setPromptStorePath(join(app.getPath("userData"), "system-prompt-profiles.json"));
@@ -275,6 +297,9 @@ Working directory: ${WORKSPACE}`;
       }
     } catch { /* ignored */ }
   }
+
+  // ── Inject AGENTS.md / CLAUDE.md ──
+  content += loadContextMd();
 
   if (!webSearchEnabled) {
     content += "\n\n## 🚫 联网搜索已关闭\n用户关闭了联网搜索功能。你不能使用 web_search、web_fetch 工具，也不能通过 bash 执行 curl、Invoke-WebRequest、wget 等命令进行联网。请仅基于本地文件、知识库和已有信息回答。如果信息不足，请告知用户需要联网搜索才能获取更多信息。";

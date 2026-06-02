@@ -24,6 +24,7 @@ import {
   sendToRenderer,
 } from "./state.mjs";
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
+import { hasPersistedWorkspace } from "./workspace-config.mjs";
 
 function getHistoryTitle(history) {
   const firstUser = history.find(m => m.role === "user");
@@ -159,6 +160,12 @@ export function registerIpcHandlers() {
 
   // ── Workspace IPC ────────────────────────────────────────
   ipcMain.handle("workspace:get", async () => getWorkspace());
+  ipcMain.handle("workspace:needs-first-pick", async () => {
+    // True when no workspace has been persisted yet (first launch,
+    // or persisted path was deleted/moved). Renderer uses this to
+    // decide whether to show the first-pick modal on startup.
+    return { needs: !hasPersistedWorkspace() };
+  });
   ipcMain.handle("workspace:set", async (_e, newPath) => {
     if (!newPath || typeof newPath !== "string") return { error: "invalid path" };
     try {

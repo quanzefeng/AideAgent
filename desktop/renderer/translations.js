@@ -432,6 +432,12 @@ const translations = {
     // ── Additional Sidebar Keys ──
     "sidebar.switch_workspace": "点击切换工作区间",
 
+    // ── Workspace First-Pick Modal ──
+    "workspace.first_pick.title": "📁 选择工作区间",
+    "workspace.first_pick.desc": "请选择你的项目目录。GoodAgent 会以此目录为根运行所有文件操作、命令与 LSP 服务。",
+    "workspace.first_pick.choose": "选择目录",
+    "workspace.first_pick.skip": "稍后",
+
     // ── WeChat Overlay ──
     "wechat.qr_title": "微信扫码登录",
     "wechat.loading": "加载中...",
@@ -888,6 +894,12 @@ const translations = {
 
     // ── Additional Sidebar Keys ──
     "sidebar.switch_workspace": "Click to switch workspace",
+
+    // ── Workspace First-Pick Modal ──
+    "workspace.first_pick.title": "📁 Select Workspace",
+    "workspace.first_pick.desc": "Choose your project directory. GoodAgent runs all file operations, shell commands, and LSP services relative to this folder.",
+    "workspace.first_pick.choose": "Choose Folder",
+    "workspace.first_pick.skip": "Later",
 
     // ── WeChat Overlay ──
     "wechat.qr_title": "WeChat QR Login",

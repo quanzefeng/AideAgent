@@ -8,7 +8,7 @@ import mcpManager from "./mcp-manager.mjs";
 import sessionDb from "./session-db.mjs";
 import * as skills from "./skills-store.mjs";
 
-import { setMainWindow, PROJECT_ROOT } from "./core/state.mjs";
+import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig } from "./core/state.mjs";
 import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.mjs";
 import { initUpdateManager } from "./update-manager.mjs";
@@ -82,6 +82,10 @@ function createWindow() {
 // ── App Lifecycle ──────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Load persisted workspace before window creation so the renderer's
+  // first-pick detection sees the right state on first paint.
+  initWorkspaceFromConfig();
+
   createWindow();
 
   // CORS headers for custom API endpoints

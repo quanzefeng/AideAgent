@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { getWorkspace } from "./core/state.mjs";
 
 const LANG_SERVERS = {
   ".ts":  { command: "typescript-language-server", args: ["--stdio"], lang: "typescript" },
@@ -33,7 +34,10 @@ class LspManager {
   }
 
   async startServer(cfg) {
-    const cwd = process.cwd();
+    // Use the user-chosen workspace, NOT the launch dir — language
+    // servers resolve project-local config (tsconfig.json, etc.)
+    // relative to the cwd they are spawned in.
+    const cwd = getWorkspace();
     const proc = spawn(cfg.command, cfg.args, { stdio: ["pipe", "pipe", "pipe"], cwd, windowsHide: true, shell: true });
     const server = { proc, reqId: 0, pending: new Map(), openedFiles: new Set(), ready: false };
 

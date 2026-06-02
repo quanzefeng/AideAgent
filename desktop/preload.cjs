@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   workspaceGet: () => ipcRenderer.invoke("workspace:get"),
   workspaceSet: (path) => ipcRenderer.invoke("workspace:set", path),
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),
+  workspaceNeedsFirstPick: () => ipcRenderer.invoke("workspace:needs-first-pick"),
   // Knowledge Base
   kbGetVault: () => ipcRenderer.invoke("kb:get-vault"),
   kbSetVault: (path) => ipcRenderer.invoke("kb:set-vault", path),
