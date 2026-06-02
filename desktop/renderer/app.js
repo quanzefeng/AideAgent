@@ -58,6 +58,7 @@ const state = {
   attachedFiles: [],       // {name, size, type, dataUrl}
   _streamStartTime: 0,
   _streamCharCount: 0,
+  _cacheMetrics: null,     // { hit, miss, total, rate } from latest API call
 };
 
 /* ── DOM refs ─────────────────────────────────────────── */
@@ -474,8 +475,16 @@ function finishAssistantMessage(msgEl) {
       const speedEl = document.createElement("div");
       speedEl.className = "token-speed";
       speedEl.style.cssText = "font-size:11px;color:var(--text-muted);margin-top:4px;text-align:right;";
-      speedEl.textContent = `⚡ ${tps} tok/s · ${elapsed.toFixed(1)}s`;
-      speedEl.title = `${chars} 字符 · ${tokens} tokens · ${elapsed.toFixed(1)}s`;
+      let speedText = `⚡ ${tps} tok/s · ${elapsed.toFixed(1)}s`;
+      let speedTitle = `${chars} 字符 · ${tokens} tokens · ${elapsed.toFixed(1)}s`;
+      if (state._cacheMetrics && state._cacheMetrics.rate > 0) {
+        const { hit, miss, total, rate } = state._cacheMetrics;
+        const color = rate >= 80 ? "#22c55e" : rate >= 50 ? "#eab308" : "#ef4444";
+        speedText += ` · <span style="color:${color}">💾 ${rate}%</span> 命中缓存`;
+        speedTitle += `\nCache hit: ${hit.toLocaleString()} · Miss: ${miss.toLocaleString()} · Total: ${total.toLocaleString()}`;
+      }
+      speedEl.innerHTML = speedText;
+      speedEl.title = speedTitle;
       const actions = msgEl.querySelector(".message-actions");
       if (actions) actions.before(speedEl);
       else msgEl.querySelector(".message-content")?.after(speedEl);
@@ -1402,6 +1411,11 @@ function setupIPC() {
     state._thinkBuffer = "";
     state._streamStartTime = Date.now();
     state._streamCharCount = 0;
+    state._cacheMetrics = null;
+  });
+
+  onIpc("onStreamMetrics", (data) => {
+    state._cacheMetrics = data;
   });
 
   onIpc("onStreamChunk", (data) => {

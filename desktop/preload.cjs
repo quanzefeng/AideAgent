@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("goodAgent", {
   listSkills: () => ipcRenderer.invoke("skills:list"),
   loadSkill: (name) => ipcRenderer.invoke("skills:load", name),
   onStreamStart: (cb) => ipcRenderer.on("stream:start", () => cb()),
+  onStreamMetrics: (cb) => ipcRenderer.on("stream:metrics", (_event, d) => cb(d)),
   onStreamChunk: (cb) => ipcRenderer.on("stream:chunk", (_event, d) => cb(d)),
   onStreamReasoning: (cb) => ipcRenderer.on("stream:reasoning", (_event, d) => cb(d)),
   onStreamDone: (cb) => ipcRenderer.on("stream:done", () => cb()),

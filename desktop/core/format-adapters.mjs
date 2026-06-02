@@ -76,6 +76,7 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   let buf = "", content = "", reasoningContent = "";
   const tcAccum = {};
   let finishReason = null;
+  let usage = null;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -89,6 +90,7 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
         const j = JSON.parse(d);
         const delta = j.choices?.[0]?.delta || {};
         finishReason = j.choices?.[0]?.finish_reason;
+        if (j.usage) usage = j.usage; // last chunk carries cache metrics
         if (delta.content) { content += delta.content; sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
         if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
         if (delta.tool_calls) {
@@ -103,11 +105,21 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
     }
     buf = buf.split("\n").pop() || "";
   }
-  return { content, reasoningContent, finishReason, tcs: Object.values(tcAccum) };
+  return { content, reasoningContent, finishReason, tcs: Object.values(tcAccum), usage };
 }
 
 export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
   const { messages, system } = toAnthropicMessages(msgs);
+  // ── Cache the first message (first history entry) → caches system + entire history prefix ──
+  // After reordering, messages[0] is the first history item — stable across turns.
+  if (messages.length > 0) {
+    const first = messages[0];
+    if (typeof first.content === "string") {
+      first.content = [{ type: "text", text: first.content, cache_control: { type: "ephemeral" } }];
+    } else if (Array.isArray(first.content) && first.content.length > 0) {
+      first.content[0].cache_control = { type: "ephemeral" };
+    }
+  }
   const toolDefs = toAnthropicTools(kbEnabled, webSearchEnabled);
   console.log("[anthropicCall] tools sent to LLM:", toolDefs.map(t => t.name).join(", "));
   const base = apiUrl.replace(/\/+$/, "");
@@ -153,6 +165,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   let buf = "", content = "";
   const tcAccum = {};
   let finishReason = null;
+  let usage = null;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -180,6 +193,8 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
             tcAccum[j.index] = { id: j.content_block.id, name: j.content_block.name, input: "" };
           } else if (j.type === "content_block_delta" && j.delta?.type === "input_json_delta") {
             if (tcAccum[j.index]) tcAccum[j.index].input += j.delta.partial_json;
+          } else if (j.type === "message_start") {
+            if (j.message?.usage) usage = j.message.usage;
           } else if (j.type === "message_delta") {
             finishReason = j.delta?.stop_reason;
           }
@@ -191,5 +206,5 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     id: tc.id, type: "function",
     function: { name: tc.name, arguments: tc.input },
   }));
-  return { content, finishReason, tcs };
+  return { content, finishReason, tcs, usage };
 }

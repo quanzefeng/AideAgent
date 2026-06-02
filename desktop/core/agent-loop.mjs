@@ -152,7 +152,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     userMessage = { role: "user", content: prompt };
   }
 
-  const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled);
+  const isFirstTurn = getHistory().length === 0;
+  const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, isFirstTurn);
 
   // ── Build dynamic context block (user message, NOT system prompt — enables prompt caching) ──
   let contextBlock = sysPrompt.contextBlock || "";
@@ -216,11 +217,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   }
 
   const history = getHistory();
-  // contextBlock as user message between system prompt and history — keeps system prompt cacheable
-  let msgs = [{ role: "system", content: sysContent }, ...history.map(m => ({ ...m })), userMessage];
+  // contextBlock as user message AFTER history, just before the current query
+  // → makes history the cacheable prefix (append-only, stable across turns)
+  let msgs = [{ role: "system", content: sysContent }, ...history.map(m => ({ ...m }))];
   if (contextBlock.trim()) {
-    msgs.splice(1, 0, { role: "user", content: contextBlock.trim() });
+    msgs.push({ role: "user", content: contextBlock.trim() });
   }
+  msgs.push(userMessage);
   let allText = "", allReasoning = "";
   let continuation = 0;
   let agentFinished = false;
@@ -263,6 +266,28 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         allText += result.content;
         if (reasoningContent) allReasoning += reasoningContent;
         tcs = result.tcs;
+        // ── Log cache metrics & forward to UI ──
+        if (result.usage) {
+          const u = result.usage;
+          if (u.prompt_cache_hit_tokens !== undefined) {
+            const total = u.prompt_tokens || 0;
+            const miss = u.prompt_cache_miss_tokens ?? 0;
+            const pct = total > 0 ? Math.round(u.prompt_cache_hit_tokens / total * 100) : 0;
+            console.log(`[cache] hit=${u.prompt_cache_hit_tokens} miss=${miss} total=${total} rate=${pct}%`);
+            sendToRenderer("stream:metrics", {
+              hit: u.prompt_cache_hit_tokens, miss, total, rate: pct,
+            });
+          } else if (u.cache_read_input_tokens !== undefined) {
+            const read = u.cache_read_input_tokens || 0;
+            const total = u.input_tokens || 0;
+            const miss = total - read;
+            const pct = total > 0 ? Math.round(read / total * 100) : 0;
+            console.log(`[cache] read=${read} created=${created} total=${total} rate=${pct}%`);
+            sendToRenderer("stream:metrics", {
+              hit: read, miss, total, rate: pct,
+            });
+          }
+        }
       } catch (err) {
         if (err.name === "AbortError") {
           hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
@@ -333,11 +358,10 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
       const sysMsg = msgs[0];
       const recentMsgs = msgs.slice(-6);
-      // Preserve stable prefix: system prompt + context user msg → cacheable across continuations
+      // contextBlock at end → system + summary + recent history = cacheable prefix
       const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
-      msgs = [sysMsg];
+      msgs = [sysMsg, continuationMsg, ...recentMsgs];
       if (_contextMsg) msgs.push(_contextMsg);
-      msgs.push(continuationMsg, ...recentMsgs);
 
       sendToRenderer("context:continuation-done", {
         continuation,

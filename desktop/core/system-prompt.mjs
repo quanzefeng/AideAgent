@@ -147,7 +147,7 @@ export function savePromptProfiles(data) {
   }
 }
 
-export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false, webSearchEnabled = true) {
+export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false, webSearchEnabled = true, kbInject = true) {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
   const allSkills = scanSkills();
@@ -287,7 +287,7 @@ Working directory: ${WORKSPACE}`;
     }
   }
 
-  if (kbEnabled && kb.getVault()) {
+  if (kbEnabled && kb.getVault() && kbInject) {
     try {
       const kbCfg = kb.getConfig();
       const maxNotes = kbCfg.maxNotes ?? 20;
