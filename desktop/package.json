@@ -56,7 +56,7 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "icon.icns",
+      "icon": "icon.png",
       "artifactName": "GoodAgent-${version}-macOS-${arch}.${ext}",
       "category": "public.app-category.developer-tools"
     },
