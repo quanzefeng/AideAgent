@@ -10,6 +10,7 @@ import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
+import * as hookManager from "./hook-manager.mjs";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
@@ -137,6 +138,15 @@ export async function runTool(tc) {
     if (GH_WRITE_ACTIONS[name] && GH_WRITE_ACTIONS[name].includes(args.action)) {
       return { error: `🚫 计划模式下禁止执行 "${name}(${args.action})" 操作。请先制定计划，等用户确认后再执行。` };
     }
+  }
+
+  // ── PreToolUse hook ──
+  const hookResult = await hookManager.fire("PreToolUse", { tool: name, args });
+  if (hookResult?.blocked) {
+    return { error: `Hook 拦截: ${hookResult.reason}` };
+  }
+  if (hookResult?.modified) {
+    Object.assign(args, hookResult.args);
   }
 
   switch (name) {
@@ -279,10 +289,20 @@ export async function runTool(tc) {
     }
     case "invoke_skill": {
       try {
-        const skill = skills.loadSkill(args.name);
-        if (!skill) return { error: `Skill "${args.name}" not found. Use list_skills to see available skills.` };
+        let skill = skills.loadSkill(args.name);
+        // Fallback to L3 installed skills
+        if (!skill) {
+          const installedSkills = scanSkills();
+          skill = installedSkills.find(s => s.name === args.name);
+        }
+        if (!skill) {
+          const l2 = skills.listSkills().map(s => s.name).join(", ");
+          const l3 = scanSkills().map(s => s.name).join(", ");
+          const all = [...new Set([...l2.split(", "), ...l3.split(", ")].filter(Boolean))].join(", ");
+          return { error: `Skill "${args.name}" not found. Available skills: ${all || "(none)"}` };
+        }
         skills.recordSkillUsage(args.name, true);
-        return { name: skill.name, description: skill.description, content: skill.body || "(no instructions)" };
+        return { name: skill.name, description: skill.description, content: skill.body || skill.content || "(no instructions)" };
       } catch (e) { return { error: e.message }; }
     }
     case "create_skill": {

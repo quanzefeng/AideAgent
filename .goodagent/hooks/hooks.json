@@ -1,0 +1,29 @@
+{
+  "PreToolUse": [
+    {
+      "script": ".goodagent/hooks/check-dangerous.js",
+      "tools": ["bash"],
+      "timeout": 5000,
+      "onError": "allow",
+      "enabled": false,
+      "_comment": "预拦截危险命令：设为 true 启用"
+    }
+  ],
+  "PostToolUse": [
+    {
+      "script": ".goodagent/hooks/auto-format.js",
+      "tools": ["file_write", "file_edit"],
+      "timeout": 10000,
+      "enabled": false,
+      "_comment": "文件写入后自动格式化：设为 true 启用"
+    }
+  ],
+  "SessionEnd": [
+    {
+      "script": ".goodagent/hooks/notify.js",
+      "timeout": 10000,
+      "enabled": false,
+      "_comment": "对话结束后通知：设为 true 启用"
+    }
+  ]
+}

@@ -6,9 +6,12 @@ import { openaiCall, anthropicCall } from "./format-adapters.mjs";
 import { selectRelevantMemories } from "./memory-selection.mjs";
 import { runTool } from "./tool-executor.mjs";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.mjs";
+import * as hookManager from "./hook-manager.mjs";
+import * as memory from "../memory-store.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
+  getWorkspace,
   taskStore, getTodoList,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT,
@@ -25,6 +28,87 @@ async function saveSession(id, history, title) {
   try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
 }
 
+// ── Auto-review: extract learnings after each session ──
+async function autoReview(msgs, apiKey, apiUrl, model, apiFormat) {
+  try {
+    // Take last 8 exchanges (16 messages) for review
+    const recent = msgs.slice(-16).filter(m => m.role === "user" || m.role === "assistant");
+    if (recent.length < 4) return;
+
+    const convText = recent.map(m => {
+      const role = m.role === "user" ? "用户" : "助手";
+      const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 800);
+      return `[${role}] ${text}`;
+    }).join("\n");
+
+    const reviewPrompt = `分析以下对话片段，提取值得长期记忆的信息。只提取以下三类：
+
+1. **用户偏好**：用户明确表达的习惯、偏好、风格要求
+2. **决策**：本次对话中做出的重要技术决策或业务决策
+3. **新知识**：新学到的、对未来有帮助的信息
+
+如果没有值得保存的内容，回复 "NONE"。
+
+对话：
+${convText}
+
+输出格式（中文）：
+PREFERENCE: <内容>
+DECISION: <内容>
+KNOWLEDGE: <内容>
+如果没有，回复 NONE。`;
+
+    const body = {
+      model: model || "deepseek-chat",
+      messages: [{ role: "user", content: reviewPrompt }],
+      max_tokens: 1024,
+      temperature: 0.3,
+      stream: false,
+    };
+    const endpoint = apiFormat === "anthropic"
+      ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
+      : apiUrl;
+    const headers = apiFormat === "anthropic"
+      ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+      : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+
+    if (apiFormat === "anthropic") {
+      body.system = "你是一个对话分析助手。从对话中提取值得长期记忆的信息。";
+      body.model = model || "claude-sonnet-4-20250514";
+      delete body.temperature;
+    }
+
+    const res = await fetch(endpoint, {
+      method: "POST", headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const text = apiFormat === "anthropic"
+      ? (data.content?.[0]?.text || "")
+      : (data.choices?.[0]?.message?.content || "");
+
+    if (!text || text.trim().toUpperCase().startsWith("NONE")) return;
+
+    // Parse and save extracted items
+    const lines = text.split("\n").filter(Boolean);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("PREFERENCE:")) {
+        memory.appendUserMemory(trimmed.slice("PREFERENCE:".length).trim());
+      } else if (trimmed.startsWith("DECISION:")) {
+        memory.appendProjectMemory(trimmed.slice("DECISION:".length).trim());
+      } else if (trimmed.startsWith("KNOWLEDGE:")) {
+        memory.appendProjectMemory(trimmed.slice("KNOWLEDGE:".length).trim());
+      }
+    }
+    console.log("[auto-review] Saved learnings:", lines.length, "items");
+  } catch (e) {
+    console.error("[auto-review] Failed:", e.message);
+  }
+}
+
 export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true) {
   let abortCtrl = getAbortCtrl();
   if (abortCtrl) abortCtrl.abort();
@@ -34,6 +118,9 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
   let sessionId = getSessionId();
   if (!sessionId) { sessionId = genId(); setSessionId(sessionId); }
+
+  hookManager.initHookManager(getWorkspace());
+
   // Save placeholder session to DB immediately so it appears in sidebar
   const placeholderTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
   const placeholderHistory = [{ role: "user", content: prompt || "" }];
@@ -166,7 +253,10 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         if (reasoningContent) allReasoning += reasoningContent;
         tcs = result.tcs;
       } catch (err) {
-        if (err.name === "AbortError") return { text: allText, aborted: true };
+        if (err.name === "AbortError") {
+          hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
+          return { text: allText, aborted: true };
+        }
         throw err;
       }
 
@@ -202,6 +292,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
           sendToRenderer("tool:result", { name: "Agent", result });
           msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
+          hookManager.fire("PostToolUse", { tool: "Agent", result }).catch(() => {});
         }
       }
 
@@ -217,6 +308,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
         sendToRenderer("tool:result", { name: tc.function.name, result });
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
+        hookManager.fire("PostToolUse", { tool: tc.function.name, result }).catch(() => {});
       }
     }
 
@@ -342,5 +434,7 @@ ${convText}
     saveSession(finalSessionId, getHistory(), title).catch(() => {});
   }
 
+  hookManager.fire("SessionEnd", { sessionId: finalSessionId, aborted: false }).catch(() => {});
+  autoReview(msgs, apiKey, apiUrl, model, apiFormat).catch(() => {});
   return { text: allText || "(no text response)" };
 }
