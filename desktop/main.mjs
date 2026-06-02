@@ -36,7 +36,7 @@ function createWindow() {
     width: 1200, height: 800,
     minWidth: 800, minHeight: 600,
     title: "AI Code Chat",
-    icon: nativeImage.createFromPath(join(PROJECT_ROOT, "icon.png")),
+    icon: nativeImage.createFromPath(join(PROJECT_ROOT, "icon.ico")),
     backgroundColor: "#0a0a0f",
     webPreferences: {
       preload: preloadPath,
