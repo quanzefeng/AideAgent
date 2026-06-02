@@ -58,9 +58,14 @@ export function compressContext(msgs, budget) {
 
   const systemEnd = msgs.findIndex(m => m.role !== "system");
   if (systemEnd === -1) return { estimatedTokens: afterTruncation.totalTokens, compressed: true, removedMessages };
-  while (msgs.length > systemEnd + 10) {
-    msgs.splice(systemEnd, 1);
-    removedMessages++;
+  // Keep prefix (cache anchor) + suffix (current context), trim middle messages
+  const ANCHOR = 6;  // first 6 non-system messages preserved as cache prefix
+  const RECENT = 8;  // last 8 messages preserved as current context (includes user question)
+  if (msgs.length > systemEnd + ANCHOR + RECENT) {
+    const prefix = msgs.slice(0, systemEnd + ANCHOR);
+    const suffix = msgs.slice(-RECENT);
+    removedMessages = msgs.length - prefix.length - suffix.length;
+    msgs.splice(0, msgs.length, ...prefix, ...suffix);
   }
 
   const afterPruning = estimateMessageTokens(msgs);

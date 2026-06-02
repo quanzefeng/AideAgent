@@ -217,6 +217,20 @@ Working directory: ${WORKSPACE}`;
     }
   } catch { /* ignored */ }
 
+  if (isPlanMode) {
+    content += "\n\n## ⚠️ 计划模式\n当前处于计划模式。你只能读取和分析代码，绝对不能使用 file_write、file_edit、bash 等写操作工具。\n请先制定详细的实现计划（包括文件变更清单、步骤、依赖关系），等用户确认后再执行。";
+  }
+
+  // ── Inject AGENTS.md / CLAUDE.md ──
+  content += loadContextMd();
+
+  if (!webSearchEnabled) {
+    content += "\n\n## 🚫 联网搜索已关闭\n用户关闭了联网搜索功能。你不能使用 web_search、web_fetch 工具，也不能通过 bash 执行 curl、Invoke-WebRequest、wget 等命令进行联网。请仅基于本地文件、知识库和已有信息回答。如果信息不足，请告知用户需要联网搜索才能获取更多信息。";
+  }
+
+  // ── Build dynamic context block (NOT in system prompt — preserved for caching) ──
+  let contextBlock = "";
+
   let memorySections = [];
   try {
     const episodicSearched = _episodicSearched;
@@ -227,7 +241,7 @@ Working directory: ${WORKSPACE}`;
         const lines = results.map(r =>
           `- [${r.sessionTitle}] ${(r.snippet || "").replace(/<\/?mark>/g, "")}`
         ).join("\n");
-        memorySections.push(`\n\n<memory-context>\n**以下是你的记忆——你过去与用户的对话中与此问题相关的部分：**\n${lines}\n</memory-context>`);
+        memorySections.push(`\n\n**对话记忆：**\n${lines}`);
       }
     }
     const recentSessions = sessionDb.getRecentSessions(10, 4, sessionId);
@@ -238,7 +252,7 @@ Working directory: ${WORKSPACE}`;
         return `**[${s.title}]**\n${lines}`;
       }).filter(Boolean).join("\n\n");
       if (sessionContexts) {
-        memorySections.push(`\n\n<memory-context>\n**最近对话的记忆：**\n${sessionContexts}\n</memory-context>`);
+        memorySections.push(`\n\n**最近对话：**\n${sessionContexts}`);
       }
     }
     try {
@@ -252,31 +266,23 @@ Working directory: ${WORKSPACE}`;
     } catch { /* ignored */ }
   } catch { /* ignored */ }
 
-  if (isPlanMode) {
-    content += "\n\n## ⚠️ 计划模式\n当前处于计划模式。你只能读取和分析代码，绝对不能使用 file_write、file_edit、bash 等写操作工具。\n请先制定详细的实现计划（包括文件变更清单、步骤、依赖关系），等用户确认后再执行。";
-  }
-
-  let baseTokens = estimateTokens(content);
-  const memoryBudget = TOKEN_BUDGET_WARN - baseTokens;
-
-  if (memoryBudget > 500) {
+  const memBudget = TOKEN_BUDGET_WARN - estimateTokens(content);
+  if (memBudget > 500) {
     for (const sec of memorySections) {
       if (typeof sec === 'string') {
-        content += sec;
+        contextBlock += sec;
       } else {
         const trimmed = sec.text.length > 2000 ? sec.text.slice(0, 2000) : sec.text;
-        content += `\n\n<memory-context>\n**${sec.label} — 你的永久记忆：**\n${trimmed}\n</memory-context>`;
+        contextBlock += `\n\n**${sec.label} — 永久记忆：**\n${trimmed}`;
       }
     }
   } else {
     for (const sec of memorySections) {
-      const space = TOKEN_BUDGET_HARD - estimateTokens(content);
-      if (space < 200) break;
       if (typeof sec === 'string') {
-        content += trimToBudget(sec, Math.max(200, space - 100));
+        contextBlock += trimToBudget(sec, Math.max(200, memBudget));
       } else {
         const trimmed = sec.text.length > 800 ? sec.text.slice(0, 800) : sec.text;
-        content += `\n\n<memory-context>\n**${sec.label} (摘要):**\n${trimmed}\n</memory-context>`;
+        contextBlock += `\n\n**${sec.label} (摘要):**\n${trimmed}`;
       }
     }
   }
@@ -293,17 +299,10 @@ Working directory: ${WORKSPACE}`;
           if (snippet.length > maxChars) snippet = snippet.slice(0, maxChars) + "...";
           return `**[${r.title}]** (${r.rel_path})\n${snippet}`;
         }).join("\n\n");
-        content += `\n\n<knowledge-base>\n**用户知识库中的相关内容：**\n${kbContext}\n</knowledge-base>`;
+        contextBlock += `\n\n<knowledge-base>\n**知识库相关内容：**\n${kbContext}\n</knowledge-base>`;
       }
     } catch { /* ignored */ }
   }
 
-  // ── Inject AGENTS.md / CLAUDE.md ──
-  content += loadContextMd();
-
-  if (!webSearchEnabled) {
-    content += "\n\n## 🚫 联网搜索已关闭\n用户关闭了联网搜索功能。你不能使用 web_search、web_fetch 工具，也不能通过 bash 执行 curl、Invoke-WebRequest、wget 等命令进行联网。请仅基于本地文件、知识库和已有信息回答。如果信息不足，请告知用户需要联网搜索才能获取更多信息。";
-  }
-
-  return { role: "system", content };
+  return { role: "system", content, contextBlock: contextBlock.trim() || null };
 }

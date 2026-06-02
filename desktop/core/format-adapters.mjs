@@ -114,12 +114,20 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   const endpoint = base.endsWith("/v1/messages") ? base
     : base.endsWith("/v1") ? base + "/messages"
     : base + "/v1/messages";
+  // ── Prompt caching: mark system prompt + last tool as cache breakpoints ──
+  const systemBlock = system
+    ? [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl: 3600 } }]
+    : "";
+  const cachedTools = toolDefs.length > 0
+    ? [...toolDefs.slice(0, -1), { ...toolDefs[toolDefs.length - 1], cache_control: { type: "ephemeral", ttl: 3600 } }]
+    : toolDefs;
+
   const body = {
     model: model || "claude-sonnet-4-20250514",
     max_tokens: 65536,
-    system: system || "",
+    system: systemBlock,
     messages,
-    tools: toolDefs,
+    tools: cachedTools,
     stream: true,
   };
   if (reasoning) {
@@ -131,6 +139,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-beta": "prompt-caching-2025-03-01",
     },
     body: JSON.stringify(body),
     signal,

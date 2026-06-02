@@ -154,26 +154,42 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
   const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled);
 
-  // ── Inject task/todo status into system context ──
-  let sysContent = sysPrompt.content;
+  // ── Build dynamic context block (user message, NOT system prompt — enables prompt caching) ──
+  let contextBlock = sysPrompt.contextBlock || "";
+
   const activeTasks = Array.from(taskStore.values()).filter(t => t.status !== "completed" && t.status !== "deleted");
   if (activeTasks.length > 0) {
-    sysContent += "\n\n## 当前任务状态\n";
+    let taskBlock = "\n## 当前任务状态\n";
     for (const t of activeTasks) {
       const icon = t.status === "in_progress" ? "🔄" : "⬜";
-      sysContent += `- ${icon} **${t.subject}** (${t.status}) — ${t.description}\n`;
+      taskBlock += `- ${icon} **${t.subject}** (${t.status}) — ${t.description}\n`;
     }
+    contextBlock += taskBlock;
   }
   const todoList = getTodoList();
   if (todoList.length > 0) {
-    sysContent += "\n## 当前 Todo 清单\n";
+    let todoBlock = "\n## 当前 Todo 清单\n";
     for (const t of todoList) {
       const icon = t.status === "completed" ? "✅" : t.status === "in_progress" ? "🔄" : "⬜";
-      sysContent += `- ${icon} ${t.content}\n`;
+      todoBlock += `- ${icon} ${t.content}\n`;
     }
+    contextBlock += todoBlock;
   }
 
-  // ── Inject Agent & AskUserQuestion tool awareness ──
+  // ── Inject relevant memories ──
+  try {
+    const relevantMems = await selectRelevantMemories(prompt, apiKey, apiUrl, model, apiFormat);
+    if (relevantMems) {
+      contextBlock += "\n\n## 相关记忆\n" + relevantMems;
+    }
+  } catch (e) {
+    console.error("[memory] selection error:", e.message);
+  }
+
+  // ── Stable system content (no dynamic injections — cacheable) ──
+  let sysContent = sysPrompt.content;
+
+  // ── Inject Agent & AskUserQuestion tool awareness (stable per session) ──
   if (!sysContent.includes("AskUserQuestion")) {
     sysContent += `\n\n**AskUserQuestion:** You can ask the user up to 4 multiple-choice questions when you need clarification. Use this instead of guessing. The user will see a dialog and respond.`;
   }
@@ -184,17 +200,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     sysContent += `\n\n**Memory hygiene:** Do NOT save code patterns, architecture, or file paths as memories — those are derivable from the current project state. Only save non-obvious context: user preferences, stakeholder decisions, deadlines, corrections, external system references. If a memory claims a function or file exists, verify with grep/file_read before acting on it.`;
   }
 
-  // ── Inject relevant memories ──
-  try {
-    const relevantMems = await selectRelevantMemories(prompt, apiKey, apiUrl, model, apiFormat);
-    if (relevantMems) {
-      sysContent += "\n\n## 相关记忆\n" + relevantMems;
-    }
-  } catch (e) {
-    console.error("[memory] selection error:", e.message);
-  }
-
-  // ── L0 token budget check ──
+  // ── L0 token budget check (system content only) ──
   const estTokens = estimateTokens(sysContent);
   if (estTokens > TOKEN_BUDGET_WARN) {
     sendToRenderer("l0:budget", {
@@ -210,10 +216,15 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   }
 
   const history = getHistory();
+  // contextBlock as user message between system prompt and history — keeps system prompt cacheable
   let msgs = [{ role: "system", content: sysContent }, ...history.map(m => ({ ...m })), userMessage];
+  if (contextBlock.trim()) {
+    msgs.splice(1, 0, { role: "user", content: contextBlock.trim() });
+  }
   let allText = "", allReasoning = "";
   let continuation = 0;
   let agentFinished = false;
+  let _contextMsg = contextBlock.trim() ? { role: "user", content: contextBlock.trim() } : null;
 
   compressContext(msgs);
   sendContextUsage(msgs);
@@ -322,9 +333,11 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
       const sysMsg = msgs[0];
       const recentMsgs = msgs.slice(-6);
-      const headerMsg = `## 📋 对话摘要（第 ${continuation} 次自动压缩）\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。`;
-
-      msgs = [sysMsg, { role: "system", content: headerMsg }, ...recentMsgs];
+      // Preserve stable prefix: system prompt + context user msg → cacheable across continuations
+      const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
+      msgs = [sysMsg];
+      if (_contextMsg) msgs.push(_contextMsg);
+      msgs.push(continuationMsg, ...recentMsgs);
 
       sendToRenderer("context:continuation-done", {
         continuation,
