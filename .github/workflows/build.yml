@@ -18,12 +18,16 @@ jobs:
         run: npm ci
       - name: Build Windows
         working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win nsis
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GoodAgent-Windows
-          path: desktop/release/GoodAgent-*-Windows-*.exe
+          path: |
+            desktop/release/GoodAgent-*-Windows-*.exe
+            desktop/release/latest.yml
           if-no-files-found: error
 
   build-macos:
@@ -40,12 +44,16 @@ jobs:
         run: npm ci
       - name: Build macOS
         working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --mac dmg
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GoodAgent-macOS
-          path: desktop/release/GoodAgent-*-macOS-*.dmg
+          path: |
+            desktop/release/GoodAgent-*-macOS-*.dmg
+            desktop/release/latest-mac.yml
           if-no-files-found: error
 
   build-linux:
@@ -64,6 +72,8 @@ jobs:
         run: npm ci
       - name: Build Linux
         working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --linux deb AppImage
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,6 +82,7 @@ jobs:
           path: |
             desktop/release/GoodAgent-*-Linux-*.deb
             desktop/release/GoodAgent-*-Linux-*.AppImage
+            desktop/release/latest-linux.yml
           if-no-files-found: error
 
   release:
