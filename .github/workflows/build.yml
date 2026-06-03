@@ -1,10 +1,6 @@
 name: Build GoodAgent Desktop
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
