@@ -96,5 +96,5 @@ jobs:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: GoodAgent Desktop v${{ steps.version.outputs.VERSION }}
           files: release-artifacts/**/*
-          draft: true
+          draft: false
           generate_release_notes: true
