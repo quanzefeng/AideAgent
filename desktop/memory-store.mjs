@@ -281,6 +281,7 @@ export function rebuildIndex() {
     for (const m of memories) {
       ftsInsert(m.filename, m.name, m.description, m.type, m.body);
     }
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); // compact WAL after bulk writes
   } catch { /* ignored */ }
   return { ok: true, count: memories.length };
 }

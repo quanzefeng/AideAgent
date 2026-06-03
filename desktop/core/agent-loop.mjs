@@ -96,11 +96,14 @@ KNOWLEDGE: <内容>
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.startsWith("PREFERENCE:")) {
-        memory.appendUserMemory(trimmed.slice("PREFERENCE:".length).trim());
+        const val = trimmed.slice("PREFERENCE:".length).trim();
+        if (val && !/^NONE$/i.test(val)) memory.appendUserMemory(val);
       } else if (trimmed.startsWith("DECISION:")) {
-        memory.appendProjectMemory(trimmed.slice("DECISION:".length).trim());
+        const val = trimmed.slice("DECISION:".length).trim();
+        if (val && !/^NONE$/i.test(val)) memory.appendProjectMemory(val);
       } else if (trimmed.startsWith("KNOWLEDGE:")) {
-        memory.appendProjectMemory(trimmed.slice("KNOWLEDGE:".length).trim());
+        const val = trimmed.slice("KNOWLEDGE:".length).trim();
+        if (val && !/^NONE$/i.test(val)) memory.appendProjectMemory(val);
       }
     }
     console.log("[auto-review] Saved learnings:", lines.length, "items");
