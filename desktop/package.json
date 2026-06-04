@@ -2,6 +2,7 @@
   "name": "goodagent-desktop",
   "version": "1.0.3",
   "description": "GoodAgent Desktop — Electron GUI wrapper",
+  "repository": "https://github.com/quanzefeng/GoodAgent",
   "author": "quanzefeng <quanzefeng@gmail.com>",
   "homepage": "https://github.com/quanzefeng/GoodAgent",
   "type": "module",
