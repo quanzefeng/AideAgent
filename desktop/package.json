@@ -35,7 +35,8 @@
       "*.mjs",
       "preload.cjs",
       "renderer/**",
-      "core/**"
+      "core/**",
+      "search-engine/**"
     ],
     "extraResources": [
       {
