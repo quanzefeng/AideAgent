@@ -17,6 +17,10 @@ import {
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT,
 } from "./state.mjs";
 
+// ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
+let _sysPromptCache = null;
+let _contextBlockBaseCache = null;
+
 function getHistoryTitle(history) {
   const firstUser = history.find(m => m.role === "user");
   if (!firstUser) return "新对话";
@@ -155,11 +159,56 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     userMessage = { role: "user", content: prompt };
   }
 
-  const isFirstTurn = getHistory().length === 0;
-  const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, isFirstTurn);
+  // First turn OR process restarted (caches are null) — rebuild everything
+  const isFirstTurn = getHistory().length === 0 || !_sysPromptCache;
 
-  // ── Build dynamic context block (user message, NOT system prompt — enables prompt caching) ──
-  let contextBlock = sysPrompt.contextBlock || "";
+  let sysContent, contextBlockBase;
+
+  if (isFirstTurn) {
+    // ── First turn: build full system prompt, cache everything ──
+    const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, true);
+    sysContent = sysPrompt.content;
+    contextBlockBase = sysPrompt.contextBlock || "";
+
+    // ── Stable system content (no dynamic injections — cacheable) ──
+    // ── Inject Agent & AskUserQuestion tool awareness (stable per session) ──
+    if (!sysContent.includes("AskUserQuestion")) {
+      sysContent += `\n\n**AskUserQuestion:** You can ask the user up to 4 multiple-choice questions when you need clarification. Use this instead of guessing. The user will see a dialog and respond.`;
+    }
+    if (!sysContent.includes("`Agent`")) {
+      sysContent += `\n\n**Agent (Sub-Agent):** You can launch read-only sub-agents (\`Agent\` tool) for parallel independent research. Sub-agents have access to file_read, grep, glob, web_search, web_fetch. Use them to search for information in parallel while you continue other work. A sub-agent returns a single text result. Example: \`Agent(description="search AI news", prompt="Search the web for the latest AI news this week and summarize the top 3 stories.")\``;
+    }
+    if (!sysContent.includes("Do NOT save")) {
+      sysContent += `\n\n**Memory hygiene:** Do NOT save code patterns, architecture, or file paths as memories — those are derivable from the current project state. Only save non-obvious context: user preferences, stakeholder decisions, deadlines, corrections, external system references. If a memory claims a function or file exists, verify with grep/file_read before acting on it.`;
+    }
+
+    // ── L0 token budget check (system content only) ──
+    const estTokens = estimateTokens(sysContent);
+    if (estTokens > TOKEN_BUDGET_WARN) {
+      sendToRenderer("l0:budget", {
+        estimatedTokens: estTokens,
+        warnThreshold: TOKEN_BUDGET_WARN,
+        hardThreshold: TOKEN_BUDGET_HARD,
+        overWarn: estTokens > TOKEN_BUDGET_WARN,
+        overHard: estTokens > TOKEN_BUDGET_HARD,
+      });
+      if (estTokens > TOKEN_BUDGET_HARD) {
+        sysContent = trimToBudget(sysContent, TOKEN_BUDGET_HARD);
+      }
+    }
+
+    _sysPromptCache = sysContent;
+    _contextBlockBaseCache = contextBlockBase;
+  } else {
+    // ── Turn 2+: use cached system prompt (already has KB/AGENTS.md from turn 1) ──
+    sysContent = _sysPromptCache;
+    contextBlockBase = _contextBlockBaseCache;
+  }
+
+  // ── Build dynamic context block on top of cached base ──
+  const contextExtraMsgs = [];
+  // `contextBlock` keeps the combined string for continuation snapshot
+  let contextBlock = contextBlockBase;
 
   const activeTasks = Array.from(taskStore.values()).filter(t => t.status !== "completed" && t.status !== "deleted");
   if (activeTasks.length > 0) {
@@ -169,6 +218,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       taskBlock += `- ${icon} **${t.subject}** (${t.status}) — ${t.description}\n`;
     }
     contextBlock += taskBlock;
+    contextExtraMsgs.push({ role: "user", content: taskBlock.trim() });
   }
   const todoList = getTodoList();
   if (todoList.length > 0) {
@@ -178,54 +228,54 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       todoBlock += `- ${icon} ${t.content}\n`;
     }
     contextBlock += todoBlock;
+    contextExtraMsgs.push({ role: "user", content: todoBlock.trim() });
   }
 
-  // ── Inject relevant memories ──
+  const history = getHistory();
+
+  // ── Inject relevant memories (per turn — topic drift) ──
+  // Pass last assistant reply as task context so the selector can
+  // distinguish "already working on this" from "potentially relevant old task"
   try {
-    const relevantMems = await selectRelevantMemories(prompt, apiKey, apiUrl, model, apiFormat);
+    const lastAsstMsg = [...history].reverse().find(m => m.role === "assistant");
+    const memQuery = lastAsstMsg?.content
+      ? `当前任务上下文: ${lastAsstMsg.content.slice(-500)}\n用户消息: ${prompt || ""}`
+      : prompt;
+    const relevantMems = await selectRelevantMemories(memQuery, apiKey, apiUrl, model, apiFormat);
     if (relevantMems) {
-      contextBlock += "\n\n## 相关记忆\n" + relevantMems;
+      const memBlock = "\n\n## 相关记忆\n" + relevantMems;
+      contextBlock += memBlock;
+      contextExtraMsgs.push({ role: "user", content: memBlock.trim() });
     }
   } catch (e) {
     console.error("[memory] selection error:", e.message);
   }
 
-  // ── Stable system content (no dynamic injections — cacheable) ──
-  let sysContent = sysPrompt.content;
-
-  // ── Inject Agent & AskUserQuestion tool awareness (stable per session) ──
-  if (!sysContent.includes("AskUserQuestion")) {
-    sysContent += `\n\n**AskUserQuestion:** You can ask the user up to 4 multiple-choice questions when you need clarification. Use this instead of guessing. The user will see a dialog and respond.`;
-  }
-  if (!sysContent.includes("`Agent`")) {
-    sysContent += `\n\n**Agent (Sub-Agent):** You can launch read-only sub-agents (\`Agent\` tool) for parallel independent research. Sub-agents have access to file_read, grep, glob, web_search, web_fetch. Use them to search for information in parallel while you continue other work. A sub-agent returns a single text result. Example: \`Agent(description="search AI news", prompt="Search the web for the latest AI news this week and summarize the top 3 stories.")\``;
-  }
-  if (!sysContent.includes("Do NOT save")) {
-    sysContent += `\n\n**Memory hygiene:** Do NOT save code patterns, architecture, or file paths as memories — those are derivable from the current project state. Only save non-obvious context: user preferences, stakeholder decisions, deadlines, corrections, external system references. If a memory claims a function or file exists, verify with grep/file_read before acting on it.`;
-  }
-
-  // ── L0 token budget check (system content only) ──
-  const estTokens = estimateTokens(sysContent);
-  if (estTokens > TOKEN_BUDGET_WARN) {
-    sendToRenderer("l0:budget", {
-      estimatedTokens: estTokens,
-      warnThreshold: TOKEN_BUDGET_WARN,
-      hardThreshold: TOKEN_BUDGET_HARD,
-      overWarn: estTokens > TOKEN_BUDGET_WARN,
-      overHard: estTokens > TOKEN_BUDGET_HARD,
-    });
-    if (estTokens > TOKEN_BUDGET_HARD) {
-      sysContent = trimToBudget(sysContent, TOKEN_BUDGET_HARD);
+  // ── Current task anchor: when user sends a short reply,
+  // remind the agent what it just proposed to prevent memory interference ──
+  const isShortReply = typeof prompt === "string" && prompt.trim().length < 80;
+  if (history.length > 0 && isShortReply) {
+    const lastAsst = [...history].reverse().find(m => m.role === "assistant");
+    if (lastAsst && lastAsst.content) {
+      const proposalText = lastAsst.content.slice(-800);
+      const anchor = `\n\n---\n⚠️ **当前任务锚定** — 用户刚才的简短回复是在回应你**上一次的以下内容**。请优先处理这个任务，不要被历史记忆或知识库中的旧任务干扰：\n\n> ${proposalText.replace(/\n/g, "\n> ")}\n\n请立即执行你刚才提议的方案。如果用户的简短回复含义不明确，回看以上内容来理解用户意图，而不是去历史记忆中寻找任务。`;
+      if (typeof userMessage.content === "string") {
+        userMessage.content = anchor + "\n\n---\n**用户消息：** " + userMessage.content;
+      } else if (Array.isArray(userMessage.content)) {
+        userMessage.content = [{ type: "text", text: anchor }, ...userMessage.content];
+      }
     }
   }
 
-  const history = getHistory();
-  // contextBlock as user message AFTER history, just before the current query
-  // → makes history the cacheable prefix (append-only, stable across turns)
-  let msgs = [{ role: "system", content: sysContent }, ...history.map(m => ({ ...m }))];
-  if (contextBlock.trim()) {
-    msgs.push({ role: "user", content: contextBlock.trim() });
+  // [sys][ctx_base][history...][extra...][query]
+  // → [sys][ctx_base][history] is the cacheable prefix;
+  // ctxExtra (tasks/todos/memories) goes AFTER history so it doesn't break the prefix
+  let msgs = [{ role: "system", content: sysContent }];
+  if (contextBlockBase.trim()) {
+    msgs.push({ role: "user", content: contextBlockBase.trim() });
   }
+  msgs.push(...history.map(m => ({ ...m })));
+  msgs.push(...contextExtraMsgs);
   msgs.push(userMessage);
   let allText = "", allReasoning = "";
   let continuation = 0;
@@ -282,6 +332,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             });
           } else if (u.cache_read_input_tokens !== undefined) {
             const read = u.cache_read_input_tokens || 0;
+            const created = u.cache_creation_input_tokens || 0;
             const total = u.input_tokens || 0;
             const miss = total - read;
             const pct = total > 0 ? Math.round(read / total * 100) : 0;
@@ -361,7 +412,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
       const sysMsg = msgs[0];
       const recentMsgs = msgs.slice(-6);
-      // contextBlock at end → system + summary + recent history = cacheable prefix
+      // contextBlock at end → [sys][summary][recent...][ctx] = cacheable prefix for continuation
       const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
       msgs = [sysMsg, continuationMsg, ...recentMsgs];
       if (_contextMsg) msgs.push(_contextMsg);
@@ -456,11 +507,11 @@ ${convText}
         const compressedId = parentId + "_c" + Date.now().toString(36);
         sessionDb.saveSession(
           compressedId,
-          [{ role: "system", content: summary }, ...recent],
+          [{ role: "user", content: `## 📋 对话摘要\n\n${summary}` }, ...recent],
           getHistoryTitle(recent)
         );
         sessionDb.updateTitle(parentId, getHistoryTitle(recent));
-        recent.unshift({ role: "system", content: summary });
+        recent.unshift({ role: "user", content: `## 📋 对话摘要\n\n${summary}` });
       } catch (e) { console.error("[compress]", e.message); }
     }
 

@@ -4,15 +4,31 @@ import mcpManager from "../mcp-manager.mjs";
 import { TOOL_DEFS } from "./tool-definitions.mjs";
 import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer } from "./state.mjs";
 
+// ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
+let _cachedToolDefs = null;
+let _cachedToolKey = null;
+
 export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   const planMode = getPlanMode();
+  const key = `${kbEnabled}|${webSearchEnabled}|${planMode}`;
+  if (_cachedToolKey === key && _cachedToolDefs) {
+    return _cachedToolDefs;
+  }
   let builtins = kbEnabled ? TOOL_DEFS : TOOL_DEFS.filter(t => t.function.name !== "kb_write" && t.function.name !== "kb_search");
   if (!webSearchEnabled) builtins = builtins.filter(t => t.function.name !== "web_search" && t.function.name !== "web_fetch");
   if (planMode) builtins = builtins.filter(t => PLAN_MODE_READONLY.has(t.function.name));
   const mcpFilter = webSearchEnabled ? {} : { excludeCategories: ["web-search"] };
   const mcpDefs = mcpManager.listAllToolDefs(mcpFilter);
   console.log("[plan-mode] getAllToolDefs planMode =", planMode, "builtins =", builtins.length, "mcp =", planMode ? 0 : mcpDefs.length);
-  return planMode ? builtins : [...builtins, ...mcpDefs];
+  const result = planMode ? builtins : [...builtins, ...mcpDefs];
+  _cachedToolDefs = result;
+  _cachedToolKey = key;
+  return result;
+}
+
+export function invalidateToolDefsCache() {
+  _cachedToolDefs = null;
+  _cachedToolKey = null;
 }
 
 export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {

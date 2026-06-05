@@ -25,7 +25,11 @@ export async function selectRelevantMemories(query, apiKey, apiUrl, model, apiFo
     return `- ${m.filename} [${m.type}] ${m.name}: ${m.description}${ageStr}`;
   }).join("\n");
 
-  const selectPrompt = `You are selecting memory files relevant to a user's query. From the list below, pick up to 5 files that are clearly useful. Be selective — if unsure, skip it. Do NOT select reference docs for tools already being used (unless they contain warnings/gotchas). Return ONLY a JSON array of filenames.
+  const selectPrompt = `You are selecting memory files relevant to a user's query. From the list below, pick up to 5 files that are clearly useful. Be selective — if unsure, skip it. Do NOT select reference docs for tools already being used (unless they contain warnings/gotchas).
+
+CRITICAL: If the query starts with "当前任务上下文:", the user is ALREADY working on a specific task (described after that prefix). Skip memories that describe the SAME task — the agent doesn't need to be reminded of what it's currently doing. Only select memories that provide genuinely NEW background knowledge or related-but-different context. Memories that describe tasks already being worked on are interference, not help.
+
+Return ONLY a JSON array of filenames.
 
 User query: ${query.slice(0, 500)}
 
