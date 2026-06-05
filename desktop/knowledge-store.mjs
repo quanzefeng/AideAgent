@@ -298,18 +298,12 @@ async function getEmbedder() {
 
   for (const p of providers) {
     if (p === "local") {
+      // [PACKAGING-FIX] — isElectron declared OUTSIDE try so finally can access it
+      const isElectron = process.release?.name === "electron";
+      if (isElectron) {
+        try { process.release.name = "node"; } catch {}
+      }
       try {
-        // [PACKAGING-FIX] Force Node.js backend in @huggingface/transformers
-        // In Electron, process.release.name === "electron" (not "node"), which
-        // makes the library use its WASM/WebGPU backend instead of the native
-        // onnxruntime-node backend. The WASM backend tries to fetch WASM binaries
-        // from CDN (jsdelivr), which hangs indefinitely in offline/restricted
-        // environments like the packaged .exe. We patch release.name to force
-        // the correct Node.js backend detection.
-        const isElectron = process.release?.name === "electron";
-        if (isElectron) {
-          try { process.release.name = "node"; } catch {}
-        }
 
         const { pipeline } = await importWithTimeout("@huggingface/transformers", 15000);
         const localPath = getLocalModelPath();
