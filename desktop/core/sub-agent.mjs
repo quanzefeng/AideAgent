@@ -32,13 +32,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
       const { apiKey, apiUrl, model, apiFormat } = cfg;
       const isAnthropic = apiFormat === "anthropic";
 
-      let subModel = model || "deepseek-chat";
-      if (!isAnthropic && (subModel.includes("reasoner") || subModel.includes("-pro") || subModel.includes("v4"))) {
-        subModel = "deepseek-chat";
-      }
-      if (isAnthropic) {
-        subModel = model || "claude-haiku-4.5-20250514";
-      }
+      const subModel = model || "deepseek-chat";
 
       const cleanMsgs = isAnthropic ? msgs : msgs.map(m => {
         if (m.role === "assistant" && m.reasoning_content !== undefined) {
