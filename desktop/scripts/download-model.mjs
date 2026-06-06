@@ -15,7 +15,8 @@ const BASES = [
 const FILES = [
   "config.json",
   "tokenizer.json",
-  "onnx/model_quantized.onnx",
+  "tokenizer_config.json",
+  "onnx/model.onnx",
 ];
 
 async function download(url, dest, timeoutMs = 60000) {
