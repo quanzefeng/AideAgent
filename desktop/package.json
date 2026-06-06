@@ -1,6 +1,6 @@
 {
   "name": "aideagent-desktop",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "AideAgent Desktop — Electron GUI wrapper",
   "repository": "https://github.com/quanzefeng/AideAgent",
   "author": "quanzefeng <quanzefeng@gmail.com>",
@@ -33,7 +33,9 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/onnxruntime-node/**",
-      "node_modules/sharp/**"
+      "node_modules/sharp/**",
+      "node_modules/@huggingface/transformers/dist/**",
+      "node_modules/onnxruntime-web/dist/**"
     ],
     "files": [
       "*.mjs",

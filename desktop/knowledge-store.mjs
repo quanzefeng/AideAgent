@@ -301,11 +301,17 @@ async function getEmbedder() {
       // [PACKAGING-FIX] — isElectron declared OUTSIDE try so finally can access it
       const isElectron = process.release?.name === "electron";
       if (isElectron) {
-        try { Object.defineProperty(process.release, "name", { value: "node", configurable: true }); } catch {}
+        console.log("[kb] Electron detected, release.name before patch:", process.release.name);
+        try { Object.defineProperty(process.release, "name", { value: "node", configurable: true }); } catch (e) {
+          console.log("[kb] Failed to patch process.release.name:", e.message);
+        }
+        console.log("[kb] release.name after patch:", process.release.name);
       }
       try {
 
+        console.log("[kb] Attempting to import @huggingface/transformers...");
         const { pipeline } = await importWithTimeout("@huggingface/transformers", 15000);
+        console.log("[kb] Import succeeded");
         const localPath = getLocalModelPath();
         _embedder = localPath
           ? await pipeline("feature-extraction", localPath, { local_files_only: true })
