@@ -301,7 +301,7 @@ async function getEmbedder() {
       // [PACKAGING-FIX] — isElectron declared OUTSIDE try so finally can access it
       const isElectron = process.release?.name === "electron";
       if (isElectron) {
-        try { process.release.name = "node"; } catch {}
+        try { Object.defineProperty(process.release, "name", { value: "node", configurable: true }); } catch {}
       }
       try {
 
@@ -318,7 +318,7 @@ async function getEmbedder() {
       } finally {
         // Restore original release name to avoid side effects
         if (isElectron) {
-          try { process.release.name = "electron"; } catch {}
+          try { Object.defineProperty(process.release, "name", { value: "electron", configurable: true }); } catch {}
         }
       }
     }
