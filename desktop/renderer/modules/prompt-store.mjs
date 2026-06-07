@@ -1,6 +1,5 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed prompt profile manager.
+// @ts-check — 带 JSDoc 类型注解的系统提示词多 profile 管理器。
 /**
  * System Prompt Profile Management
  * --------------------------------------------------------------------------
@@ -22,9 +21,18 @@
 
 import { sanitize } from './helpers.mjs';
 
+/**
+ * Factory that returns a small API for managing system-prompt profiles.
+ * @param {{
+ *   t: (key: string, vars?: Record<string, string | number>) => string,
+ *   onConfirm: (message: string) => Promise<boolean>,
+ * }} deps — injected translation helper and async confirm dialog.
+ */
 export function createPromptStore({ t, onConfirm }) {
   // ── Private state ──────────────────────────────────────
+  /** @type {PromptStore | null} */
   let promptStore = null;
+  /** @type {string | null} */
   let currentProfileId = null;
   let _promptDirty = false;
 
@@ -75,6 +83,7 @@ export function createPromptStore({ t, onConfirm }) {
   }
 
   // ── Public API ─────────────────────────────────────────
+  /** Load all prompt profiles from the main process and prime local state. */
   async function loadPromptStore() {
     try {
       promptStore = await window.aideagent.listPromptProfiles();
@@ -109,13 +118,14 @@ export function createPromptStore({ t, onConfirm }) {
     }).join("");
 
     // Bind click
-    container.querySelectorAll(".prompt-profile-chip").forEach(btn => {
+    container.querySelectorAll(".prompt-profile-chip").forEach((node) => {
+      const btn = /** @type {HTMLButtonElement} */ (node);
       btn.addEventListener("click", async () => {
         const id = btn.dataset.profileId;
-        if (id === currentProfileId) return;
+        if (!id || id === currentProfileId) return;
         if (_promptDirty) await saveCurrentProfile();
         currentProfileId = id;
-        promptStore.activeProfile = id;
+        if (promptStore) promptStore.activeProfile = id;
         await window.aideagent.activatePromptProfile(id);
         renderProfileSelector();
         renderPromptEditor();
@@ -127,7 +137,7 @@ export function createPromptStore({ t, onConfirm }) {
     const profile = getCurrentProfile();
     if (!profile) return;
     // Read name input
-    const nameInput = document.getElementById("prompt-name-input");
+    const nameInput = /** @type {HTMLInputElement | null} */ (document.getElementById("prompt-name-input"));
     if (nameInput && nameInput.value.trim()) {
       profile.name = nameInput.value.trim();
     }
@@ -168,13 +178,13 @@ export function createPromptStore({ t, onConfirm }) {
     // ── Bind events ──
 
     // Name input
-    const nameInput = document.getElementById("prompt-name-input");
+    const nameInput = /** @type {HTMLInputElement | null} */ (document.getElementById("prompt-name-input"));
     if (nameInput) {
       nameInput.addEventListener("input", () => { _promptDirty = true; });
     }
 
     // Content textarea
-    const contentArea = document.getElementById("prompt-content-area");
+    const contentArea = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("prompt-content-area"));
     if (contentArea) {
       contentArea.addEventListener("input", () => {
         const p = getCurrentProfile();
@@ -188,7 +198,7 @@ export function createPromptStore({ t, onConfirm }) {
     if (enableBtn) {
       enableBtn.addEventListener("click", async () => {
         const p = getCurrentProfile();
-        if (!p) return;
+        if (!p || !promptStore) return;
         if (nameInput && nameInput.value.trim()) p.name = nameInput.value.trim();
         p.enabled = true;
         for (const id of Object.keys(promptStore.profiles)) {
@@ -208,7 +218,7 @@ export function createPromptStore({ t, onConfirm }) {
     const deleteBtn = document.getElementById("prompt-delete-btn");
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async () => {
-        if (currentProfileId === "default") return;
+        if (currentProfileId === "default" || !promptStore) return;
         const p = getCurrentProfile();
         if (!p) return;
         if (!await onConfirm(t("prompt.delete_confirm", {name: p.name}))) return;
@@ -234,9 +244,12 @@ export function createPromptStore({ t, onConfirm }) {
     }
   }
 
+  /** Create a brand-new profile, disable siblings, activate it, and re-render. */
   async function addNewProfile() {
     const name = getNextProfileName();
     const id = "profile_" + Date.now();
+    if (!promptStore) return;
+    /** @type {PromptProfile} */
     const newProfile = {
       id,
       name,

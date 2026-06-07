@@ -1,8 +1,9 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed memory panel loader.
+// @ts-check — 带 JSDoc 类型注解的持久记忆面板加载器。
 let _memoryPanelLoaded = false;
+/** @type {Array<{filename: string; name: string; description: string; type: string; body: string}>} */
 let _memoryListCache = [];
+/** @type {string | null} */
 let _memoryCurrentFile = null;
 
 export async function loadMemoryPanel() {
@@ -12,16 +13,19 @@ export async function loadMemoryPanel() {
   const TYPE_LABELS = { user: t("memory.label_user"), feedback: t("memory.label_feedback"), project: t("memory.label_project"), reference: t("memory.label_reference") };
 
   const listEl = document.getElementById("memory-list");
-  const searchInput = document.getElementById("memory-search-input");
-  const nameInput = document.getElementById("memory-edit-name");
-  const descInput = document.getElementById("memory-edit-desc");
-  const typeSelect = document.getElementById("memory-edit-type");
-  const bodyTextarea = document.getElementById("memory-edit-body");
-  const saveBtn = document.getElementById("memory-save-btn");
-  const deleteBtn = document.getElementById("memory-delete-btn");
-  const newBtn = document.getElementById("memory-new-btn");
+  const searchInput = /** @type {HTMLInputElement | null} */ (document.getElementById("memory-search-input"));
+  const nameInput = /** @type {HTMLInputElement | null} */ (document.getElementById("memory-edit-name"));
+  const descInput = /** @type {HTMLInputElement | null} */ (document.getElementById("memory-edit-desc"));
+  const typeSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("memory-edit-type"));
+  const bodyTextarea = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("memory-edit-body"));
+  const saveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-save-btn"));
+  const deleteBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-delete-btn"));
+  const newBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-new-btn"));
   const statusEl = document.getElementById("memory-edit-status");
 
+  /**
+   * @param {string} [filter]
+   */
   async function refreshList(filter = "") {
     try {
       _memoryListCache = await window.aideagent.memoryListAll();
@@ -32,6 +36,7 @@ export async function loadMemoryPanel() {
       ? _memoryListCache.filter(m => m.name.includes(filter) || m.description.includes(filter) || m.filename.includes(filter))
       : _memoryListCache;
 
+    if (!listEl) return;
     listEl.innerHTML = filtered.length === 0
       ? `<div class="memory-list-empty">${t("memory.empty")}</div><div class="memory-list-empty-hint">${t("memory.auto_hint")}</div>`
       : filtered.map(m => {
@@ -43,21 +48,28 @@ export async function loadMemoryPanel() {
         </div>`;
       }).join("");
 
-    listEl.querySelectorAll(".memory-list-item").forEach(el => {
-      el.addEventListener("click", () => selectMemory(el.dataset.file));
+    listEl.querySelectorAll(".memory-list-item").forEach((node) => {
+      const el = /** @type {HTMLElement} */ (node);
+      el.addEventListener("click", () => {
+        const f = el.dataset.file;
+        if (f) selectMemory(f);
+      });
     });
   }
 
+  /**
+   * @param {string} filename
+   */
   async function selectMemory(filename) {
     _memoryCurrentFile = filename;
     try {
       const m = await window.aideagent.memoryReadOne(filename);
       if (m) {
-        nameInput.value = m.name || "";
-        descInput.value = m.description || "";
-        typeSelect.value = m.type || "project";
-        bodyTextarea.value = m.body || "";
-        statusEl.textContent = "";
+        if (nameInput) nameInput.value = m.name || "";
+        if (descInput) descInput.value = m.description || "";
+        if (typeSelect) typeSelect.value = m.type || "project";
+        if (bodyTextarea) bodyTextarea.value = m.body || "";
+        if (statusEl) statusEl.textContent = "";
       }
     } catch {}
     await refreshList(searchInput?.value || "");
@@ -65,30 +77,32 @@ export async function loadMemoryPanel() {
 
   function newMemory() {
     _memoryCurrentFile = null;
-    nameInput.value = "";
-    descInput.value = "";
-    typeSelect.value = "project";
-    bodyTextarea.value = "";
-    statusEl.textContent = "";
+    if (nameInput) nameInput.value = "";
+    if (descInput) descInput.value = "";
+    if (typeSelect) typeSelect.value = "project";
+    if (bodyTextarea) bodyTextarea.value = "";
+    if (statusEl) statusEl.textContent = "";
     refreshList(searchInput?.value || "");
   }
 
-  saveBtn.addEventListener("click", async () => {
-    const name = nameInput.value.trim();
-    const desc = descInput.value.trim();
-    const type = typeSelect.value;
-    const body = bodyTextarea.value;
-    if (!name) { statusEl.textContent = t("memory.name_required"); return; }
+  saveBtn?.addEventListener("click", async () => {
+    const name = nameInput?.value.trim() || "";
+    const desc = descInput?.value.trim() || "";
+    const type = typeSelect?.value || "project";
+    const body = bodyTextarea?.value || "";
+    if (!name) { if (statusEl) statusEl.textContent = t("memory.name_required"); return; }
 
-    statusEl.textContent = t("memory.saving");
+    if (statusEl) statusEl.textContent = t("memory.saving");
     try {
       if (_memoryCurrentFile) {
         await window.aideagent.memoryUpdate(_memoryCurrentFile, body, name, desc, type);
       } else {
         await window.aideagent.memoryCreate(name, desc, type, body);
       }
-      statusEl.textContent = t("memory.saved");
-      setTimeout(() => { statusEl.textContent = ""; }, 2000);
+      if (statusEl) {
+        statusEl.textContent = t("memory.saved");
+        setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2000);
+      }
       await refreshList(searchInput?.value || "");
       if (!_memoryCurrentFile) {
         const safe = name.replace(/[^a-zA-Z0-9_\-一-鿿]/g, "_");
@@ -96,28 +110,32 @@ export async function loadMemoryPanel() {
       }
       await refreshList(searchInput?.value || "");
     } catch (e) {
-      statusEl.textContent = t("memory.save_fail").replace("{error}", e.message);
+      if (statusEl) statusEl.textContent = t("memory.save_fail").replace("{error}", /** @type {Error} */ (e).message);
     }
   });
 
-  deleteBtn.addEventListener("click", async () => {
+  deleteBtn?.addEventListener("click", async () => {
     if (!_memoryCurrentFile) return;
     if (!confirm(t("memory.delete_confirm").replace("{name}", _memoryCurrentFile))) return;
     try {
       await window.aideagent.memoryDelete(_memoryCurrentFile);
       _memoryCurrentFile = null;
-      nameInput.value = ""; descInput.value = ""; bodyTextarea.value = "";
-      statusEl.textContent = t("memory.deleted");
-      setTimeout(() => { statusEl.textContent = ""; }, 2000);
+      if (nameInput) nameInput.value = "";
+      if (descInput) descInput.value = "";
+      if (bodyTextarea) bodyTextarea.value = "";
+      if (statusEl) {
+        statusEl.textContent = t("memory.deleted");
+        setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2000);
+      }
       await refreshList(searchInput?.value || "");
     } catch (e) {
-      statusEl.textContent = t("memory.delete_fail").replace("{error}", e.message);
+      if (statusEl) statusEl.textContent = t("memory.delete_fail").replace("{error}", /** @type {Error} */ (e).message);
     }
   });
 
-  newBtn.addEventListener("click", newMemory);
+  newBtn?.addEventListener("click", newMemory);
 
-  searchInput.addEventListener("input", () => {
+  searchInput?.addEventListener("input", () => {
     refreshList(searchInput.value);
   });
 

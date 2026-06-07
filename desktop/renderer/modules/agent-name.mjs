@@ -1,14 +1,15 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed agent/user name & avatar module.
+// @ts-check — 带 JSDoc 类型注解的 Agent / 用户名称 & 头像模块。
 const AGENT_NAME_KEY = "AideAgent_name";
 const USER_NAME_KEY = "AideAgent_user_name";
 const USER_AVATAR_KEY = "AideAgent_user_avatar";
 
+/** @returns {string} */
 export function loadAgentName() {
   return localStorage.getItem(AGENT_NAME_KEY) || "AideAgent";
 }
 
+/** @param {string} name */
 export function saveAgentName(name) {
   if (!name || !name.trim()) return;
   name = name.trim();
@@ -17,19 +18,21 @@ export function saveAgentName(name) {
   showToast(t("avatar.name_changed").replace("{name}", name), "info");
 }
 
+/** @param {string} name */
 export function applyAgentName(name) {
   const brand = document.getElementById("sidebar-brand");
   if (brand) brand.textContent = name;
   document.title = name;
-  const input = document.getElementById("prompt-input");
+  const input = /** @type {HTMLInputElement | null} */ (document.getElementById("prompt-input"));
   if (input) input.placeholder = t("chat.input_placeholder").replace("{name}", name);
   const welcomeTitle = document.querySelector(".welcome h1");
   if (welcomeTitle) welcomeTitle.textContent = name;
   const welcomeDesc = document.querySelector(".welcome .description");
   if (welcomeDesc) welcomeDesc.textContent = t("chat.welcome_desc").replace("{name}", name);
-  const welcomeAvatar = document.getElementById("welcome-avatar");
+  const welcomeAvatar = /** @type {HTMLImageElement | null} */ (document.getElementById("welcome-avatar"));
   if (welcomeAvatar) welcomeAvatar.alt = name;
-  document.querySelectorAll(".message.assistant .message-label").forEach(el => {
+  document.querySelectorAll(".message.assistant .message-label").forEach((node) => {
+    const el = /** @type {HTMLElement} */ (node);
     const img = el.querySelector(".msg-avatar");
     el.textContent = "";
     if (img) el.appendChild(img);
@@ -39,7 +42,7 @@ export function applyAgentName(name) {
 
 export function initAgentNameUI() {
   const saved = loadAgentName();
-  const input = document.getElementById("agent-name-input");
+  const input = /** @type {HTMLInputElement | null} */ (document.getElementById("agent-name-input"));
   if (input) input.value = saved;
   const saveBtn = document.getElementById("save-agent-name-btn");
   if (saveBtn && input) {
@@ -48,22 +51,26 @@ export function initAgentNameUI() {
   }
 }
 
+/** @returns {string} */
 export function loadUserName() {
   return localStorage.getItem(USER_NAME_KEY) || t("avatar.user_default");
 }
 
+/** @param {string} name */
 export function saveUserName(name) {
   if (!name || !name.trim()) return;
   name = name.trim();
   localStorage.setItem(USER_NAME_KEY, name);
   applyUserName(name);
-  const input = document.getElementById("user-name-input");
+  const input = /** @type {HTMLInputElement | null} */ (document.getElementById("user-name-input"));
   if (input) input.value = name;
   showToast(t("avatar.name_changed").replace("{name}", name), "info");
 }
 
+/** @param {string} name */
 export function applyUserName(name) {
-  document.querySelectorAll(".message.user .message-label").forEach(el => {
+  document.querySelectorAll(".message.user .message-label").forEach((node) => {
+    const el = /** @type {HTMLElement} */ (node);
     const img = el.querySelector(".user-msg-avatar");
     el.textContent = "";
     if (img) el.appendChild(img);
@@ -71,18 +78,20 @@ export function applyUserName(name) {
   });
 }
 
+/** @returns {string} */
 export function loadUserAvatarSrc() {
   return localStorage.getItem(USER_AVATAR_KEY) || "";
 }
 
 export function loadUserAvatar() {
   const src = loadUserAvatarSrc();
-  const preview = document.getElementById("user-settings-preview");
+  const preview = /** @type {HTMLImageElement | null} */ (document.getElementById("user-settings-preview"));
   if (preview) preview.src = src || "avatar.jpg";
-  document.querySelectorAll(".message.user .message-label").forEach(el => {
+  document.querySelectorAll(".message.user .message-label").forEach((node) => {
+    const el = /** @type {HTMLElement} */ (node);
     const existing = el.querySelector(".user-msg-avatar");
     if (src) {
-      if (existing) { existing.src = src; }
+      if (existing) { /** @type {HTMLImageElement} */ (existing).src = src; }
       else {
         const img = document.createElement("img");
         img.className = "avatar user-msg-avatar";
@@ -96,6 +105,7 @@ export function loadUserAvatar() {
   });
 }
 
+/** @param {string} src */
 function saveUserAvatar(src) {
   try {
     localStorage.setItem(USER_AVATAR_KEY, src);
@@ -113,16 +123,16 @@ function resetUserAvatar() {
 
 export function initUserAvatarUI() {
   const src = loadUserAvatarSrc();
-  const preview = document.getElementById("user-settings-preview");
+  const preview = /** @type {HTMLImageElement | null} */ (document.getElementById("user-settings-preview"));
   if (preview) preview.src = src || "avatar.jpg";
-  const input = document.getElementById("user-name-input");
+  const input = /** @type {HTMLInputElement | null} */ (document.getElementById("user-name-input"));
   if (input) input.value = loadUserName();
   const saveBtn = document.getElementById("save-user-name-btn");
   if (saveBtn && input) {
     saveBtn.addEventListener("click", () => saveUserName(input.value));
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") saveUserName(input.value); });
   }
-  const fileInput = document.getElementById("user-avatar-file-input");
+  const fileInput = /** @type {HTMLInputElement | null} */ (document.getElementById("user-avatar-file-input"));
   const changeBtn = document.getElementById("change-user-avatar-btn");
   const resetBtn = document.getElementById("reset-user-avatar-btn");
   if (fileInput) {
@@ -134,6 +144,7 @@ export function initUserAvatarUI() {
         fileInput.value = "";
         return;
       }
+      /** @type {string | null} */
       let realType;
       try {
         const header = await file.slice(0, 12).arrayBuffer();
@@ -163,10 +174,11 @@ export function initUserAvatarUI() {
       fileInput.value = "";
     });
   }
-  if (changeBtn) changeBtn.addEventListener("click", () => fileInput?.click());
+  if (changeBtn && fileInput) changeBtn.addEventListener("click", () => fileInput.click());
   if (resetBtn) resetBtn.addEventListener("click", resetUserAvatar);
 }
 
+/** @param {ArrayBuffer} header @returns {string | null} */
 function detectMimeFromHeader(header) {
   const bytes = new Uint8Array(header);
   if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return "image/jpeg";
@@ -176,6 +188,7 @@ function detectMimeFromHeader(header) {
   return null;
 }
 
+/** @param {string} msg @param {"info"|"error"} [type] */
 function showToast(msg, type) {
   const existing = document.querySelector(".avatar-toast");
   if (existing) existing.remove();

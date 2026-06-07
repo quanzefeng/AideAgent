@@ -1,6 +1,11 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed helper utilities (sanitize, renderMarkdown, etc.).
+// @ts-check — 带 JSDoc 类型注解的辅助函数（sanitize、renderMarkdown 等）。
+
+/**
+ * Sanitize an HTML string with DOMPurify using the allowed tags for chat messages.
+ * @param {string} html - raw HTML to sanitize
+ * @returns {string} sanitized HTML
+ */
 export function sanitize(html) {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
@@ -14,6 +19,12 @@ export function sanitize(html) {
   });
 }
 
+/**
+ * Render markdown to sanitized HTML, with $$...$$ and \[...\] converted to
+ * KaTeX placeholders for later rendering in renderLatexInElement.
+ * @param {string} text - raw markdown
+ * @returns {string} sanitized HTML
+ */
 export function renderMarkdown(text) {
   // 1. $$...$$ → display math
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, '<span class="kp" data-m="d">$1</span>');
@@ -42,10 +53,15 @@ export function renderMarkdown(text) {
   return html;
 }
 
+/**
+ * Walk the given container and render any `.kp` (KaTeX placeholder) spans.
+ * @param {HTMLElement} el - container element to scan
+ */
 export function renderLatexInElement(el) {
   if (typeof katex !== "undefined" && typeof katex.render === "function") {
-    el.querySelectorAll("span.kp").forEach((span) => {
-      const tex = span.textContent;
+    el.querySelectorAll("span.kp").forEach((node) => {
+      const span = /** @type {HTMLElement} */ (node);
+      const tex = span.textContent || "";
       const displayMode = span.dataset.m === "d";
       try {
         katex.render(tex, span, { displayMode, throwOnError: true });
@@ -58,31 +74,53 @@ export function renderLatexInElement(el) {
   }
 }
 
+/**
+ * Auto-resize a textarea to fit its content (capped at 200px).
+ * @param {HTMLTextAreaElement} textarea
+ */
 export function autoResize(textarea) {
   textarea.style.height = "auto";
   textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
 }
 
+/**
+ * Format a byte count as a short human-readable size.
+ * @param {number} bytes
+ * @returns {string}
+ */
 export function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
+/**
+ * Scroll the message list to the bottom.
+ */
 export function scrollToBottom() {
   const el = document.getElementById("message-list");
   if (el) el.scrollTop = el.scrollHeight;
 }
 
+/**
+ * Set the status bar text.
+ * @param {string} text
+ */
 export function setStatus(text) {
   const el = document.getElementById("status-text");
   if (el) el.textContent = text;
 }
 
+/**
+ * @returns {boolean} whether the reasoning/thinking section is enabled (default true)
+ */
 export function loadReasoningEnabled() {
   return localStorage.getItem("AideAgent_reasoning_enabled") !== "false";
 }
 
+/**
+ * @param {boolean} enabled
+ */
 export function saveReasoningEnabled(enabled) {
-  localStorage.setItem("AideAgent_reasoning_enabled", enabled);
+  localStorage.setItem("AideAgent_reasoning_enabled", String(enabled));
 }

@@ -1,11 +1,13 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed workspace bar / first-launch modal module.
+// @ts-check — 带 JSDoc 类型注解的工作区栏 / 首次启动模态框模块。
 // Workspace UI: sidebar path display + click-to-pick + first-launch modal.
 // On first launch (or when the persisted path was deleted/moved), the
 // first-pick modal blocks the user until they either pick a project
 // folder or explicitly skip (use the launch dir as a default).
 
+/**
+ * @param {string} path
+ */
 function applyPath(path) {
   const el = document.getElementById("workspace-path");
   if (el) el.textContent = path || t("misc.not_set");
@@ -18,6 +20,9 @@ async function refreshWorkspace() {
   } catch {}
 }
 
+/**
+ * @param {string} currentDefault
+ */
 function showFirstPickModal(currentDefault) {
   const modal = document.getElementById("workspace-first-pick-modal");
   const currentEl = document.getElementById("workspace-first-pick-current");

@@ -1,34 +1,37 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — JSDoc-typed knowledge base panel loader.
+// @ts-check — 带 JSDoc 类型注解的知识库面板加载器。
 let _kbPanelLoaded = false;
 
+/** @param {unknown} s @returns {string} */
 function escapeHtml(s) {
   if (!s || typeof s !== "string") return "";
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 export async function loadKnowledgeBasePanel() {
   if (_kbPanelLoaded) return;
   _kbPanelLoaded = true;
 
-  const vaultPath = document.getElementById("kb-vault-path");
-  const embeddingSelect = document.getElementById("kb-embedding-provider");
+  const vaultPath = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-vault-path"));
+  const embeddingSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("kb-embedding-provider"));
   const statusEl = document.getElementById("kb-status");
-  const scanBtn = document.getElementById("kb-scan-btn");
+  const scanBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("kb-scan-btn"));
   const testSearchBtn = document.getElementById("kb-test-search-btn");
   const testArea = document.getElementById("kb-test-area");
-  const testQuery = document.getElementById("kb-test-query");
+  const testQuery = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-test-query"));
   const testResults = document.getElementById("kb-test-results");
-  const maxNotes = document.getElementById("kb-max-notes");
-  const maxChars = document.getElementById("kb-max-chars");
-  const maxBodyChars = document.getElementById("kb-max-body-chars");
-  const maxBodyCharsSaveBtn = document.getElementById("kb-max-body-chars-save-btn");
+  const maxNotes = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-max-notes"));
+  const maxChars = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-max-chars"));
+  const maxBodyChars = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-max-body-chars"));
+  const maxBodyCharsSaveBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("kb-max-body-chars-save-btn"));
   const autoDetectedSpan = document.getElementById("kb-auto-detected-chars");
-  const pickBtn = document.getElementById("kb-pick-vault-btn");
+  const pickBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("kb-pick-vault-btn"));
   const ollamaModelRow = document.getElementById("kb-ollama-model-row");
-  const ollamaModelSelect = document.getElementById("kb-ollama-model");
+  const ollamaModelSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("kb-ollama-model"));
 
+  /**
+   * @param {string} [selectedModel]
+   */
   async function fetchOllamaModels(selectedModel) {
     if (!ollamaModelSelect) return;
     ollamaModelSelect.replaceChildren();
@@ -65,19 +68,19 @@ export async function loadKnowledgeBasePanel() {
     } else if (ollamaModelRow) {
       ollamaModelRow.style.display = "none";
     }
-    if (maxNotes) maxNotes.value = cfg.maxNotes || 5;
-    if (maxChars) maxChars.value = cfg.maxChars || 500;
-    if (maxBodyChars) maxBodyChars.value = cfg.maxBodyChars || 0;
+    if (maxNotes) maxNotes.value = String(cfg.maxNotes || 5);
+    if (maxChars) maxChars.value = String(cfg.maxChars || 500);
+    if (maxBodyChars) maxBodyChars.value = String(cfg.maxBodyChars || 0);
     const status = await window.aideagent.kbStatus();
     if (autoDetectedSpan) {
       // Show auto-detected value as a hint next to the input
       if (status.autoDetectedMaxBodyChars > 0) {
-        autoDetectedSpan.textContent = t("kb.auto_chars").replace("{n}", status.autoDetectedMaxBodyChars);
+        autoDetectedSpan.textContent = t("kb.auto_chars").replace("{n}", String(status.autoDetectedMaxBodyChars));
       }
     }
     if (statusEl) {
       statusEl.textContent = status.noteCount > 0
-        ? t("kb.indexed").replace("{count}", status.noteCount).replace("{embedded}", status.embeddedCount)
+        ? t("kb.indexed").replace("{count}", String(status.noteCount)).replace("{embedded}", String(status.embeddedCount))
         : t("kb.not_indexed");
     }
   } catch {}
@@ -86,15 +89,15 @@ export async function loadKnowledgeBasePanel() {
     try {
       const result = await window.aideagent.kbPickVault();
       if (result?.canceled) return;
-      if (result?.ok && result.vault) {
+      if (result?.ok && result.vault && vaultPath) {
         vaultPath.value = result.vault;
         scanBtn?.click();
-      } else if (result?.error) {
+      } else if (result?.error && statusEl) {
         statusEl.textContent = t("kb.error").replace("{error}", result.error);
       }
     } catch (e) {
       console.error("[kb] pick vault error:", e);
-      statusEl.textContent = t("kb.pick_fail").replace("{error}", e.message);
+      if (statusEl) statusEl.textContent = t("kb.pick_fail").replace("{error}", /** @type {Error} */ (e).message);
     }
   });
 
@@ -123,25 +126,26 @@ export async function loadKnowledgeBasePanel() {
   });
 
   scanBtn?.addEventListener("click", async () => {
-    if (!vaultPath.value) { statusEl.textContent = t("kb.select_vault"); return; }
+    if (!vaultPath?.value) { if (statusEl) statusEl.textContent = t("kb.select_vault"); return; }
     scanBtn.disabled = true;
     scanBtn.textContent = t("kb.indexing");
-    statusEl.textContent = t("kb.scanning");
+    if (statusEl) statusEl.textContent = t("kb.scanning");
     try {
       const result = await window.aideagent.kbScan();
-      if (result.error) {
+      if (result.error && statusEl) {
         statusEl.textContent = t("kb.error").replace("{error}", result.error);
-      } else {
-        statusEl.textContent = t("kb.index_success").replace("{count}", result.indexed).replace("{embedded}", result.embedded);
+      } else if (statusEl) {
+        statusEl.textContent = t("kb.index_success").replace("{count}", String(result.indexed)).replace("{embedded}", String(result.embedded));
       }
     } catch (e) {
-      statusEl.textContent = t("kb.error").replace("{error}", e.message);
+      if (statusEl) statusEl.textContent = t("kb.error").replace("{error}", /** @type {Error} */ (e).message);
     }
     scanBtn.disabled = false;
     scanBtn.textContent = t("kb.scan_btn");
   });
 
   testSearchBtn?.addEventListener("click", () => {
+    if (!testArea) return;
     testArea.style.display = testArea.style.display === "none" ? "block" : "none";
     if (testArea.style.display === "block") testQuery?.focus();
   });
@@ -149,7 +153,7 @@ export async function loadKnowledgeBasePanel() {
   testQuery?.addEventListener("keydown", async (e) => {
     if (e.key === "Enter") {
       const query = testQuery.value.trim();
-      if (!query) return;
+      if (!query || !testResults) return;
       testResults.textContent = ""; // clear
       const statusDiv = document.createElement("div");
       statusDiv.style.cssText = "color:var(--text-muted);font-size:12px;";
@@ -190,7 +194,7 @@ export async function loadKnowledgeBasePanel() {
         testResults.replaceChildren();
         const errDiv = document.createElement("div");
         errDiv.style.cssText = "color:var(--danger);font-size:12px;";
-        errDiv.textContent = e.message;
+        errDiv.textContent = /** @type {Error} */ (e).message;
         testResults.appendChild(errDiv);
       }
     }
@@ -206,7 +210,7 @@ export function initKnowledgeBase() {
       const result = await window.aideagent.kbPickVault();
       if (result?.canceled) return;
       if (result?.ok && result.vault) {
-        const vp = document.getElementById("kb-vault-path");
+        const vp = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-vault-path"));
         if (vp) vp.value = result.vault;
         document.getElementById("kb-scan-btn")?.click();
       }
@@ -218,7 +222,7 @@ export function initKnowledgeBase() {
   document.getElementById("kb-clear-vault-btn")?.addEventListener("click", async () => {
     try {
       await window.aideagent.kbSetVault("");
-      const vp = document.getElementById("kb-vault-path");
+      const vp = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-vault-path"));
       if (vp) vp.value = "";
       const st = document.getElementById("kb-status");
       if (st) st.textContent = t("kb.unconfigured");
@@ -227,20 +231,20 @@ export function initKnowledgeBase() {
     }
   });
 
-  const _kbToggle = document.getElementById("kb-toggle");
+  const _kbToggle = /** @type {HTMLInputElement | null} */ (document.getElementById("kb-toggle"));
   if (_kbToggle) {
     _kbToggle.checked = localStorage.getItem("AideAgent_kb_enabled") === "true";
     _kbToggle.addEventListener("change", () => {
-      localStorage.setItem("AideAgent_kb_enabled", _kbToggle.checked);
+      localStorage.setItem("AideAgent_kb_enabled", String(_kbToggle.checked));
     });
   }
 
-  const _webSearchToggle = document.getElementById("web-search-toggle");
+  const _webSearchToggle = /** @type {HTMLInputElement | null} */ (document.getElementById("web-search-toggle"));
   if (_webSearchToggle) {
     const saved = localStorage.getItem("AideAgent_web_search_enabled");
     _webSearchToggle.checked = saved === null ? true : saved === "true";
     _webSearchToggle.addEventListener("change", () => {
-      localStorage.setItem("AideAgent_web_search_enabled", _webSearchToggle.checked);
+      localStorage.setItem("AideAgent_web_search_enabled", String(_webSearchToggle.checked));
     });
   }
 }

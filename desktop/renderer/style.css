@@ -237,6 +237,14 @@ html, body {
   pointer-events: all;
 }
 
+/* Confirm modal must sit ABOVE the settings modal so its OK/Cancel buttons
+   remain clickable when triggered from inside a settings panel (e.g. deleting
+   a prompt profile). Otherwise the settings-modal's form inputs intercept
+   the click. */
+#confirm-modal {
+  z-index: 150;
+}
+
 .modal-content {
   width: 420px;
   max-width: 90vw;

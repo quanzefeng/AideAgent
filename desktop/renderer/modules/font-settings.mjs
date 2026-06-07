@@ -1,6 +1,5 @@
-// @ts-nocheck — typecheck deferred. These modules will be revisited when
-// they get their own focused refactor (Step 3 of the app.js split plan).
-// @ts-nocheck — 类型检查暂缓。这些模块会在 Step 3（拆分 app.js 计划）中获得各自的 JSDoc 改造。
+// @ts-check — minimal JSDoc typing for this small self-init module.
+// @ts-check — 此自初始化模块的最小 JSDoc 类型注解。
 const FONT_KEY = "AideAgent_font";
 
 export function applyChatFont(fontValue) {
@@ -12,7 +11,8 @@ export function loadChatFont() {
 }
 
 // Self-initializing: set up font select on load
-const fontSelect = document.getElementById("font-select");
+/** @type {HTMLSelectElement | null} */
+const fontSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("font-select"));
 if (fontSelect) {
   fontSelect.value = loadChatFont();
   fontSelect.addEventListener("change", () => {
