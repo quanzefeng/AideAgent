@@ -53,10 +53,14 @@ export function createPromptStore({ t, onConfirm }) {
   }
 
   function getCurrentProfile() {
-    if (!promptStore || !promptStore.profiles) return null;
+    if (!promptStore || !promptStore.profiles || !currentProfileId) return null;
     return promptStore.profiles[currentProfileId] || null;
   }
 
+  /**
+   * @param {PromptProfile} p
+   * @param {string} id
+   */
   function renderProfileName(p, id) {
     // Default profile always uses t("prompt.default") dynamically
     if (id === "default") return sanitize(t("prompt.default"));
@@ -67,12 +71,20 @@ export function createPromptStore({ t, onConfirm }) {
     return sanitize(p.name);
   }
 
+  /**
+   * @param {string} str
+   * @returns {string}
+   */
   function htmlEncode(str) {
     const div = document.createElement("div");
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
   }
 
+  /**
+   * @param {string} msg
+   * @param {string} [type]
+   */
   function showPromptStatus(msg, type) {
     const el = document.getElementById("prompt-settings-status");
     if (!el) return;
@@ -108,9 +120,11 @@ export function createPromptStore({ t, onConfirm }) {
   function renderProfileSelector() {
     const container = document.getElementById("prompt-profile-selector");
     if (!container || !promptStore) return;
-    const ids = Object.keys(promptStore.profiles);
+    /** @type {PromptStore} */
+    const store = promptStore;
+    const ids = Object.keys(store.profiles);
     container.innerHTML = ids.map(id => {
-      const p = promptStore.profiles[id];
+      const p = store.profiles[id];
       const active = id === currentProfileId ? " active" : "";
       return `<button class="prompt-profile-chip${active}" data-profile-id="${id}">
         ${renderProfileName(p, id)}
@@ -218,7 +232,7 @@ export function createPromptStore({ t, onConfirm }) {
     const deleteBtn = document.getElementById("prompt-delete-btn");
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async () => {
-        if (currentProfileId === "default" || !promptStore) return;
+        if (!currentProfileId || currentProfileId === "default" || !promptStore) return;
         const p = getCurrentProfile();
         if (!p) return;
         if (!await onConfirm(t("prompt.delete_confirm", {name: p.name}))) return;

@@ -83,7 +83,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
           btn.textContent = t("mcp.restarting");
           const result = await window.aideagent.mcpRestart(name);
           if (!result.success) {
-            showStatus(t("mcp.restart_fail", {name, error: result.error}), "error");
+            showStatus(t("mcp.restart_fail", {name, error: result.error || ""}), "error");
           }
           await loadServers();
           btn.disabled = false;
@@ -101,7 +101,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
           btn.disabled = true;
           const result = await window.aideagent.mcpRemove(name);
           if (!result.success) {
-            showStatus(t("mcp.remove_fail", {name, error: result.error}), "error");
+            showStatus(t("mcp.remove_fail", {name, error: result.error || ""}), "error");
           }
           await loadServers();
         });
@@ -160,7 +160,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
             await loadServers(); // Refresh server list too (shows tools)
           } else {
             input.checked = !enabled; // Revert
-            showStatus(t("mcp.start_fail", { error: result.error }), "error");
+            showStatus(t("mcp.start_fail", { error: result.error || "" }), "error");
             await loadBuiltins();
           }
         });
@@ -180,6 +180,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
         return;
       }
       // Group by source
+      /** @type {Record<string, Array<any>>} */
       const bySource = {};
       for (const s of servers) {
         if (!bySource[s.source]) bySource[s.source] = [];
@@ -238,7 +239,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
             btn.textContent = t("mcp.import_done");
             await loadServers();
           } else {
-            showStatus(t("mcp.import_fail", {name, error: result.error}), "error");
+            showStatus(t("mcp.import_fail", {name, error: result.error || ""}), "error");
             btn.textContent = t("mcp.retry");
             btn.disabled = false;
           }
@@ -256,6 +257,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
           const apiKey = keyInput?.value?.trim() || "";
           btn.disabled = true;
           btn.textContent = t("mcp.connecting");
+          /** @type {Record<string, string>} */
           const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
           const result = await window.aideagent.mcpAddRemote(name, url, headers);
           if (result.success) {
@@ -263,14 +265,16 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
             btn.textContent = t("mcp.connect_done");
             await loadServers();
           } else {
-            showStatus(t("mcp.connect_fail", {name, error: result.error}), "error");
+            showStatus(t("mcp.connect_fail", {name, error: result.error || ""}), "error");
             btn.textContent = t("mcp.connect");
             btn.disabled = false;
           }
         });
       });
     } catch (e) {
-      resultsEl.innerHTML = `<span style="color:var(--danger);font-size:12px;">${t("mcp.detect_fail", {error: sanitize(e.message)})}</span>`;
+      /** @type {any} */
+      const err = e;
+      resultsEl.innerHTML = `<span style="color:var(--danger);font-size:12px;">${t("mcp.detect_fail", {error: sanitize(err.message)})}</span>`;
     }
   }
 
@@ -291,7 +295,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
       if (result.success) {
         showStatus(t("mcp.config_saved"), "success");
       } else {
-        showStatus(t("mcp.save_fail", {error: result.error}), "error");
+        showStatus(t("mcp.save_fail", {error: result.error || ""}), "error");
       }
       btn.disabled = false;
       btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + t("mcp.save_config");
@@ -343,6 +347,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
         }
       }
 
+      /** @type {{ command: string; args: string[]; env?: Record<string, string> }} */
       const config = { command, args };
       if (Object.keys(env).length > 0) config.env = env;
 
@@ -362,7 +367,7 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
         formStatus?.classList.add("hidden");
         await loadServers();
       } else if (formStatus) {
-        formStatus.textContent = t("mcp.start_fail", {error: result.error});
+        formStatus.textContent = t("mcp.start_fail", {error: result.error || ""});
         formStatus.classList.remove("hidden");
       }
 
@@ -401,10 +406,12 @@ export function createMcpPanel({ t, getLang, sanitize, onConfirm }) {
           // Refresh detect results in case they're showing
           await detectLocal();
         } else {
-          showStatus(t("mcp.searxng_fail", {error: result.error}), "error");
+          showStatus(t("mcp.searxng_fail", {error: result.error || ""}), "error");
         }
       } catch (e) {
-        showStatus(t("mcp.searxng_fail", {error: e.message}), "error");
+        /** @type {any} */
+        const err = e;
+        showStatus(t("mcp.searxng_fail", {error: err.message}), "error");
       }
       btn.disabled = false;
       btn.textContent = t("mcp.add");

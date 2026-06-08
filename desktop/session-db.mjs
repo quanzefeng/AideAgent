@@ -18,6 +18,7 @@ const DATA_DIR = join(HOME, ".aideagent");
 const DB_PATH = join(DATA_DIR, "sessions.db");
 
 /** Insert spaces between CJK and ASCII for FTS5 tokenization */
+/** @param {string} text @returns {string} */
 function fts5Normalize(text) {
   if (!text) return text;
   return text
@@ -26,6 +27,7 @@ function fts5Normalize(text) {
 }
 
 class SessionDB {
+  /** @type {import("node:sqlite").DatabaseSync | null} */
   #db = null;
   #ready = false;
 
@@ -36,10 +38,10 @@ class SessionDB {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
     this.#db = new DatabaseSync(DB_PATH);
-    this.#db.exec("PRAGMA foreign_keys = ON");
-    this.#db.exec("PRAGMA journal_mode = WAL");
+    this.#ensureOpen().exec("PRAGMA foreign_keys = ON");
+    this.#ensureOpen().exec("PRAGMA journal_mode = WAL");
 
-    this.#db.exec(`
+    this.#ensureOpen().exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT DEFAULT '',
@@ -49,7 +51,7 @@ class SessionDB {
       )
     `);
 
-    this.#db.exec(`
+    this.#ensureOpen().exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
@@ -64,10 +66,10 @@ class SessionDB {
 
     // Migration: add reasoning_content column if missing
     try {
-      this.#db.exec("ALTER TABLE messages ADD COLUMN reasoning_content TEXT");
+      this.#ensureOpen().exec("ALTER TABLE messages ADD COLUMN reasoning_content TEXT");
     } catch { /* ignored */ } // column already exists
 
-    this.#db.exec(`
+    this.#ensureOpen().exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
         session_id UNINDEXED,
         content,
@@ -81,18 +83,19 @@ class SessionDB {
 
   close() {
     if (this.#db) {
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
-      this.#db.close(); this.#db = null; this.#ready = false;
+      try { this.#ensureOpen().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
+      this.#ensureOpen().close(); this.#db = null; this.#ready = false;
     }
   }
 
   forceCheckpoint() {
     if (this.#db) {
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
+      try { this.#ensureOpen().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
     }
   }
 
-  #ensureOpen() { if (!this.#db) this.open(); }
+  /** @returns {import("node:sqlite").DatabaseSync} */
+  #ensureOpen() { if (!this.#db) this.open(); return /** @type {import("node:sqlite").DatabaseSync} */ (this.#db); }
 
   // ── Session CRUD ───────────────────────────────────────────
 
@@ -100,37 +103,38 @@ class SessionDB {
     this.#ensureOpen();
     const id = "ses_" + randomUUID().replace(/-/g, "").slice(0, 13);
     const now = new Date().toISOString();
-    this.#db.prepare(
+    this.#ensureOpen().prepare(
       "INSERT INTO sessions(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)"
     ).run(id, title || `会话 (${now.slice(0, 10)})`, now, now);
     return { id, title, createdAt: now, updatedAt: now, messageCount: 0 };
   }
 
+  /** @param {string} id @param {Array<{role:string,content:string,reasoning_content?:string,timestamp?:string}>} history @param {string} [title] */
   saveSession(id, history, title) {
     this.#ensureOpen();
     const now = new Date().toISOString();
 
     // Upsert session
-    const existing = this.#db.prepare("SELECT id FROM sessions WHERE id = ?").get(id);
+    const existing = this.#ensureOpen().prepare("SELECT id FROM sessions WHERE id = ?").get(id);
     if (existing) {
-      this.#db.prepare(
+      this.#ensureOpen().prepare(
         "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?"
       ).run(title || existing.title || "会话", now, id);
     } else {
-      this.#db.prepare(
+      this.#ensureOpen().prepare(
         "INSERT INTO sessions(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)"
       ).run(id, title || "会话", now, now);
     }
 
     // Clear old messages + FTS
-    this.#db.prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
-    this.#db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+    this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
+    this.#ensureOpen().prepare("DELETE FROM messages WHERE session_id = ?").run(id);
 
     // Re-insert all history messages
-    const insertMsg = this.#db.prepare(
+    const insertMsg = this.#ensureOpen().prepare(
       "INSERT INTO messages(session_id, role, content, reasoning_content, timestamp) VALUES (?, ?, ?, ?, ?)"
     );
-    const insertFts = this.#db.prepare(
+    const insertFts = this.#ensureOpen().prepare(
       "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
     );
     for (const m of history) {
@@ -140,21 +144,22 @@ class SessionDB {
     }
 
     // Update count
-    this.#db.prepare(
+    this.#ensureOpen().prepare(
       "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?) WHERE id = ?"
     ).run(id, id);
 
     return { id, title, updatedAt: now };
   }
 
+  /** @param {string} id */
   loadSession(id) {
     this.#ensureOpen();
-    const s = this.#db.prepare(
+    const s = this.#ensureOpen().prepare(
       "SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?"
     ).get(id);
     if (!s) return null;
 
-    const msgs = this.#db.prepare(
+    const msgs = this.#ensureOpen().prepare(
       "SELECT id, role, content, reasoning_content, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
     ).all(id);
 
@@ -173,9 +178,10 @@ class SessionDB {
     };
   }
 
+  /** @param {number} [limit] */
   listSessions(limit = 50) {
     this.#ensureOpen();
-    return this.#db.prepare(
+    return this.#ensureOpen().prepare(
       "SELECT id, title, created_at, updated_at, message_count FROM sessions ORDER BY updated_at DESC LIMIT ?"
     ).all(limit).map(s => ({
       id: s.id,
@@ -186,77 +192,81 @@ class SessionDB {
     }));
   }
 
+  /** @param {string} id */
   deleteSession(id) {
     this.#ensureOpen();
-    this.#db.prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
-    this.#db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
-    this.#db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+    this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
+    this.#ensureOpen().prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+    this.#ensureOpen().prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return { deleted: true };
   }
 
   deleteAllSessions() {
     this.#ensureOpen();
-    const count = this.#db.prepare("SELECT COUNT(*) as c FROM sessions").get().c;
-    this.#db.exec("BEGIN");
+    const count = this.#ensureOpen().prepare("SELECT COUNT(*) as c FROM sessions").get()?.c ?? 0;
+    this.#ensureOpen().exec("BEGIN");
     try {
-      this.#db.prepare("DELETE FROM messages_fts").run();
-      this.#db.prepare("DELETE FROM messages").run();
-      this.#db.prepare("DELETE FROM sessions").run();
-      this.#db.exec("COMMIT");
+      this.#ensureOpen().prepare("DELETE FROM messages_fts").run();
+      this.#ensureOpen().prepare("DELETE FROM messages").run();
+      this.#ensureOpen().prepare("DELETE FROM sessions").run();
+      this.#ensureOpen().exec("COMMIT");
       // Force WAL checkpoint to persist changes to main DB file
-      try { this.#db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
+      try { this.#ensureOpen().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* ignored */ }
     } catch (e) {
-      this.#db.exec("ROLLBACK");
+      this.#ensureOpen().exec("ROLLBACK");
       throw e;
     }
     return { deleted: count };
   }
 
+  /** @param {string} messageId */
   deleteMessage(messageId) {
     this.#ensureOpen();
-    const msg = this.#db.prepare(
+    const msg = this.#ensureOpen().prepare(
       "SELECT session_id, content FROM messages WHERE id = ?"
     ).get(messageId);
     if (!msg) return { error: "not found" };
 
     // Remove from FTS
     if (msg.content) {
-      this.#db.prepare(
+      this.#ensureOpen().prepare(
         "DELETE FROM messages_fts WHERE session_id = ? AND content = ?"
-      ).run(msg.session_id, fts5Normalize(msg.content));
+      ).run(msg.session_id, fts5Normalize(String(msg.content)));
     }
     // Remove from messages
-    this.#db.prepare("DELETE FROM messages WHERE id = ?").run(messageId);
+    this.#ensureOpen().prepare("DELETE FROM messages WHERE id = ?").run(messageId);
     // Update count
-    this.#db.prepare(
+    this.#ensureOpen().prepare(
       "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?) WHERE id = ?"
     ).run(msg.session_id, msg.session_id);
     return { deleted: true, sessionId: msg.session_id };
   }
 
+  /** @param {string} id @param {string} title */
   updateTitle(id, title) {
     this.#ensureOpen();
     const now = new Date().toISOString();
-    this.#db.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
+    this.#ensureOpen().prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
     return { id, title, updatedAt: now };
   }
 
+  /** @param {string} messageId @param {string} newContent */
   editMessage(messageId, newContent) {
     this.#ensureOpen();
-    const msg = this.#db.prepare("SELECT session_id, content FROM messages WHERE id = ?").get(messageId);
+    const msg = this.#ensureOpen().prepare("SELECT session_id, content FROM messages WHERE id = ?").get(messageId);
     if (!msg) return { error: "not found" };
 
     // Update messages table
-    this.#db.prepare("UPDATE messages SET content = ? WHERE id = ?").run(newContent, messageId);
+    this.#ensureOpen().prepare("UPDATE messages SET content = ? WHERE id = ?").run(newContent, messageId);
 
     // Update FTS: delete old, insert new
     if (msg.content) {
-      this.#db.prepare(
+      this.#ensureOpen().prepare(
         "DELETE FROM messages_fts WHERE session_id = ? AND content = ?"
-      ).run(msg.session_id, fts5Normalize(msg.content));
+      ).run(msg.session_id, fts5Normalize(String(msg.content)));
     }
     if (newContent) {
-      this.#db.prepare(
+      this.#ensureOpen().prepare(
         "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
       ).run(msg.session_id, fts5Normalize(newContent));
     }
@@ -264,14 +274,15 @@ class SessionDB {
     return { updated: true, sessionId: msg.session_id, messageId };
   }
 
+  /** @param {string} id */
   exportSession(id) {
     this.#ensureOpen();
-    const s = this.#db.prepare(
+    const s = this.#ensureOpen().prepare(
       "SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?"
     ).get(id);
     if (!s) return null;
 
-    const msgs = this.#db.prepare(
+    const msgs = this.#ensureOpen().prepare(
       "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
     ).all(id);
 
@@ -286,6 +297,7 @@ class SessionDB {
 
   // ── FTS5 Search ──────────────────────────────────────────
 
+  /** @param {string} query @param {number} [limit] @returns {Array<{sessionId:string,sessionTitle:string,snippet:string,rank:number}>} */
   searchMessages(query, limit = 30) {
     this.#ensureOpen();
     if (!query?.trim()) return [];
@@ -302,26 +314,26 @@ class SessionDB {
     `;
 
     try {
-      const rows = this.#db.prepare(sql).all(query, limit);
+      const rows = this.#ensureOpen().prepare(sql).all(query, limit);
       // Deduplicate by session_id, keep lowest rank (best match) per session
       const seen = new Map();
       for (const r of rows) {
-        if (!seen.has(r.session_id) || r.rank < seen.get(r.session_id).rank) {
+        if (!seen.has(r.session_id) || (r.rank ?? 0) < (seen.get(r.session_id).rank ?? 0)) {
           seen.set(r.session_id, r);
         }
       }
       const results = Array.from(seen.values()).sort((a, b) => a.rank - b.rank).map(r => {
         let sessionTitle = "";
         try {
-          const s = this.#db.prepare("SELECT title FROM sessions WHERE id = ?").get(r.session_id);
-          sessionTitle = s?.title || "";
+          const s = this.#ensureOpen().prepare("SELECT title FROM sessions WHERE id = ?").get(r.session_id);
+          sessionTitle = String(s?.title || "");
         } catch { /* ignored */ }
         return { sessionId: r.session_id, sessionTitle, snippet: r.snippet, rank: r.rank };
       });
 
       // CJK LIKE fallback
       if (results.length === 0 && /[\u4e00-\u9fff]/.test(query)) {
-        const likeRows = this.#db.prepare(
+        const likeRows = this.#ensureOpen().prepare(
           "SELECT m.session_id, m.content, s.title AS st FROM messages m JOIN sessions s ON s.id = m.session_id WHERE m.content LIKE ? ORDER BY m.timestamp DESC LIMIT ?"
         ).all("%" + query + "%", limit);
         const seen = new Map();
@@ -339,7 +351,7 @@ class SessionDB {
       }
 
       return results;
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       if (err.message?.includes("syntax error")) {
         const safe = query.replace(/[^\w\u4e00-\u9fff\s\-"]+/g, " ").trim();
         if (safe && safe !== query) return this.searchMessages(safe, limit);
@@ -348,21 +360,22 @@ class SessionDB {
     }
   }
 
+  /** @param {number} [limit] @param {string} [excludeId] */
   getLastSession(limit = 6, excludeId = "") {
     this.#ensureOpen();
     let last;
     if (excludeId) {
-      last = this.#db.prepare(
+      last = this.#ensureOpen().prepare(
         "SELECT id, title FROM sessions WHERE id != ? ORDER BY updated_at DESC LIMIT 1"
       ).get(excludeId);
     } else {
-      last = this.#db.prepare(
+      last = this.#ensureOpen().prepare(
         "SELECT id, title FROM sessions ORDER BY updated_at DESC LIMIT 1"
       ).get();
     }
     if (!last) return null;
 
-    const msgs = this.#db.prepare(
+    const msgs = this.#ensureOpen().prepare(
       "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ?"
     ).all(last.id, limit);
 
@@ -373,15 +386,16 @@ class SessionDB {
     };
   }
 
+  /** @param {number} [count] @param {number} [msgsPerSession] @param {string} [excludeId] */
   getRecentSessions(count = 10, msgsPerSession = 4, excludeId = "") {
     this.#ensureOpen();
     const sql = excludeId
       ? "SELECT id, title FROM sessions WHERE id != ? ORDER BY updated_at DESC LIMIT ?"
       : "SELECT id, title FROM sessions ORDER BY updated_at DESC LIMIT ?";
     const params = excludeId ? [excludeId, count] : [count];
-    const sessions = this.#db.prepare(sql).all(...params);
+    const sessions = this.#ensureOpen().prepare(sql).all(...params);
     return sessions.map(s => {
-      const msgs = this.#db.prepare(
+      const msgs = this.#ensureOpen().prepare(
         "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ?"
       ).all(s.id, msgsPerSession);
       return {
@@ -398,14 +412,15 @@ class SessionDB {
       ready: this.#ready,
       dbPath: DB_PATH,
       dbSize: existsSync(DB_PATH) ? statSync(DB_PATH).size : 0,
-      sessionCount: this.#db.prepare("SELECT COUNT(*) AS c FROM sessions").get()?.c || 0,
-      messageCount: this.#db.prepare("SELECT COUNT(*) AS c FROM messages").get()?.c || 0,
-      ftsDocCount: this.#db.prepare("SELECT COUNT(*) AS c FROM messages_fts").get()?.c || 0,
+      sessionCount: this.#ensureOpen().prepare("SELECT COUNT(*) AS c FROM sessions").get()?.c || 0,
+      messageCount: this.#ensureOpen().prepare("SELECT COUNT(*) AS c FROM messages").get()?.c || 0,
+      ftsDocCount: this.#ensureOpen().prepare("SELECT COUNT(*) AS c FROM messages_fts").get()?.c || 0,
     };
   }
 
   // ── Migration from old JSON files ─────────────────────────
 
+  /** @param {string} jsonDir */
   migrateFromJson(jsonDir) {
     this.#ensureOpen();
     if (!existsSync(jsonDir)) return 0;
@@ -423,14 +438,14 @@ class SessionDB {
         if (!data.id || !data.history?.length) continue;
 
         // Don't overwrite if already migrated
-        const exists = this.#db.prepare("SELECT id FROM sessions WHERE id = ?").get(data.id);
+        const exists = this.#ensureOpen().prepare("SELECT id FROM sessions WHERE id = ?").get(data.id);
         if (exists) { try { unlinkSync(join(jsonDir, f)); } catch { /* ignored */ } continue; }
 
         this.saveSession(data.id, data.history, data.title);
         count++;
         // Delete old JSON file after successful migration
         try { unlinkSync(join(jsonDir, f)); } catch { /* ignored */ }
-      } catch (err) {
+      } catch (/** @type {any} */ err) {
         console.error(`[session-db] migration error ${f}:`, err.message);
       }
     }

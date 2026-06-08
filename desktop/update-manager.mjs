@@ -8,7 +8,7 @@ import { sendToRenderer } from "./core/state.mjs";
 let _mainWindow = null;
 let _checking = false;
 
-export function initUpdateManager(win) {
+export function initUpdateManager(/** @type {any} */ win) {
   _mainWindow = win;
 
   // Configure autoUpdater
@@ -68,7 +68,7 @@ export function initUpdateManager(win) {
     _checking = true;
     try {
       await autoUpdater.checkForUpdates();
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       sendToRenderer("update:status", {
         status: "error",
         message: err.message || String(err),

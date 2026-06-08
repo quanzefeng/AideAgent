@@ -24,6 +24,7 @@ let _embeddingDim = 384; // Auto-detected at runtime from the actual embedding m
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
+/** @param {string} relPath @returns {boolean} */
 function isSafeVaultPath(relPath) {
   if (!relPath || typeof relPath !== "string") return false;
   if (relPath.includes("..") || relPath.startsWith("/") || relPath.startsWith("\\")) return false;
@@ -34,6 +35,7 @@ function isSafeVaultPath(relPath) {
 // ── Configuration ─────────────────────────────────────────
 
 let _vaultPath = "";
+/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number}} */
 let _config = { embeddingProvider: "local", ollamaEmbedModel: "nomic-embed-text", maxNotes: 20, maxChars: 20000, maxBodyChars: 0 };
 // maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
 
@@ -60,6 +62,7 @@ loadConfig();
 export function getVault() { return _vaultPath; }
 export function getConfig() { return { ..._config, vaultPath: _vaultPath }; }
 
+/** @param {string} path @returns {{ok:boolean, vault:string}|{error:string}} */
 export function setVault(path) {
   if (path !== "" && (typeof path !== "string" || !existsSync(path))) return { error: "path does not exist" };
   _vaultPath = path || "";
@@ -67,6 +70,7 @@ export function setVault(path) {
   return { ok: true, vault: _vaultPath };
 }
 
+/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number}} cfg @returns {{ok:boolean, config:object}} */
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
   if (cfg.ollamaEmbedModel && cfg.ollamaEmbedModel !== _config.ollamaEmbedModel) {
@@ -75,7 +79,7 @@ export function setConfig(cfg) {
   }
   if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
   if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(50000, cfg.maxChars));
-  if (cfg.maxBodyChars !== undefined) _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(cfg.maxBodyChars) || 0));
+  if (cfg.maxBodyChars !== undefined) _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(String(cfg.maxBodyChars)) || 0));
   saveConfig();
   return { ok: true, config: _config };
 }
@@ -89,6 +93,7 @@ export function getEffectiveMaxBodyChars() {
 
 // Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
 // "故宫博物院" → "故 宫 博 物 院"
+/** @param {string} text @returns {string} */
 function spaceCJK(text) {
   if (!text) return text;
   return text.replace(/([一-鿿㐀-䶿⺀-⻿])/g, "$1 ").trim();
@@ -96,7 +101,9 @@ function spaceCJK(text) {
 
 // ── Frontmatter Parser ────────────────────────────────────
 
+/** @param {string} text @returns {{title:string, tags:string[], aliases:string[]}} */
 function parseFrontMatter(text) {
+  /** @type {{title:string, tags:string[], aliases:string[]}} */
   const meta = { title: "", tags: [], aliases: [] };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return meta;
@@ -126,6 +133,7 @@ function parseFrontMatter(text) {
   return meta;
 }
 
+/** @param {string} text @param {string} filename @returns {string} */
 function extractTitle(text, filename) {
   // Try frontmatter title first
   const fm = parseFrontMatter(text);
@@ -137,8 +145,10 @@ function extractTitle(text, filename) {
   return basename(filename, ".md");
 }
 
+/** @param {string} text @returns {string[]} */
 function extractTags(text) {
   const fm = parseFrontMatter(text);
+  /** @type {Set<string>} */
   const tags = new Set(fm.tags);
   // Also extract inline #tags
   const inlineTags = text.matchAll(/(?<=^|\s)#([a-zA-Z一-鿿][\w一-鿿-]*)/gm);
@@ -148,6 +158,7 @@ function extractTags(text) {
 
 // ── Database ──────────────────────────────────────────────
 
+/** @type {import("node:sqlite").DatabaseSync | null} */
 let _db = null;
 let _hasFts5 = false;
 
@@ -184,7 +195,7 @@ function getDb() {
     `);
     _hasFts5 = true;
     console.log("[kb] FTS5 available");
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.log("[kb] FTS5 not available, using LIKE search:", e.message);
     _hasFts5 = false;
     try {
@@ -214,10 +225,12 @@ function getDb() {
 
 // ── FTS Operations ────────────────────────────────────────
 
+/** @param {string} relPath */
 function ftsDelete(relPath) {
   try { getDb().prepare("DELETE FROM kb_fts WHERE rel_path = ?").run(relPath); } catch { /* ignored */ }
 }
 
+/** @param {string} relPath @param {string} title @param {string[]} tags @param {string} body */
 function ftsInsert(relPath, title, tags, body) {
   try {
     ftsDelete(relPath);
@@ -229,11 +242,12 @@ function ftsInsert(relPath, title, tags, body) {
     const finalTitle = (spacedFilename + " " + spacedTitle).trim();
     getDb().prepare("INSERT INTO kb_fts(rel_path, title, tags, body) VALUES (?,?,?,?)")
       .run(relPath, finalTitle, spaceCJK((tags || []).join(" ")), spaceCJK(body || ""));
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[kb] ftsInsert error:", e.message);
   }
 }
 
+/** @param {string} query @param {number} limit @returns {any[]} */
 function ftsSearch(query, limit) {
   const db = getDb();
   if (_hasFts5) {
@@ -271,11 +285,13 @@ function getLocalModelPath() {
 
 // ── Embedding Provider ────────────────────────────────────
 
+/** @type {any} */
 let _embedder = null;
 let _embedderReady = false;
 
 // Dynamic import with timeout — prevents hanging if native modules can't load
 // (e.g. onnxruntime-node inside an Electron asar archive)
+/** @param {string} moduleSpecifier @param {number} [timeoutMs] @returns {Promise<any>} */
 async function importWithTimeout(moduleSpecifier, timeoutMs = 15000) {
   const result = await Promise.race([
     import(moduleSpecifier),
@@ -302,7 +318,7 @@ async function getEmbedder() {
       const isElectron = process.release?.name === "electron";
       if (isElectron) {
         console.log("[kb] Electron detected, release.name before patch:", process.release.name);
-        try { Object.defineProperty(process.release, "name", { value: "node", configurable: true }); } catch (e) {
+        try { Object.defineProperty(process.release, "name", { value: "node", configurable: true }); } catch (/** @type {any} */ e) {
           console.log("[kb] Failed to patch process.release.name:", e.message);
         }
         console.log("[kb] release.name after patch:", process.release.name);
@@ -319,7 +335,7 @@ async function getEmbedder() {
         _embedderReady = true;
         console.log("[kb] Using local MiniLM-L6 embedder" + (localPath ? " (bundled)" : " (downloaded)"));
         return _embedder;
-      } catch (e) {
+      } catch (/** @type {any} */ e) {
         console.log("[kb] Local embedder unavailable:", e.message);
       } finally {
         // Restore original release name to avoid side effects
@@ -392,6 +408,7 @@ async function getEmbedder() {
 
 // Query Ollama /api/show for the model's actual context length
 // Different model architectures use different keys: bert.context_length, qwen2.context_length, llama.context_length
+/** @param {string} modelName @returns {Promise<number>} */
 async function detectModelContext(modelName) {
   try {
     const res = await fetch("http://localhost:11434/api/show", {
@@ -411,6 +428,7 @@ async function detectModelContext(modelName) {
   } catch { return 2048; }
 }
 
+/** @param {string} text @returns {Promise<Float32Array|null>} */
 async function embedText(text) {
   const embedder = await getEmbedder();
   if (!embedder) return null;
@@ -445,7 +463,7 @@ async function embedText(text) {
     const result = new Float32Array(_embeddingDim);
     for (let i = 0; i < Math.min(vec.length, _embeddingDim); i++) result[i] = vec[i];
     return result;
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[kb] Embed failed:", e.message);
     return null;
   }
@@ -453,14 +471,17 @@ async function embedText(text) {
 
 // ── Vector Operations ─────────────────────────────────────
 
+/** @param {Float32Array} vec @returns {Buffer} */
 function vectorToBuffer(vec) {
   return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
 }
 
+/** @param {Buffer} buf @returns {Float32Array} */
 function bufferToVector(buf) {
   return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
 }
 
+/** @param {Float32Array|number[]} a @param {Float32Array|number[]} b @returns {number} */
 function cosineSimilarity(a, b) {
   if (a.length !== b.length) {
     console.warn(`[kb] Dimension mismatch in similarity: ${a.length} vs ${b.length}. Rebuild index.`);
@@ -478,6 +499,7 @@ function cosineSimilarity(a, b) {
 
 // ── Reciprocal Rank Fusion ────────────────────────────────
 
+/** @param {Array<Array<{id:number, rank?:number}>>} resultLists @param {number} [k] @returns {Array<{id:number, score:number}>} */
 function reciprocalRankFusion(resultLists, k = 60) {
   const scores = new Map();
   for (const results of resultLists) {
@@ -495,7 +517,9 @@ function reciprocalRankFusion(resultLists, k = 60) {
 
 // ── File Scanning ─────────────────────────────────────────
 
+/** @param {string} dir @param {string} baseDir @returns {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
 function scanVault(dir, baseDir) {
+  /** @type {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
   const results = [];
   if (!existsSync(dir)) return results;
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -511,6 +535,7 @@ function scanVault(dir, baseDir) {
         const content = readFileSync(fullPath, "utf-8");
         const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
         const title = extractTitle(content, entry.name);
+        /** @type {string[]} */
         const tags = extractTags(content);
         // Strip frontmatter and markdown for body
         const body = content
@@ -537,6 +562,7 @@ function scanVault(dir, baseDir) {
 
 // ── Rebuild Index ─────────────────────────────────────────
 
+/** @param {Function} [progressCb] @returns {Promise<{ok:boolean, indexed:number, embedded:number, failed:number, total:number}|{error:string}>} */
 export async function rebuildIndex(progressCb) {
   if (!_vaultPath || !existsSync(_vaultPath)) return { error: "vault not set or not found" };
 
@@ -585,7 +611,7 @@ export async function rebuildIndex(progressCb) {
 
       indexed++;
       if (progressCb) progressCb({ indexed, embedded, failed, total: notes.length });
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       console.error(`[kb] Failed to index ${note.relPath}:`, e.message);
     }
   }
@@ -595,6 +621,7 @@ export async function rebuildIndex(progressCb) {
 
 // ── Hybrid Search ─────────────────────────────────────────
 
+/** @param {string} query @param {number} [limit] @returns {Promise<Array<{id:number, rel_path:string, title:string, tags:string[], snippet:string, rrfScore:number}>>} */
 export async function search(query, limit = 5) {
   if (!_vaultPath) return [];
   if (!query || !query.trim()) return [];
@@ -606,36 +633,37 @@ export async function search(query, limit = 5) {
   let ftsResults = ftsSearch(query, searchLimit);
 
   // 2. Vector similarity search
+  /** @type {Array<{id:number, similarity:number}>} */
   let vectorResults = [];
   try {
     const queryEmbedding = await embedText(query);
     if (queryEmbedding) {
       const allEmbeddings = db.prepare("SELECT note_id, embedding FROM kb_embeddings").all();
       vectorResults = allEmbeddings
-        .map(row => ({
+        .map(/** @param {any} row */ row => ({
           id: row.note_id,
           similarity: cosineSimilarity(queryEmbedding, bufferToVector(row.embedding)),
         }))
-        .filter(r => r.similarity > 0.1)
-        .sort((a, b) => b.similarity - a.similarity)
+        .filter(/** @param {{similarity:number}} r */ r => r.similarity > 0.1)
+        .sort(/** @param {{similarity:number}} a @param {{similarity:number}} b */ (a, b) => b.similarity - a.similarity)
         .slice(0, searchLimit);
     }
   } catch { /* ignored */ }
 
   // 3. Fuse with RRF — use rel_path as the join key (FTS rowid != kb_notes.id)
-  const ftsIds = ftsResults.map((r, i) => {
+  const ftsIds = /** @type {{id:number, rank:number}[]} */ (ftsResults.map(/** @param {any} r @param {number} i */ (r, i) => {
     const note = db.prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(r.rel_path);
-    return note ? { id: note.id, rank: i } : null;
-  }).filter(Boolean);
-  const vecIds = vectorResults.map((r, i) => ({ id: r.id, rank: i }));
+    return note ? { id: Number(note.id), rank: i } : null;
+  }).filter(/** @returns {boolean} */ (x) => x != null));
+  const vecIds = vectorResults.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, rank: i }));
 
   let fused;
   if (ftsIds.length > 0 && vecIds.length > 0) {
     fused = reciprocalRankFusion([ftsIds, vecIds]);
   } else if (ftsIds.length > 0) {
-    fused = ftsIds.map((r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
+    fused = ftsIds.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
   } else if (vecIds.length > 0) {
-    fused = vecIds.map((r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
+    fused = vecIds.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
   } else {
     return [];
   }
@@ -649,19 +677,19 @@ export async function search(query, limit = 5) {
       const note = db.prepare("SELECT * FROM kb_notes WHERE id = ?").get(id);
       if (!note) continue;
       // Read full note content from file, fallback to FTS snippet
-      let snippet = note.title;
+      let snippet = String(note.title);
       try {
-        const fullPath = join(_vaultPath, note.rel_path);
+        const fullPath = join(_vaultPath, String(note.rel_path));
         snippet = readFileSync(fullPath, "utf-8");
       } catch {
-        const ftsMatch = ftsResults.find(r => r.rel_path === note.rel_path);
-        snippet = ftsMatch?.snippet || note.title;
+        const ftsMatch = ftsResults.find(/** @param {{rel_path:string}} r */ r => r.rel_path === String(note.rel_path));
+        snippet = ftsMatch?.snippet || String(note.title);
       }
       results.push({
-        id: note.id,
-        rel_path: note.rel_path,
-        title: note.title,
-        tags: JSON.parse(note.tags || "[]"),
+        id: Number(note.id),
+        rel_path: String(note.rel_path),
+        title: String(note.title),
+        tags: JSON.parse(String(note.tags || "[]")),
         snippet,
         rrfScore: score,
       });
@@ -676,23 +704,24 @@ export async function search(query, limit = 5) {
 export function listNotes(offset = 0, limit = 50) {
   const db = getDb();
   try {
-    const total = db.prepare("SELECT COUNT(*) as count FROM kb_notes").get().count;
+    const total = Number(db.prepare("SELECT COUNT(*) as count FROM kb_notes").get()?.count ?? 0);
     const notes = db.prepare("SELECT * FROM kb_notes ORDER BY mtime_ms DESC LIMIT ? OFFSET ?").all(limit, offset);
     return {
       total,
-      notes: notes.map(n => ({
+      notes: notes.map(/** @param {any} n */ n => ({
         id: n.id,
         rel_path: n.rel_path,
         filename: n.filename,
         title: n.title,
-        tags: JSON.parse(n.tags || "[]"),
-        word_count: n.word_count,
-        mtime_ms: n.mtime_ms,
+        tags: JSON.parse(String(n.tags || "[]")),
+        word_count: Number(n.word_count),
+        mtime_ms: Number(n.mtime_ms),
       })),
     };
   } catch { return { total: 0, notes: [] }; }
 }
 
+/** @param {string} relPath @returns {object|null} */
 export function getNote(relPath) {
   const db = getDb();
   try {
@@ -703,12 +732,13 @@ export function getNote(relPath) {
     const content = readFileSync(fullPath, "utf-8");
     return {
       ...note,
-      tags: JSON.parse(note.tags || "[]"),
+      tags: JSON.parse(String(note.tags || "[]")),
       content,
     };
   } catch { return null; }
 }
 
+/** @param {string} relPath @param {string} content @param {string[]} [tags] @returns {Promise<{ok:boolean, relPath:string, title:string}|{error:string}>} */
 export async function createNote(relPath, content, tags = []) {
   if (!_vaultPath) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
@@ -746,9 +776,10 @@ export async function createNote(relPath, content, tags = []) {
       } catch { /* ignored */ }
 
     return { ok: true, relPath, title };
-  } catch (e) { return { error: e.message }; }
+  } catch (/** @type {any} */ e) { return { error: e.message }; }
 }
 
+/** @param {string} relPath @param {string} content @returns {Promise<{ok:boolean, relPath:string, title:string}|{error:string}>} */
 export async function updateNote(relPath, content) {
   if (!_vaultPath) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
@@ -759,6 +790,7 @@ export async function updateNote(relPath, content) {
 
     const stat = statSync(fullPath);
     const title = extractTitle(content, basename(relPath));
+    /** @type {string[]} */
     const tags = extractTags(content);
     const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").replace(/#{1,6}\s+/g, "").trim();
 
@@ -783,9 +815,10 @@ export async function updateNote(relPath, content) {
     } catch { /* ignored */ }
 
     return { ok: true, relPath, title };
-  } catch (e) { return { error: e.message }; }
+  } catch (/** @type {any} */ e) { return { error: e.message }; }
 }
 
+/** @param {string} relPath @returns {{ok:boolean, relPath:string}|{error:string}} */
 export function deleteNote(relPath) {
   if (!_vaultPath) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
@@ -805,11 +838,12 @@ export function deleteNote(relPath) {
     ftsDelete(relPath);
 
     return { ok: true, relPath };
-  } catch (e) { return { error: e.message }; }
+  } catch (/** @type {any} */ e) { return { error: e.message }; }
 }
 
 // ── Ollama Model Discovery ────────────────────────────────
 
+/** @returns {Promise<string[]>} */
 export async function listOllamaModels() {
   try {
     const res = await fetch("http://localhost:11434/api/tags", {
@@ -817,7 +851,7 @@ export async function listOllamaModels() {
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.models || []).map(m => m.name);
+    return (data.models || []).map(/** @param {{name:string}} m */ m => m.name);
   } catch { return []; }
 }
 
@@ -826,8 +860,8 @@ export async function listOllamaModels() {
 export function getStatus() {
   const db = getDb();
   try {
-    const noteCount = db.prepare("SELECT COUNT(*) as count FROM kb_notes").get().count;
-    const embeddedCount = db.prepare("SELECT COUNT(*) as count FROM kb_embeddings").get().count;
+    const noteCount = Number(db.prepare("SELECT COUNT(*) as count FROM kb_notes").get()?.count ?? 0);
+    const embeddedCount = Number(db.prepare("SELECT COUNT(*) as count FROM kb_embeddings").get()?.count ?? 0);
     return {
       vault: _vaultPath,
       noteCount,

@@ -10,6 +10,7 @@ export async function loadMemoryPanel() {
   if (_memoryPanelLoaded) return;
   _memoryPanelLoaded = true;
 
+  /** @type {Record<string, string>} */
   const TYPE_LABELS = { user: t("memory.label_user"), feedback: t("memory.label_feedback"), project: t("memory.label_project"), reference: t("memory.label_reference") };
 
   const listEl = document.getElementById("memory-list");

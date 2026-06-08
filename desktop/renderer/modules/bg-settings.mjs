@@ -18,9 +18,9 @@ const THEME_KEY = "AideAgent_theme";
 // ── Type-safe DOM lookup helpers ──────────────────────────────────
 // These wrap document.getElementById with a JSDoc type so we don't need
 // to cast at every call site. Use the right helper for the element type.
-/** @returns {HTMLCanvasElement | null} */
+/** @param {string} id @returns {HTMLCanvasElement | null} */
 const $canvas = (id) => /** @type {HTMLCanvasElement | null} */ (document.getElementById(id));
-/** @returns {HTMLInputElement | null} */
+/** @param {string} id @returns {HTMLInputElement | null} */
 const $input = (id) => /** @type {HTMLInputElement | null} */ (document.getElementById(id));
 
 // ── 预设主题 ──
@@ -36,6 +36,7 @@ const PRESETS = {
 const DEFAULT_THEME = { preset: "cream", bg: "#faf6ef", brightness: 1.0, accent: "#f59e0b" };
 
 // ── HSL 数学 ─────────────────────────────────────
+/** @param {string} hex @returns {[number, number, number]} */
 function hexToHsl(hex) {
   hex = String(hex || "").replace("#", "");
   if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
@@ -57,12 +58,14 @@ function hexToHsl(hex) {
   return [h * 360, s, l];
 }
 
+/** @param {number} h @param {number} s @param {number} l @returns {string} */
 function hslToHex(h, s, l) {
   h = (((h % 360) + 360) % 360) / 360;
   if (s <= 0) {
     const v = Math.round(l * 255);
     return "#" + [v, v, v].map(c => c.toString(16).padStart(2, "0")).join("");
   }
+  /** @type {(p: number, q: number, t: number) => number} */
   const hue2rgb = (p, q, t) => {
     if (t < 0) t += 1;
     if (t > 1) t -= 1;
@@ -80,12 +83,14 @@ function hslToHex(h, s, l) {
 }
 
 // HSL → RGB（用于 Canvas 像素绘制）
+/** @param {number} h @param {number} s @param {number} l @returns {[number, number, number]} */
 function hslToRgb(h, s, l) {
   h = (((h % 360) + 360) % 360) / 360;
   if (s <= 0) {
     const v = Math.round(l * 255);
     return [v, v, v];
   }
+  /** @type {(p: number, q: number, t: number) => number} */
   const hue2rgb = (p, q, t) => {
     if (t < 0) t += 1;
     if (t > 1) t -= 1;
@@ -104,6 +109,7 @@ function hslToRgb(h, s, l) {
 }
 
 // ── 2D 色板绘制 ──
+/** @param {CanvasRenderingContext2D} ctx @param {number} hue @param {number} w @param {number} h */
 function paintSLSquare(ctx, hue, w, h) {
   const img = ctx.createImageData(w, h);
   for (let y = 0; y < h; y++) {
@@ -121,6 +127,7 @@ function paintSLSquare(ctx, hue, w, h) {
   ctx.putImageData(img, 0, 0);
 }
 
+/** @param {CanvasRenderingContext2D} ctx @param {number} w @param {number} h */
 function paintHueBar(ctx, w, h) {
   const img = ctx.createImageData(w, h);
   for (let x = 0; x < w; x++) {
@@ -138,6 +145,7 @@ function paintHueBar(ctx, w, h) {
 }
 
 // ── 主题派生：bg + brightness + accent → 5 CSS 变量 ──
+/** @param {{ bg: string, brightness: number, accent: string }} theme */
 function deriveTheme(theme) {
   const [h, s, l] = hexToHsl(theme.bg);
   const adjL = Math.max(0, Math.min(1, l * theme.brightness));
@@ -153,6 +161,7 @@ function deriveTheme(theme) {
   };
 }
 
+/** @param {{ bg: string, brightness: number, accent: string }} theme */
 function applyTheme(theme) {
   const vars = deriveTheme(theme);
   const root = document.documentElement;
@@ -187,20 +196,26 @@ function loadTheme() {
   return { ...DEFAULT_THEME };
 }
 
+/** @param {Object} theme */
 function saveTheme(theme) {
   localStorage.setItem(THEME_KEY, JSON.stringify(theme));
 }
 
 // ── UI 绑定 ─────────────────────────────────────
+/** @param {string} key @returns {string} */
 function t(key) { return (typeof window.t === "function" ? window.t(key) : key); }
 
+/** @param {string} s @returns {boolean} */
 function isValidHex(s) { return /^#[0-9a-f]{6}$/i.test(String(s || "").trim()); }
 
 // ── 2D 色板状态 ──
+/** @type {[number, number, number]} */
 let pendingBgHSL = [0, 0, 1];   // [h, s, l] 暂存色
+/** @type {CanvasRenderingContext2D | null} */
 let slCanvasCtx = null;         // SL square 画布上下文
 let slCanvasW = 0, slCanvasH = 0;
 
+/** @param {{ bg: string }} theme */
 function syncColorPicker(theme) {
   pendingBgHSL = hexToHsl(theme.bg);
   const slInd = document.getElementById("bg-color-sl-indicator");
@@ -231,20 +246,22 @@ function initColorPicker() {
   slCanvasW = square.width;
   slCanvasH = square.height;
   const hueCtx = hueBar.getContext("2d");
+  if (!hueCtx) return;
 
   // 首次绘制：色相条（静态）+ SL 方块（按当前色相）
   paintHueBar(hueCtx, hueBar.width, hueBar.height);
-  paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
+  if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
   syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
 
   // ── SL 方块：鼠标点击/拖动 → 改 S 和 L ──
+  /** @type {(clientX: number, clientY: number) => void} */
   const onSLEvent = (clientX, clientY) => {
     const rect = square.getBoundingClientRect();
     const x = (clientX - rect.left) / rect.width;
     const y = (clientY - rect.top) / rect.height;
     pendingBgHSL[1] = Math.max(0, Math.min(1, x));
     pendingBgHSL[2] = Math.max(0, Math.min(1, 1 - y));
-    paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
+    if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
     syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
   };
   let draggingSL = false;
@@ -257,11 +274,12 @@ function initColorPicker() {
   document.addEventListener("mouseup", () => { draggingSL = false; });
 
   // ── 色相条：点击/拖动 → 改 H，重绘 SL ──
+  /** @type {(clientX: number) => void} */
   const onHueEvent = (clientX) => {
     const rect = hueBar.getBoundingClientRect();
     const x = (clientX - rect.left) / rect.width;
     pendingBgHSL[0] = Math.max(0, Math.min(360, x * 360));
-    paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
+    if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
     syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
   };
   let draggingHue = false;
@@ -286,6 +304,7 @@ function initColorPicker() {
   }
 }
 
+/** @param {{ brightness: number, accent: string, preset: string, bg: string }} theme */
 function applyToUI(theme) {
   const slider = $input("bg-brightness-slider");
   const sliderVal = document.getElementById("bg-brightness-value");
@@ -302,6 +321,7 @@ function applyToUI(theme) {
   syncColorPicker(theme);
 }
 
+/** @param {{ preset: string, brightness: number }} currentTheme */
 function renderPresets(currentTheme) {
   const grid = document.getElementById("bg-preset-grid");
   if (!grid) return;
@@ -330,6 +350,7 @@ function renderPresets(currentTheme) {
   }
 }
 
+/** @param {{ preset: string, bg: string, brightness: number, accent: string }} initial */
 function bindControls(initial) {
   const slider = $input("bg-brightness-slider");
   const sliderVal = document.getElementById("bg-brightness-value");
@@ -337,6 +358,7 @@ function bindControls(initial) {
   const accentHex = $input("bg-accent-hex");
   const resetBtn = document.getElementById("bg-reset-btn");
 
+  /** @param {Object} patch */
   const update = (patch) => {
     const theme = { ...loadTheme(), ...patch };
     saveTheme(theme);

@@ -9,6 +9,32 @@ import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getWorkspace } from "./core/state.mjs";
 
+/**
+ * @typedef {Object} LangServerConfig
+ * @property {string} command
+ * @property {string[]} args
+ * @property {string} lang
+ */
+
+/**
+ * @typedef {Object} LspServer
+ * @property {import('node:child_process').ChildProcess} proc
+ * @property {number} reqId
+ * @property {Map<number, (msg: LspResponse) => void>} pending
+ * @property {Set<string>} openedFiles
+ * @property {boolean} ready
+ */
+
+/**
+ * @typedef {Object} LspResponse
+ * @property {number} [id]
+ * @property {*} [result]
+ * @property {{ message: string }} [error]
+ */
+
+/**
+ * @type {Record<string, LangServerConfig>}
+ */
 const LANG_SERVERS = {
   ".ts":  { command: "typescript-language-server", args: ["--stdio"], lang: "typescript" },
   ".tsx": { command: "typescript-language-server", args: ["--stdio"], lang: "typescriptreact" },
@@ -17,28 +43,47 @@ const LANG_SERVERS = {
 };
 
 class LspManager {
-  constructor() { this.servers = new Map(); } // lang → { proc, conn, ready, openedFiles }
+  constructor() {
+    /** @type {Map<string, LspServer>} */
+    this.servers = new Map();
+  }
 
+  /**
+   * @param {string} filePath
+   * @returns {LangServerConfig|null}
+   */
   getLang(filePath) {
     const ext = extname(filePath).toLowerCase();
     return LANG_SERVERS[ext] || null;
   }
 
+  /**
+   * @param {string} filePath
+   * @returns {Promise<LspServer>}
+   */
   async getServer(filePath) {
     const cfg = this.getLang(filePath);
     if (!cfg) throw new Error(`No LSP server configured for ${extname(filePath)} files. Supported: ${Object.keys(LANG_SERVERS).join(", ")}`);
-    if (this.servers.has(cfg.lang)) return this.servers.get(cfg.lang);
+    if (this.servers.has(cfg.lang)) {
+      const existing = this.servers.get(cfg.lang);
+      if (existing) return existing;
+    }
     const server = await this.startServer(cfg);
     this.servers.set(cfg.lang, server);
     return server;
   }
 
+  /**
+   * @param {LangServerConfig} cfg
+   * @returns {Promise<LspServer>}
+   */
   async startServer(cfg) {
     // Use the user-chosen workspace, NOT the launch dir — language
     // servers resolve project-local config (tsconfig.json, etc.)
     // relative to the cwd they are spawned in.
     const cwd = getWorkspace();
     const proc = spawn(cfg.command, cfg.args, { stdio: ["pipe", "pipe", "pipe"], cwd, windowsHide: true, shell: true });
+    /** @type {LspServer} */
     const server = { proc, reqId: 0, pending: new Map(), openedFiles: new Set(), ready: false };
 
     // Line-based JSON-RPC reader
@@ -49,7 +94,7 @@ class LspManager {
       while (true) {
         if (contentLen === -1) {
           const m = buf.match(/Content-Length: (\d+)\r\n\r\n/);
-          if (!m) break;
+          if (!m || m.index === undefined) break;
           contentLen = parseInt(m[1], 10);
           buf = buf.slice(m.index + m[0].length);
         }
@@ -58,9 +103,10 @@ class LspManager {
         buf = buf.slice(contentLen);
         contentLen = -1;
         try {
-          const msg = JSON.parse(body);
+          const msg = /** @type {LspResponse} */ (JSON.parse(body));
           if (msg.id !== undefined && server.pending.has(msg.id)) {
-            server.pending.get(msg.id)(msg);
+            const cb = server.pending.get(msg.id);
+            if (cb) cb(msg);
             server.pending.delete(msg.id);
           }
         } catch { /* ignored */ }
@@ -82,6 +128,12 @@ class LspManager {
     return server;
   }
 
+  /**
+   * @param {LspServer} server
+   * @param {string} method
+   * @param {*} params
+   * @returns {Promise<any>}
+   */
   sendReq(server, method, params) {
     return new Promise((resolve, reject) => {
       const id = ++server.reqId;
@@ -92,15 +144,28 @@ class LspManager {
         else resolve(msg.result);
       });
       const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
-      server.proc.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      if (server.proc.stdin) {
+        server.proc.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      }
     });
   }
 
+  /**
+   * @param {LspServer} server
+   * @param {string} method
+   * @param {*} params
+   */
   sendNotif(server, method, params) {
     const body = JSON.stringify({ jsonrpc: "2.0", method, params });
-    server.proc.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+    if (server.proc.stdin) {
+      server.proc.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+    }
   }
 
+  /**
+   * @param {LspServer} server
+   * @param {string} filePath
+   */
   async openFile(server, filePath) {
     if (server.openedFiles.has(filePath)) return;
     const text = existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
@@ -110,6 +175,10 @@ class LspManager {
     server.openedFiles.add(filePath);
   }
 
+  /**
+   * @param {*} uri
+   * @returns {string}
+   */
   fmtResult(uri) {
     if (!uri) return "(no result)";
     const u = typeof uri === "string" ? uri : uri.uri || "";
@@ -120,6 +189,12 @@ class LspManager {
     return `${p}${line}`;
   }
 
+  /**
+   * @param {string} filePath
+   * @param {number} [line]
+   * @param {number} [character]
+   * @returns {Promise<{text: string, count: number}>}
+   */
   async goToDefinition(filePath, line, character) {
     const server = await this.getServer(filePath);
     await this.openFile(server, filePath);
@@ -133,6 +208,12 @@ class LspManager {
     return { text: `Found ${items.length} definition(s):\n${lines.join("\n")}`, count: items.length };
   }
 
+  /**
+   * @param {string} filePath
+   * @param {number} [line]
+   * @param {number} [character]
+   * @returns {Promise<{text: string, count: number}>}
+   */
   async findReferences(filePath, line, character) {
     const server = await this.getServer(filePath);
     await this.openFile(server, filePath);
@@ -143,6 +224,7 @@ class LspManager {
     });
     const items = result || [];
     if (items.length === 0) return { text: "No references found", count: 0 };
+    /** @type {Record<string, number[]>} */
     const byFile = {};
     for (const r of items) {
       const f = this.fmtResult(r.uri);
@@ -153,6 +235,12 @@ class LspManager {
     return { text: `Found ${items.length} reference(s) in ${Object.keys(byFile).length} file(s):\n${lines.join("\n")}`, count: items.length };
   }
 
+  /**
+   * @param {string} filePath
+   * @param {number} [line]
+   * @param {number} [character]
+   * @returns {Promise<{text: string, count: number}>}
+   */
   async hover(filePath, line, character) {
     const server = await this.getServer(filePath);
     await this.openFile(server, filePath);
@@ -162,11 +250,15 @@ class LspManager {
     });
     if (!result) return { text: "No hover info", count: 0 };
     const content = typeof result.contents === "string" ? result.contents
-      : Array.isArray(result.contents) ? result.contents.map(c => typeof c === "string" ? c : c.value || "").join("\n")
+      : Array.isArray(result.contents) ? result.contents.map((/** @type {*} */ c) => typeof c === "string" ? c : c.value || "").join("\n")
       : result.contents?.value || JSON.stringify(result.contents);
     return { text: content, count: 1 };
   }
 
+  /**
+   * @param {string} filePath
+   * @returns {Promise<{text: string, count: number}>}
+   */
   async documentSymbol(filePath) {
     const server = await this.getServer(filePath);
     await this.openFile(server, filePath);
@@ -175,7 +267,7 @@ class LspManager {
     });
     const items = result || [];
     if (items.length === 0) return { text: "No symbols found", count: 0 };
-    const lines = items.map(s => {
+    const lines = items.map((/** @type {*} */ s) => {
       const line = s.range?.start?.line ?? s.location?.range?.start?.line ?? 0;
       return `  ${s.name} (${s.kind}) — line ${line + 1}`;
     });

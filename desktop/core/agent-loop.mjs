@@ -18,28 +18,46 @@ import {
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
+/** @type {string | null} */
 let _sysPromptCache = null;
+/** @type {string | null} */
 let _contextBlockBaseCache = null;
 
+/**
+ * @param {Array<{role:string,content:any}>} history
+ * @returns {string}
+ */
 function getHistoryTitle(history) {
-  const firstUser = history.find(m => m.role === "user");
+  const firstUser = history.find(/** @param {{role:string,content:any}} m */ m => m.role === "user");
   if (!firstUser) return "新对话";
   const text = typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content || "");
   return text.replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
 }
 
+/**
+ * @param {string} id
+ * @param {Array<{role:string,content:any}>} history
+ * @param {string} [title]
+ */
 async function saveSession(id, history, title) {
   try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
 }
 
 // ── Auto-review: extract learnings after each session ──
+/**
+ * @param {Array<{role:string,content:any}>} msgs
+ * @param {string} apiKey
+ * @param {string} apiUrl
+ * @param {string} model
+ * @param {string} apiFormat
+ */
 async function autoReview(msgs, apiKey, apiUrl, model, apiFormat) {
   try {
     // Take last 8 exchanges (16 messages) for review
-    const recent = msgs.slice(-16).filter(m => m.role === "user" || m.role === "assistant");
+    const recent = msgs.slice(-16).filter(/** @param {{role:string,content:any}} m */ m => m.role === "user" || m.role === "assistant");
     if (recent.length < 4) return;
 
-    const convText = recent.map(m => {
+    const convText = recent.map(/** @param {{role:string,content:any}} m */ m => {
       const role = m.role === "user" ? "用户" : "助手";
       const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 800);
       return `[${role}] ${text}`;
@@ -62,16 +80,17 @@ DECISION: <内容>
 KNOWLEDGE: <内容>
 如果没有，回复 NONE。`;
 
-    const body = {
+    const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, temperature?: number, stream: boolean, system?: string }} */ ({
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: reviewPrompt }],
       max_tokens: 1024,
       temperature: 0.3,
       stream: false,
-    };
+    });
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
+    /** @type {Record<string,string>} */
     const headers = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -79,7 +98,7 @@ KNOWLEDGE: <内容>
     if (apiFormat === "anthropic") {
       body.system = "你是一个对话分析助手。从对话中提取值得长期记忆的信息。";
       body.model = model || "claude-sonnet-4-20250514";
-      delete body.temperature;
+      body.temperature = undefined;
     }
 
     const res = await fetch(endpoint, {
@@ -111,20 +130,36 @@ KNOWLEDGE: <内容>
       }
     }
     console.log("[auto-review] Saved learnings:", lines.length, "items");
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[auto-review] Failed:", e.message);
   }
 }
 
+/**
+ * @param {string} prompt
+ * @param {string} apiKey
+ * @param {string} apiUrl
+ * @param {string} model
+ * @param {string} [apiFormat]
+ * @param {Array<any>} [files]
+ * @param {any} [enabledSkills]
+ * @param {boolean} [reasoning]
+ * @param {string} [agentName]
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [isPlanMode]
+ * @param {boolean} [webSearchEnabled]
+ * @param {boolean} [silent]
+ */
 export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false) {
-  let abortCtrl = getAbortCtrl();
+  let abortCtrl = /** @type {AbortController | null} */ (getAbortCtrl());
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   setAbortCtrl(abortCtrl);
   const { signal } = abortCtrl;
-  const sdr = (...args) => { if (!silent) sendToRenderer(...args); };
+  /** @type {(channel: string, data: any) => void} */
+  const sdr = (channel, data) => { if (!silent) sendToRenderer(channel, data); };
 
-  let sessionId = getSessionId();
+  let sessionId = /** @type {string | null} */ (getSessionId());
   if (!sessionId) { sessionId = genId(); setSessionId(sessionId); }
 
   hookManager.initHookManager(getWorkspace());
@@ -132,7 +167,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // Save placeholder session to DB immediately so it appears in sidebar
   const placeholderTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
   const placeholderHistory = [{ role: "user", content: prompt || "" }];
-  await sessionDb.saveSession(sessionId, placeholderHistory, placeholderTitle);
+  await sessionDb.saveSession(/** @type {string} */ (sessionId), placeholderHistory, placeholderTitle);
   sdr("session:update", { sessionId });
 
   // ── Build user message with optional file attachments ──
@@ -198,8 +233,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       }
     }
 
-    _sysPromptCache = sysContent;
-    _contextBlockBaseCache = contextBlockBase;
+    _sysPromptCache = /** @type {string} */ (sysContent);
+    _contextBlockBaseCache = /** @type {string} */ (contextBlockBase);
   } else {
     // ── Turn 2+: use cached system prompt (already has KB/AGENTS.md from turn 1) ──
     sysContent = _sysPromptCache;
@@ -248,7 +283,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       contextBlock += memBlock;
       contextExtraMsgs.push({ role: "user", content: memBlock.trim() });
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[memory] selection error:", e.message);
   }
 
@@ -271,8 +306,9 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // [sys][ctx_base][history...][extra...][query]
   // → [sys][ctx_base][history] is the cacheable prefix;
   // ctxExtra (tasks/todos/memories) goes AFTER history so it doesn't break the prefix
+  /** @type {Array<{role:string,content:any,reasoning_content?:string,tool_calls?:Array<any>,tool_call_id?:string,system?:string}>} */
   let msgs = [{ role: "system", content: sysContent }];
-  if (contextBlockBase.trim()) {
+  if (contextBlockBase && contextBlockBase.trim()) {
     msgs.push({ role: "user", content: contextBlockBase.trim() });
   }
   msgs.push(...history.map(m => ({ ...m })));
@@ -281,7 +317,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   let allText = "", allReasoning = "";
   let continuation = 0;
   let agentFinished = false;
-  let _contextMsg = contextBlock.trim() ? { role: "user", content: contextBlock.trim() } : null;
+  let _contextMsg = contextBlock && contextBlock.trim() ? { role: "user", content: contextBlock.trim() } : null;
 
   compressContext(msgs);
   sendContextUsage(msgs);
@@ -316,12 +352,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
         const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning, kbEnabled, webSearchEnabled);
         content = result.content;
-        reasoningContent = result.reasoningContent || "";
+        reasoningContent = /** @type {any} */ (result).reasoningContent || "";
         allText += result.content;
         if (reasoningContent) allReasoning += reasoningContent;
         tcs = result.tcs;
         // ── Log cache metrics & forward to UI ──
         if (result.usage) {
+          /** @type {{ prompt_cache_hit_tokens?: number; prompt_tokens?: number; prompt_cache_miss_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; input_tokens?: number }} */
           const u = result.usage;
           if (u.prompt_cache_hit_tokens !== undefined) {
             const total = u.prompt_tokens || 0;
@@ -343,7 +380,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             });
           }
         }
-      } catch (err) {
+      } catch (/** @type {any} */ err) {
         if (err.name === "AbortError") {
           hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
           return { text: allText, aborted: true };
@@ -351,7 +388,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         throw err;
       }
 
-      const asst = { role: "assistant", content: content || null };
+      const asst = /** @type {{ role: string, content: string | null, reasoning_content?: string, tool_calls?: Array<any> }} */ ({ role: "assistant", content: content || null });
       if (reasoningContent) asst.reasoning_content = reasoningContent;
       if (tcs.length > 0) asst.tool_calls = tcs;
       msgs.push(asst);
@@ -393,7 +430,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         sdr("tool:start", { name: tc.function.name, args });
 
         let result;
-        try { result = await runTool(tc); } catch (e) { result = { error: e.message }; }
+        try { result = await runTool(tc); } catch (/** @type {any} */ e) { result = { error: e.message }; }
 
         let rStr = JSON.stringify(result);
         if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
@@ -429,7 +466,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   }
 
   // Save conversation
-  const historyAsst = { role: "assistant", content: allText || "" };
+  const historyAsst = /** @type {{ role: string, content: string, reasoning_content?: string }} */ ({ role: "assistant", content: allText || "" });
   if (allReasoning) historyAsst.reasoning_content = allReasoning;
   const historyUser = { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") };
   const hist = getHistory();
@@ -455,15 +492,16 @@ ${convText}
 
 用一段简洁的摘要总结（中文）:`;
 
-      const body = {
+      const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, stream: boolean, system?: string }} */ ({
         model: model || "deepseek-chat",
         messages: [{ role: "user", content: compactPrompt }],
         max_tokens: 2048,
         stream: false,
-      };
+      });
       const endpoint = apiFormat === "anthropic"
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
         : apiUrl;
+      /** @type {Record<string,string>} */
       const headers = apiFormat === "anthropic"
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
         : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -484,7 +522,7 @@ ${convText}
           ? (data.content?.[0]?.text || "")
           : (data.choices?.[0]?.message?.content || "");
       }
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       console.error("[compress] AI compaction failed, using fallback:", e.message);
     }
 
@@ -513,7 +551,7 @@ ${convText}
         );
         sessionDb.updateTitle(parentId, getHistoryTitle(recent));
         recent.unshift({ role: "user", content: `## 📋 对话摘要\n\n${summary}` });
-      } catch (e) { console.error("[compress]", e.message); }
+      } catch (/** @type {any} */ e) { console.error("[compress]", e.message); }
     }
 
     setHistory(recent);

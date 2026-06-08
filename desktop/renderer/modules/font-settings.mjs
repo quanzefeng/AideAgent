@@ -2,7 +2,7 @@
 // @ts-check — 此自初始化模块的最小 JSDoc 类型注解。
 const FONT_KEY = "AideAgent_font";
 
-export function applyChatFont(fontValue) {
+export function applyChatFont(/** @type {string} */ fontValue) {
   document.documentElement.style.setProperty("--chat-font", fontValue);
 }
 

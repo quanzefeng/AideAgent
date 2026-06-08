@@ -391,7 +391,7 @@ document.getElementById("agent-skills-import-btn")?.addEventListener("click", ()
       const data = JSON.parse(await file.text());
       if (!data.body && !data.steps) throw new Error(t("skill_editor.invalid_file"));
       const meta = { name: data.name || file.name.replace(/\.[^.]+$/, ""), description: data.description || "", triggers: data.triggers || [] };
-      const body = data.body || (Array.isArray(data.steps) ? data.steps.map((s, i) => `${i + 1}. ${s}`).join("\n") : "");
+      const body = data.body || (Array.isArray(data.steps) ? data.steps.map((/** @type {any} */ s, /** @type {number} */ i) => `${i + 1}. ${s}`).join("\n") : "");
       await window.aideagent.skillsSaveSkill(meta.name, meta, body);
       refreshSkillsList();
     } catch (err) { alert(t("skill_editor.import_fail").replace("{error}", /** @type {Error} */ (err).message)); }

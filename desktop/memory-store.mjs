@@ -28,6 +28,8 @@ if (!existsSync(MEM_DIR)) mkdirSync(MEM_DIR, { recursive: true });
 /**
  * Days elapsed since mtimeMs. 0 = today, 1 = yesterday, etc.
  * Negative (future timestamps / clock skew) clamps to 0.
+ * @param {number} mtimeMs
+ * @returns {number}
  */
 export function memoryAgeDays(mtimeMs) {
   if (!mtimeMs || mtimeMs <= 0) return 0;
@@ -38,6 +40,8 @@ export function memoryAgeDays(mtimeMs) {
 /**
  * Human-readable age string that triggers staleness reasoning in models.
  * "today" / "yesterday" / "N days ago"
+ * @param {number} mtimeMs
+ * @returns {string}
  */
 export function memoryAge(mtimeMs) {
   const days = memoryAgeDays(mtimeMs);
@@ -49,6 +53,8 @@ export function memoryAge(mtimeMs) {
 /**
  * Staleness caveat for memories older than 1 day.
  * Returns '' for fresh memories (<=1 day) to avoid noise.
+ * @param {number} mtimeMs
+ * @returns {string}
  */
 export function memoryFreshnessNote(mtimeMs) {
   const days = memoryAgeDays(mtimeMs);
@@ -58,6 +64,7 @@ export function memoryFreshnessNote(mtimeMs) {
 
 // ── FTS5 ──────────────────────────────────────────────────────
 
+/** @type {import("node:sqlite").DatabaseSync | null} */
 let _ftsDb = null;
 function getFtsDb() {
   if (_ftsDb) return _ftsDb;
@@ -69,10 +76,20 @@ function getFtsDb() {
   return _ftsDb;
 }
 
+/**
+ * @param {string} filename
+ */
 function ftsDelete(filename) {
   try { getFtsDb().prepare("DELETE FROM mem_fts WHERE filename = ?").run(filename); } catch { /* ignored */ }
 }
 
+/**
+ * @param {string} filename
+ * @param {string} name
+ * @param {string} description
+ * @param {string} type
+ * @param {string} body
+ */
 function ftsInsert(filename, name, description, type, body) {
   try {
     ftsDelete(filename);
@@ -83,6 +100,10 @@ function ftsInsert(filename, name, description, type, body) {
 
 // ── Frontmatter ───────────────────────────────────────────────
 
+/**
+ * @param {string} text
+ * @returns {{ name: string, description: string, type: string }}
+ */
 function parseFrontMatter(text) {
   const meta = { name: "", description: "", type: "project" };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
@@ -99,6 +120,12 @@ function parseFrontMatter(text) {
   return meta;
 }
 
+/**
+ * @param {string} name
+ * @param {string} description
+ * @param {string} type
+ * @returns {string}
+ */
 function makeFrontMatter(name, description, type) {
   return `---
 name: ${name}
@@ -115,10 +142,18 @@ function readIndex() {
   try { return readFileSync(INDEX_PATH, "utf-8"); } catch { return ""; }
 }
 
+/**
+ * @param {string} content
+ */
 function writeIndex(content) {
   try { writeFileSync(INDEX_PATH, content, "utf-8"); } catch { /* ignored */ }
 }
 
+/**
+ * @param {string} filename
+ * @param {string} name
+ * @param {string} description
+ */
 function addToIndex(filename, name, description) {
   let idx = readIndex();
   // Remove existing entry for this file if present
@@ -136,6 +171,9 @@ function addToIndex(filename, name, description) {
   writeIndex(result);
 }
 
+/**
+ * @param {string} filename
+ */
 function removeFromIndex(filename) {
   let idx = readIndex();
   idx = idx.split("\n").filter(l => !l.includes(`(${filename})`)).join("\n");
@@ -176,6 +214,10 @@ export function listMemories() {
   return results.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
+/**
+ * @param {string} filename
+ * @returns {{ filename: string, name: string, description: string, type: string, body: string } | null}
+ */
 export function readMemory(filename) {
   const filePath = join(MEM_DIR, filename);
   try {
@@ -193,11 +235,18 @@ export function readMemory(filename) {
   }
 }
 
+/**
+ * @param {string} name
+ * @param {string} [description]
+ * @param {string} [type]
+ * @param {string} [body]
+ * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
+ */
 export function createMemory(name, description, type, body) {
-  if (!name) return { error: "name is required" };
+  if (!name) return { ok: false, error: "name is required" };
   const safeName = name.replace(/[^a-zA-Z0-9_\-一-鿿]/g, "_");
   const filename = safeName.endsWith(".md") ? safeName : safeName + ".md";
-  const frontmatter = makeFrontMatter(name, description, type || "project");
+  const frontmatter = makeFrontMatter(name, description || "", type || "project");
   const content = frontmatter + (body || "");
   const filePath = join(MEM_DIR, filename);
 
@@ -207,9 +256,17 @@ export function createMemory(name, description, type, body) {
   return { ok: true, filename, name };
 }
 
+/**
+ * @param {string} filename
+ * @param {string} [body]
+ * @param {string} [name]
+ * @param {string} [description]
+ * @param {string} [type]
+ * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
+ */
 export function updateMemory(filename, body, name, description, type) {
   const existing = readMemory(filename);
-  if (!existing) return { error: `Memory file not found: ${filename}` };
+  if (!existing) return { ok: false, error: `Memory file not found: ${filename}` };
 
   const n = name || existing.name;
   const d = description || existing.description;
@@ -224,6 +281,10 @@ export function updateMemory(filename, body, name, description, type) {
   return { ok: true, filename, name: n };
 }
 
+/**
+ * @param {string} filename
+ * @returns {{ ok: boolean, error?: string }}
+ */
 export function deleteMemory(filename) {
   const filePath = join(MEM_DIR, filename);
   try {
@@ -231,20 +292,25 @@ export function deleteMemory(filename) {
     removeFromIndex(filename);
     ftsDelete(filename);
     return { ok: true };
-  } catch (e) {
-    return { error: e.message };
+  } catch (/** @type {any} */ e) {
+    return { ok: false, error: e.message };
   }
 }
 
 // ── Search ────────────────────────────────────────────────────
 
+/**
+ * @param {string} query
+ * @param {number} [limit]
+ * @returns {Array<{ filename: string, name: string, description: string, type: string, snippet: string, rank: number }>}
+ */
 export function searchMemory(query, limit = 10) {
   const db = getFtsDb();
   try {
     const rows = db.prepare(
       "SELECT filename, name, description, type, snippet(mem_fts,4,'<mark>','</mark>','…',64) as snippet, rank FROM mem_fts WHERE mem_fts MATCH ? ORDER BY rank LIMIT ?"
     ).all(query, limit);
-    return rows.map(r => ({
+    return rows.map(/** @param {any} r */ (r) => ({
       filename: r.filename,
       name: r.name,
       description: r.description,
@@ -256,7 +322,7 @@ export function searchMemory(query, limit = 10) {
     // LIKE fallback for CJK
     return db.prepare(
       "SELECT filename, name, description, type, body FROM mem_fts WHERE body LIKE ? LIMIT ?"
-    ).all("%" + query + "%", limit).map(r => ({
+    ).all("%" + query + "%", limit).map(/** @param {any} r */ (r) => ({
       filename: r.filename, name: r.name, description: r.description,
       type: r.type, snippet: (r.body || "").substring(0, 200), rank: 0,
     }));
@@ -345,6 +411,10 @@ export function readProjectMemory() {
   return idx || "";
 }
 
+/**
+ * @param {string} content
+ * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
+ */
 export function appendUserMemory(content) {
   // Convert to new format: create/update user_profile
   const existing = readMemory("user_profile.md");
@@ -354,12 +424,20 @@ export function appendUserMemory(content) {
   return createMemory("user_profile", "About the user", "user", content);
 }
 
+/**
+ * @param {string} content
+ * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
+ */
 export function appendProjectMemory(content) {
   // Create a new memory entry for each append call
   const name = "memory_" + Date.now().toString(36);
   return createMemory(name, "Project memory", "project", content);
 }
 
+/**
+ * @param {string} content
+ * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
+ */
 export function writeUserMemory(content) {
   const existing = readMemory("user_profile.md");
   if (existing) {
@@ -368,12 +446,21 @@ export function writeUserMemory(content) {
   return createMemory("user_profile", "About the user", "user", content);
 }
 
+/**
+ * @param {string} content
+ * @returns {{ ok: boolean }}
+ */
 export function writeProjectMemory(content) {
   // Legacy: write directly to index
   writeIndex(content);
   return { ok: true };
 }
 
+/**
+ * @param {string} type
+ * @param {string} text
+ * @returns {boolean}
+ */
 export function checkDuplicate(type, text) {
   const memories = listMemories();
   const words = text.split(/\s+/).filter(w => w.length > 2);

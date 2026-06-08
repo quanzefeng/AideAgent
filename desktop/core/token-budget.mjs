@@ -5,6 +5,14 @@ import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRen
 const TOKEN_BUDGET_WARN = 50000;
 const TOKEN_BUDGET_HARD = 80000;
 
+/**
+ * @typedef {{ role: string, content?: string|object|null, tool_calls?: Array<{function: {arguments?: string}}> }} Message
+ */
+
+/**
+ * @param {string} text
+ * @returns {number}
+ */
 export function estimateTokens(text) {
   if (!text) return 0;
   let cjk = 0, ascii = 0;
@@ -15,6 +23,11 @@ export function estimateTokens(text) {
   return Math.ceil(cjk * 1.5 + ascii * 0.25);
 }
 
+/**
+ * @param {string} text
+ * @param {number} budget
+ * @returns {string}
+ */
 export function trimToBudget(text, budget) {
   if (!text || estimateTokens(text) <= budget) return text;
   const maxChars = budget * 3.5;
@@ -22,6 +35,10 @@ export function trimToBudget(text, budget) {
   return text.slice(0, half) + `\n\n...(truncated ${Math.ceil(estimateTokens(text) - budget)} tokens)...\n\n` + text.slice(-Math.floor(maxChars * 0.3));
 }
 
+/**
+ * @param {Message[]} msgs
+ * @returns {{ totalTokens: number, systemTokens: number, historyTokens: number, toolResultTokens: number }}
+ */
 export function estimateMessageTokens(msgs) {
   let systemTokens = 0, historyTokens = 0, toolResultTokens = 0;
   for (const m of msgs) {
@@ -38,6 +55,11 @@ export function estimateMessageTokens(msgs) {
   return { totalTokens: systemTokens + historyTokens + toolResultTokens, systemTokens, historyTokens, toolResultTokens };
 }
 
+/**
+ * @param {Message[]} msgs
+ * @param {number} [budget]
+ * @returns {{ estimatedTokens: number, compressed: boolean, removedMessages: number }}
+ */
 export function compressContext(msgs, budget) {
   if (!budget) budget = Math.floor(CONTEXT_WINDOW * CONTEXT_COMPRESS_PCT);
   const before = estimateMessageTokens(msgs);
@@ -47,7 +69,7 @@ export function compressContext(msgs, budget) {
 
   for (let i = 1; i < msgs.length - 6; i++) {
     const m = msgs[i];
-    if (m.role === "tool" && m.content && m.content.length > TOOL_RESULT_KEEP_CHARS + 100) {
+    if (m.role === "tool" && typeof m.content === "string" && m.content.length > TOOL_RESULT_KEEP_CHARS + 100) {
       const origLen = m.content.length;
       m.content = m.content.slice(0, TOOL_RESULT_KEEP_CHARS) + `\n...[truncated ${origLen - TOOL_RESULT_KEEP_CHARS} chars]`;
     }
@@ -72,6 +94,9 @@ export function compressContext(msgs, budget) {
   return { estimatedTokens: afterPruning.totalTokens, compressed: true, removedMessages };
 }
 
+/**
+ * @param {Message[]} msgs
+ */
 export function sendContextUsage(msgs) {
   const usage = estimateMessageTokens(msgs);
   sendToRenderer("context:usage", {
@@ -84,6 +109,14 @@ export function sendContextUsage(msgs) {
   });
 }
 
+/**
+ * @param {Message[]} msgs
+ * @param {string} apiKey
+ * @param {string} apiUrl
+ * @param {string} [model]
+ * @param {string} [apiFormat]
+ * @returns {Promise<string>}
+ */
 export async function summarizeForContinuation(msgs, apiKey, apiUrl, model, apiFormat) {
   const convText = msgs.slice(1).map(m => {
     const role = m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : m.role === "tool" ? "工具返回" : m.role;
@@ -103,6 +136,7 @@ ${convText}
 用一段中文简要总结（包括：已完成什么、正在做什么、还需要做什么）：`;
 
   try {
+    /** @type {Record<string, any>} */
     const body = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: compactPrompt }],
@@ -112,6 +146,7 @@ ${convText}
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
+    /** @type {Record<string, string>} */
     const headers = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -134,7 +169,9 @@ ${convText}
 
     if (summary && summary.trim().length > 20) return summary.trim();
   } catch (e) {
-    console.error("[token-budget] summarizeForContinuation failed:", e.message);
+    /** @type {any} */
+    const err = e;
+    console.error("[token-budget] summarizeForContinuation failed:", err.message);
   }
 
   // Fallback: simple truncation-based summary

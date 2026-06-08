@@ -12,6 +12,19 @@
  * 必须先调 init() 才能监听上传按钮和文件选择。
  */
 
+/**
+ * @param {{
+ *   state: { attachedFiles: Array<{ name: string; size: number; type: string; dataUrl: string }> },
+ *   filePreviewArea: HTMLElement,
+ *   fileInput: HTMLInputElement,
+ *   uploadBtn: HTMLElement,
+ *   sendBtn: HTMLButtonElement,
+ *   promptInput: HTMLInputElement,
+ *   MAX_FILE_SIZE: number,
+ *   onError: (msg: string) => void,
+ *   formatFileSize: (bytes: number) => string,
+ * }} _
+ */
 export function createFilePreviews({
   state,
   filePreviewArea,
@@ -23,10 +36,15 @@ export function createFilePreviews({
   onError,           // (string) => void — 通常是 addErrorMessage(t(...))
   formatFileSize,    // (bytes) => string
 }) {
+  /**
+   * @param {string} type
+   * @param {string} name
+   */
   function fileIconSvg(type, name) {
     // 图片在 render 处直接显示缩略图，不需要 icon
     if (type.startsWith("image/")) return "";
-    const ext = name.split(".").pop().toLowerCase();
+    const ext = (name.split(".").pop() ?? "").toLowerCase();
+    /** @type {Record<string, string>} */
     const icons = {
       pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
       json: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><text x="9" y="18" font-size="10" fill="currentColor">{ }</text></svg>',
@@ -43,7 +61,7 @@ export function createFilePreviews({
       return;
     }
     filePreviewArea.classList.remove("hidden");
-    filePreviewArea.innerHTML = files.map((f, i) => {
+    filePreviewArea.innerHTML = files.map(/** @param {{ name: string; size: number; type: string; dataUrl: string }} f @param {number} i */ (f, i) => {
       const isImg = f.type.startsWith("image/");
       const iconHtml = isImg
         ? `<img src="${f.dataUrl}" alt="" />`
@@ -59,7 +77,7 @@ export function createFilePreviews({
     // Bind remove buttons
     filePreviewArea.querySelectorAll(".file-chip-remove").forEach(btn => {
       btn.addEventListener("click", () => {
-        const idx = parseInt(btn.dataset.index, 10);
+        const idx = parseInt(String((/** @type {HTMLElement} */ (btn)).dataset.index), 10);
         state.attachedFiles.splice(idx, 1);
         renderFilePreviews();
         updateSendButton();
@@ -71,6 +89,9 @@ export function createFilePreviews({
     sendBtn.disabled = !promptInput.value.trim() && state.attachedFiles.length === 0;
   }
 
+  /**
+   * @param {FileList | null} files
+   */
   async function handleFileUpload(files) {
     if (!files || files.length === 0) return;
     for (const file of files) {

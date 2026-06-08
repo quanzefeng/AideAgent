@@ -10,6 +10,23 @@
 const cache = new Map();
 const CACHE_TTL = 60_000;
 
+/**
+ * @typedef {Object} SearchResult
+ * @property {string} title
+ * @property {string} url
+ * @property {string} content
+ * @property {number} [score]
+ */
+
+/**
+ * @typedef {Object} SearchMetaResult
+ * @property {string} query
+ * @property {string} provider
+ * @property {SearchResult[]} results
+ * @property {string|undefined} _warnings
+ */
+
+/** @param {string} key @returns {*} */
 function cacheGet(key) {
   const entry = cache.get(key);
   if (!entry) return null;
@@ -17,6 +34,7 @@ function cacheGet(key) {
   return entry.data;
 }
 
+/** @param {string} key @param {*} data @param {number} [ttl] */
 function cacheSet(key, data, ttl = CACHE_TTL) {
   cache.set(key, { data, expiry: Date.now() + ttl });
 }
@@ -28,6 +46,7 @@ const sourceHealth = new Map();
 const MAX_FAILURES = 3;
 const BACKOFF_MS = 120_000;
 
+/** @param {string} name @returns {boolean} */
 function isSourceHealthy(name) {
   const h = sourceHealth.get(name);
   if (!h) return true;
@@ -36,6 +55,7 @@ function isSourceHealthy(name) {
   return true;
 }
 
+/** @param {string} name */
 function recordFailure(name) {
   const h = sourceHealth.get(name) || { failures: 0, skipUntil: 0 };
   h.failures++;
@@ -43,11 +63,13 @@ function recordFailure(name) {
   sourceHealth.set(name, h);
 }
 
+/** @param {string} name */
 function recordSuccess(name) {
   sourceHealth.delete(name);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+/** @param {string} text @returns {string} */
 function stripHtml(text) {
   return text
     .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -58,11 +80,12 @@ function stripHtml(text) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c))
+    .replace(/&#(\d+);/g, (/** @type {string} */ _, /** @type {string} */ c) => String.fromCharCode(Number(c)))
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/** @param {string} raw @returns {string} */
 function normalizeUrl(raw) {
   try {
     const u = new URL(raw);
@@ -79,6 +102,7 @@ function normalizeUrl(raw) {
 }
 
 // Simple character-level title similarity (0-1).
+/** @param {string} a @param {string} b @returns {number} */
 function titleSimilarity(a, b) {
   const na = a.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
   const nb = b.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
@@ -94,6 +118,7 @@ function titleSimilarity(a, b) {
   return matches / maxLen;
 }
 
+/** @param {SearchResult[]} results @returns {SearchResult[]} */
 function deduplicate(results) {
   // Pass 1: URL dedup (fast)
   const urlSeen = new Set();
@@ -125,6 +150,11 @@ function deduplicate(results) {
 }
 
 // Assign position-based scores then multiply by source weight.
+/**
+ * @param {SearchResult[]} results
+ * @param {number} weight
+ * @returns {SearchResult[]}
+ */
 function scoreResults(results, weight) {
   return results.map((r, i) => ({
     ...r,
@@ -143,6 +173,7 @@ function scoreResults(results, weight) {
 // Uses public Bing search page. Intended for personal, low-frequency use.
 // For production or high-volume usage, replace with Bing Search API:
 // https://www.microsoft.com/en-us/bing/apis/bing-web-search-api
+/** @param {string} query @param {number} maxResults @returns {Promise<SearchResult[]>} */
 async function searchBing(query, maxResults) {
   const hasChinese = /[\u4e00-\u9fff]/.test(query);
   const host = hasChinese ? "cn.bing.com" : "www.bing.com";
@@ -190,6 +221,7 @@ async function searchBing(query, maxResults) {
 }
 
 // ── GitHub API ──────────────────────────────────────────────────
+/** @param {string} query @param {number} maxResults @returns {Promise<SearchResult[]>} */
 async function searchGitHub(query, maxResults) {
   const perPage = Math.min(maxResults, 5);
   const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=${perPage}&sort=stars`;
@@ -199,7 +231,7 @@ async function searchGitHub(query, maxResults) {
   });
   if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
   const data = await res.json();
-  return (data.items || []).slice(0, maxResults).map((r) => ({
+  return (data.items || []).slice(0, maxResults).map((/** @type {*} */ r) => ({
     title: r.full_name,
     url: r.html_url,
     content: `${r.description || ""}  ⭐${r.stargazers_count} 🍴${r.forks_count}`,
@@ -207,6 +239,7 @@ async function searchGitHub(query, maxResults) {
 }
 
 // ── Baidu (mobile) ──────────────────────────────────────────────
+/** @param {string} query @param {number} maxResults @returns {Promise<SearchResult[]>} */
 async function searchBaidu(query, maxResults) {
   const url = `https://m.baidu.com/s?word=${encodeURIComponent(query)}&tn=98050039_dg`;
   const res = await fetch(url, {
@@ -235,6 +268,7 @@ const SOURCE_WEIGHTS = {
 };
 
 // ── Public Entry Point ──────────────────────────────────────────
+/** @param {string} query @param {number} [maxResults] @returns {Promise<SearchMetaResult>} */
 export async function searchMeta(query, maxResults = 5) {
   const maxRes = Math.min(maxResults, 10);
   const cacheKey = `${query}|${maxRes}`;

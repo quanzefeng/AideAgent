@@ -1,10 +1,21 @@
 // ── Sub-Agent Launcher ──────────────────────────────────────
 
+/**
+ * @typedef {{ apiKey?: string, apiUrl?: string, model?: string, apiFormat?: string }} ApiConfig
+ */
+
 import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer } from "./state.mjs";
 import { getAllToolDefs } from "./format-adapters.mjs";
 import { runTool } from "./tool-executor.mjs";
 
+/**
+ * @param {string} description
+ * @param {string} prompt
+ * @param {string|null} [subAgentId]
+ * @returns {Promise<{text:string,aborted?:boolean}>}
+ */
 export async function runSubAgent(description, prompt, subAgentId = null) {
+  /** @type {ApiConfig} */
   const cfg = getLastApiConfig();
   if (!cfg.apiKey || !cfg.apiUrl) return { text: "(子代理不可用：请先在主对话中发送一条消息激活 API)" };
 
@@ -13,12 +24,15 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
   _subAgentCtrls.set(id, ctrl);
   const { signal } = ctrl;
 
-  const subTools = getAllToolDefs().filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
+  /** @type {Array<any>} */
+  const allToolDefs = getAllToolDefs();
+  const subTools = allToolDefs.filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
 
   const sysContent = `你是 AideAgent 的子代理，拥有完整工具集。
 可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, memory_search, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
 你的任务是: ${prompt}
 完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。`;
+  /** @type {Array<any>} */
   const msgs = [
     { role: "system", content: sysContent },
     { role: "user", content: prompt },
@@ -44,6 +58,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
         return m;
       });
 
+      /** @type {any} */
       const body = {
         model: subModel,
         messages: cleanMsgs,
@@ -56,6 +71,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
       const endpoint = isAnthropic
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
         : apiUrl;
+      /** @type {Record<string, string>} */
       const headers = isAnthropic
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
         : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -77,10 +93,12 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
         throw new Error(`API ${res.status}: ${errText}`);
       }
 
+      if (!res.body) throw new Error("No response body (sub-agent)");
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "";
       let content = "";
+      /** @type {Record<number, {id:string, name:string, args:string}>} */
       const tcAccum = {};
 
       while (true) {
@@ -88,7 +106,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
         if (done) break;
         buf += dec.decode(value, { stream: true });
         const lines = buf.split("\n");
-        buf = lines.pop();
+        buf = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const payload = line.slice(6).trim();
@@ -139,6 +157,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
       sendToRenderer("subagent:progress", { id, description, turn: turns, content: content.slice(-200), tcsCount: tcs.length, done: false });
 
       allText += content || "";
+      /** @type {any} */
       const asst = { role: "assistant", content: content || null };
       if (tcs.length > 0) asst.tool_calls = tcs;
       msgs.push(asst);
@@ -152,14 +171,15 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
           continue;
         }
         let result;
-        try { result = await runTool(tc); } catch (e) { result = { error: e.message }; }
+        try { result = await runTool(tc); } catch (e) { result = { error: /** @type {any} */ (e).message }; }
         const resultStr = JSON.stringify(result).slice(0, 16000);
         msgs.push({ role: "tool", tool_call_id: tc.id, content: resultStr });
       }
     }
   } catch (err) {
-    if (err.name === "AbortError") return { text: allText || "(aborted)", aborted: true };
-    return { text: allText || `(子代理错误: ${err.message})` };
+    const e = /** @type {any} */ (err);
+    if (e.name === "AbortError") return { text: allText || "(aborted)", aborted: true };
+    return { text: allText || `(子代理错误: ${e.message})` };
   } finally {
     _subAgentCtrls.delete(id);
   }

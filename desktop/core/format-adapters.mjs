@@ -5,9 +5,16 @@ import { TOOL_DEFS } from "./tool-definitions.mjs";
 import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer } from "./state.mjs";
 
 // ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
+/** @type {null | Array<{type: string, function: {name: string, description: string, parameters: object}}>} */
 let _cachedToolDefs = null;
+/** @type {null | string} */
 let _cachedToolKey = null;
 
+/**
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [webSearchEnabled]
+ * @returns {Array<{type: string, function: {name: string, description: string, parameters: object}}>}
+ */
 export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   const planMode = getPlanMode();
   const key = `${kbEnabled}|${webSearchEnabled}|${planMode}`;
@@ -33,11 +40,19 @@ export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   return result;
 }
 
+/**
+ * @returns {void}
+ */
 export function invalidateToolDefsCache() {
   _cachedToolDefs = null;
   _cachedToolKey = null;
 }
 
+/**
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [webSearchEnabled]
+ * @returns {Array<{name: string, description: string, input_schema: object}>}
+ */
 export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {
   return getAllToolDefs(kbEnabled, webSearchEnabled).map(t => ({
     name: t.function.name,
@@ -46,6 +61,10 @@ export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {
   }));
 }
 
+/**
+ * @param {{role: string, content?: any, tool_calls?: Array<{id: string, function: {name: string, arguments: string}}>, tool_call_id?: string}[]} msgs
+ * @returns {{messages: Array<{role: string, content: any}>, system: string | null}}
+ */
 export function toAnthropicMessages(msgs) {
   const messages = [];
   let system = null;
@@ -79,9 +98,21 @@ export function toAnthropicMessages(msgs) {
   return { messages, system };
 }
 
+/**
+ * @param {any[]} msgs
+ * @param {string} apiUrl
+ * @param {string} apiKey
+ * @param {string} model
+ * @param {AbortSignal} signal
+ * @param {boolean} [reasoning]
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [webSearchEnabled]
+ * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
+ */
 export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
   const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
+  /** @type {{ model: string, messages: any[], tools: any[], stream: boolean, max_tokens: number, reasoning_effort?: string }} */
   const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   if (reasoning) body.reasoning_effort = "high";
   const res = await fetch(apiUrl, {
@@ -94,9 +125,10 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
     const body = (await res.text().catch(() => "")).slice(0, 300);
     throw new Error(`API ${res.status} (${res.statusText})\nURL: ${apiUrl}\nModel: ${model || "deepseek-chat"}\n${body ? "Response: " + body : ""}`);
   }
-  const reader = res.body.getReader();
+  const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
   let buf = "", content = "", reasoningContent = "";
+  /** @type {Record<number, {id: string, type: string, function: {name: string, arguments: string}}>} */
   const tcAccum = {};
   let finishReason = null;
   let usage = null;
@@ -131,6 +163,17 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   return { content, reasoningContent, finishReason, tcs: Object.values(tcAccum), usage };
 }
 
+/**
+ * @param {any[]} msgs
+ * @param {string} apiUrl
+ * @param {string} apiKey
+ * @param {string} model
+ * @param {AbortSignal} signal
+ * @param {boolean} [reasoning]
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [webSearchEnabled]
+ * @returns {Promise<{content: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
+ */
 export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
   const { messages, system } = toAnthropicMessages(msgs);
   // ── Cache the first message (first history entry) → caches system + entire history prefix ──
@@ -157,6 +200,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     ? [...toolDefs.slice(0, -1), { ...toolDefs[toolDefs.length - 1], cache_control: { type: "ephemeral", ttl: 3600 } }]
     : toolDefs;
 
+  /** @type {{ model: string, max_tokens: number, system: any, messages: any[], tools: any[], stream: boolean, thinking?: { type: string, budget_tokens: number } }} */
   const body = {
     model: model || "claude-sonnet-4-20250514",
     max_tokens: 65536,
@@ -183,9 +227,10 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     const body = (await res.text().catch(() => "")).slice(0, 300);
     throw new Error(`API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "claude-sonnet-4-20250514"}\n${body ? "Response: " + body : ""}`);
   }
-  const reader = res.body.getReader();
+  const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
   let buf = "", content = "";
+  /** @type {Record<number, {id: string, name: string, input: string}>} */
   const tcAccum = {};
   let finishReason = null;
   let usage = null;

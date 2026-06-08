@@ -12,6 +12,10 @@ import { scanSkills } from "./skill-scanner.mjs";
 import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.mjs";
 import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD } from "./token-budget.mjs";
 
+/**
+ * @param {string} ver
+ * @returns {string}
+ */
 export function bumpVersion(ver) {
   const parts = ver.split(".").map(Number);
   parts[2] = (parts[2] || 0) + 1;
@@ -106,8 +110,9 @@ function _initPromptStorePath() {
 export function loadPromptProfiles() {
   _initPromptStorePath();
   try {
-    if (existsSync(getPromptStorePath())) {
-      const raw = readFileSync(getPromptStorePath(), "utf-8");
+    const storePath = /** @type {string} */ (getPromptStorePath());
+    if (existsSync(storePath)) {
+      const raw = readFileSync(storePath, "utf-8");
       const store = JSON.parse(raw);
       let migrated = false;
       if (store.profiles) {
@@ -128,7 +133,7 @@ export function loadPromptProfiles() {
       }
       return store;
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[main] Failed to load prompt profiles:", e.message);
   }
   return {
@@ -144,17 +149,31 @@ export function loadPromptProfiles() {
   };
 }
 
+/**
+ * @param {Object} data
+ */
 export function savePromptProfiles(data) {
   _initPromptStorePath();
   try {
-    const dir = dirname(getPromptStorePath());
+    const storePath = /** @type {string} */ (getPromptStorePath());
+    const dir = dirname(storePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(getPromptStorePath(), JSON.stringify(data, null, 2), "utf-8");
-  } catch (e) {
+    writeFileSync(storePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (/** @type {any} */ e) {
     console.error("[main] Failed to save prompt profiles:", e.message);
   }
 }
 
+/**
+ * @param {string[]} [enabledSkills]
+ * @param {string} [agentName]
+ * @param {string} [userPrompt]
+ * @param {boolean} [kbEnabled]
+ * @param {boolean} [isPlanMode]
+ * @param {boolean} [webSearchEnabled]
+ * @param {boolean} [kbInject]
+ * @returns {Promise<{role: string, content: string, contextBlock: string | null}>}
+ */
 export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false, webSearchEnabled = true, kbInject = true) {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
@@ -177,7 +196,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
         content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
       }
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[main] Failed to load prompt profiles:", e.message);
   }
 
@@ -190,7 +209,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   if (mcpServers.length > 0) {
     const lines = [];
     for (const server of mcpServers) {
-      const toolNames = server.tools.map(t => `\`${t.name}\``).join(", ");
+      const toolNames = server.tools.map(/** @param {{name: string}} t */ t => `\`${t.name}\``).join(", ");
       lines.push(`  - **${server.name}**: ${toolNames}`);
     }
     mcpSection = `\n\n**MCP servers:**
@@ -216,7 +235,7 @@ Working directory: ${WORKSPACE}`;
   content += `\n\n**IMPORTANT: Before answering any user request, check both "Enabled skills" and "Available Skills" sections above. If a skill matches the user's request, you MUST call \`skill\` (for installed skills) or \`invoke_skill\` (for agent skills) with that skill name to load its full instructions, then follow them. Do not ignore matching skills.**`;
 
   try {
-    const patterns = skills.detectPatterns(sessionDb);
+    const patterns = skills.detectPatterns(/** @type {any} */ (sessionDb));
     if (patterns.length > 0) {
       const hints = patterns.slice(0, 3).map(p =>
         `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`
@@ -252,11 +271,11 @@ Working directory: ${WORKSPACE}`;
         memorySections.push(`\n\n**对话记忆：**\n${lines}`);
       }
     }
-    const recentSessions = sessionDb.getRecentSessions(10, 4, sessionId);
+    const recentSessions = sessionDb.getRecentSessions(10, 4, sessionId ?? undefined);
     if (recentSessions?.length) {
       const sessionContexts = recentSessions.map(s => {
         if (!s.messages?.length) return null;
-        const lines = s.messages.map(m => `- ${m.role}: ${(m.content || "").slice(0, 200)}`).join("\n");
+        const lines = s.messages.map(m => `- ${m.role}: ${String(m.content || "").slice(0, 200)}`).join("\n");
         return `**[${s.title}]**\n${lines}`;
       }).filter(Boolean).join("\n\n");
       if (sessionContexts) {

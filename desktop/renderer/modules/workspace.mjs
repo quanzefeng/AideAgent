@@ -44,7 +44,7 @@ function showFirstPickModal(currentDefault) {
       }
       // If user cancelled the folder dialog, keep the modal open so
       // they can pick again or explicitly skip.
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       console.error("[workspace] pick failed:", e.message);
     }
   };
@@ -55,7 +55,7 @@ function showFirstPickModal(currentDefault) {
     window.aideagent.workspaceSet(currentDefault).then(() => {
       applyPath(currentDefault);
       close();
-    }).catch(e => console.error("[workspace] set default failed:", e.message));
+    }).catch((/** @type {any} */ e) => console.error("[workspace] set default failed:", e.message));
   };
 }
 
@@ -71,7 +71,7 @@ export async function initWorkspace() {
       const current = await window.aideagent.workspaceGet();
       showFirstPickModal(current);
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[workspace] needs-first-pick check failed:", e.message);
   }
 }
@@ -82,7 +82,7 @@ document.getElementById("workspace-bar")?.addEventListener("click", async () => 
     if (result?.ok && result.workspace) {
       applyPath(result.workspace);
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[workspace] pick failed:", e.message);
   }
 });

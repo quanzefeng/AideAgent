@@ -117,7 +117,7 @@ export async function loadKnowledgeBasePanel() {
     await window.aideagent.kbSetConfig({ maxChars: parseInt(maxChars.value) || 500 });
   });
   maxBodyCharsSaveBtn?.addEventListener("click", async () => {
-    const val = parseInt(maxBodyChars.value) || 0;
+    const val = parseInt(maxBodyChars?.value || "0") || 0;
     await window.aideagent.kbSetConfig({ maxBodyChars: val });
     // Brief visual feedback
     const orig = maxBodyCharsSaveBtn.textContent;

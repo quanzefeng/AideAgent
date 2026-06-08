@@ -5,9 +5,11 @@ import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
+/** @type {Record<string, any> | null} */
 let _cache = null;   // { PreToolUse: [...], PostToolUse: [...], SessionEnd: [...] }
 let _workspace = "";
 
+/** @param {string} dir */
 function loadConfig(dir) {
   const configPath = join(dir, "hooks", "hooks.json");
   try {
@@ -17,6 +19,7 @@ function loadConfig(dir) {
   } catch { return {}; }
 }
 
+/** @param {Record<string,any>} base @param {Record<string,any>} override */
 function mergeConfigs(base, override) {
   const result = { ...base };
   for (const key of Object.keys(override)) {
@@ -27,6 +30,7 @@ function mergeConfigs(base, override) {
   return result;
 }
 
+/** @param {string} workspace */
 export function initHookManager(workspace) {
   _workspace = workspace || "";
   // project-level hooks first, then global hooks
@@ -38,8 +42,10 @@ export function initHookManager(workspace) {
   _cache = Object.keys(config).length > 0 ? config : null;
 }
 
+/** @param {string} script @param {any} data @param {number} [timeoutMs] */
 function runScript(script, data, timeoutMs = 5000) {
   return new Promise(resolve => {
+    /** @type {Buffer[]} */
     const parts = [];
     const child = spawn("node", [script], {
       cwd: _workspace,
@@ -67,6 +73,7 @@ function runScript(script, data, timeoutMs = 5000) {
 }
 
 // Resolve script path safely — must stay within workspace or global hooks dir
+/** @param {string} script */
 function safeScriptPath(script) {
   if (!script || typeof script !== "string") return null;
   const abs = resolve(_workspace, script);
@@ -81,6 +88,7 @@ function safeScriptPath(script) {
  * For "PreToolUse": returns { blocked, reason, modified, args } — awaits all scripts.
  * For others: fire-and-forget, returns null.
  */
+/** @param {string} event @param {any} data */
 export async function fire(event, data) {
   if (!_cache) return null;
   const scripts = _cache[event];

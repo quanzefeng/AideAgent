@@ -5,6 +5,7 @@
 
 const LANG_KEY = "AideAgent_lang";
 
+/** @type {Record<string, Record<string, string>>} */
 const translations = {
   zh: {
     // ── Settings Tabs ──
@@ -989,10 +990,17 @@ function getLang() {
   return localStorage.getItem(LANG_KEY) || "zh";
 }
 
+/**
+ * @param {string} lang
+ */
 function setLang(lang) {
   localStorage.setItem(LANG_KEY, lang);
 }
 
+/**
+ * @param {string} key
+ * @param {Record<string, string>} [vars]
+ */
 function t(key, vars = {}) {
   const lang = getLang();
   let str = translations[lang]?.[key] || translations.zh[key] || key;

@@ -110,7 +110,7 @@ function saveUserAvatar(src) {
   try {
     localStorage.setItem(USER_AVATAR_KEY, src);
     loadUserAvatar();
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[user avatar] save failed:", e.message);
     showToast(t("avatar.save_fail"), "error");
   }
@@ -164,7 +164,7 @@ export function initUserAvatarUI() {
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
+        if (ctx) ctx.drawImage(img, 0, 0, w, h);
         const compressed = canvas.toDataURL("image/jpeg", 0.85);
         URL.revokeObjectURL(blobUrl);
         saveUserAvatar(compressed);

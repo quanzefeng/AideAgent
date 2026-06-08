@@ -11,7 +11,9 @@ const SKILL_DIRS = [
   join(HOME, ".claude", "skills"),
 ];
 
+/** @param {string} text */
 export function parseFrontMatter(text) {
+  /** @type {Record<string, any>} */
   const meta = { name: "", description: "", triggers: [], allowed_tools: [] };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return meta;

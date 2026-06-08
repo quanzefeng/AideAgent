@@ -3,6 +3,13 @@
 import * as memory from "../memory-store.mjs";
 import { _surfacedMemories } from "./state.mjs";
 
+/**
+ * @param {string} query
+ * @param {string} apiKey
+ * @param {string} apiUrl
+ * @param {string} model
+ * @param {string} apiFormat
+ */
 export async function selectRelevantMemories(query, apiKey, apiUrl, model, apiFormat) {
   const memories = memory.listMemories();
   if (memories.length === 0) return "";
@@ -39,6 +46,7 @@ ${manifest}
 Return: {"selected_memories": ["file1.md", "file2.md"]}`;
 
   try {
+    /** @type {{ model: string, messages: { role: string, content: string }[], max_tokens: number, stream: boolean, system?: string }} */
     const body = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: selectPrompt }],
@@ -48,6 +56,7 @@ Return: {"selected_memories": ["file1.md", "file2.md"]}`;
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
+    /** @type {Record<string, string>} */
     const headers = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -64,6 +73,7 @@ Return: {"selected_memories": ["file1.md", "file2.md"]}`;
     });
     if (res.ok) {
       const data = await res.json();
+      /** @type {string} */
       const selectedText = apiFormat === "anthropic"
         ? (data.content?.[0]?.text || "")
         : (data.choices?.[0]?.message?.content || "");
@@ -71,7 +81,7 @@ Return: {"selected_memories": ["file1.md", "file2.md"]}`;
       let selectedNames = [];
       try {
         const parsed = JSON.parse(selectedText);
-        selectedNames = (parsed.selected_memories || parsed || []).map(s => String(s).trim().replace(/\.md$/, ""));
+        selectedNames = (/** @type {string[]} */ (parsed.selected_memories || parsed || [])).map(s => String(s).trim().replace(/\.md$/, ""));
       } catch {
         selectedNames = selectedText.split(/[,，\n]/).map(s => s.trim().replace(/\.md$/, "")).filter(Boolean);
       }
@@ -95,7 +105,7 @@ Return: {"selected_memories": ["file1.md", "file2.md"]}`;
         }).join("\n");
       }
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[memory] semantic selection failed:", e.message);
   }
 

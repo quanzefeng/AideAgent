@@ -28,7 +28,7 @@ function createWindow() {
       session.defaultSession.registerPreloadScript({ type: "frame", filePath: preloadPath });
       console.log("[main] registerPreloadScript called (global)");
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     console.error("[main] session preload registration error:", e.message);
   }
 
@@ -90,7 +90,7 @@ app.whenReady().then(async () => {
     try {
       renameSync(oldDir, newDir);
       console.log("[migration] Renamed ~/.goodagent → ~/.aideagent");
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       console.error("[migration] Failed to rename ~/.goodagent → ~/.aideagent:", e.message);
     }
   }
@@ -129,12 +129,12 @@ app.whenReady().then(async () => {
   } catch { /* ignored */ }
 
   try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch { /* ignored */ }
-  try { skills.reindexSkills(); } catch (e) { console.error("[skills-store] reindex:", e.message); }
+  try { skills.reindexSkills(); } catch (/** @type {any} */ e) { console.error("[skills-store] reindex:", e.message); }
 
   const CURATOR_INTERVAL = 6 * 60 * 60 * 1000;
   setInterval(() => {
     try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); }
-    catch (e) { console.error("[curator] periodic run failed:", e.message); }
+    catch (/** @type {any} */ e) { console.error("[curator] periodic run failed:", e.message); }
   }, CURATOR_INTERVAL);
 
   // Register all IPC handlers
