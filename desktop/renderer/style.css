@@ -45,6 +45,7 @@
   --sidebar-width: 240px;
   /* 消息列表 + 输入框共用同一个宽度约束（ChatGPT / 豆包风格） */
   --chat-max-width: 52rem;
+  --input-max-width: 50rem;
 }
 
 /* ========================================
@@ -1673,7 +1674,7 @@ html, body {
 }
 
 .message.assistant .message-text {
-  line-height: 1.7;
+  line-height: 1.8;
   font-size: 16px;
   font-family: var(--chat-font, var(--font-sans));
   color: var(--text);
@@ -2016,7 +2017,7 @@ html, body {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: var(--chat-max-width);
+  max-width: var(--input-max-width);
   background: #ffffff;
   border: 1.8px solid #818cf8;
   border-radius: var(--radius-sm);
@@ -2180,6 +2181,7 @@ html, body {
   flex-wrap: wrap;
   gap: 6px;
   width: 100%;
+  max-width: var(--chat-max-width);
   max-width: var(--chat-max-width);
   padding: 0 2px 6px;
   box-sizing: border-box;

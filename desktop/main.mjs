@@ -69,6 +69,9 @@ function createWindow() {
     console.error("[main] FAIL LOAD:", errorCode, errorDescription);
   });
 
+  // Maximize after creation — more reliable than `maximize: true` in options on Windows
+  mainWindow.maximize();
+
   mainWindow.loadFile(join(PROJECT_ROOT, "renderer", "index.html"));
   if (isDev) mainWindow.webContents.openDevTools();
   mainWindow.on("closed", () => { setMainWindow(null); });
