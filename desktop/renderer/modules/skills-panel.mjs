@@ -129,7 +129,62 @@ export async function loadSkillsPanel() {
     });
   }
 
+  // Phase 2 listener: when main process detects repeated-task patterns after
+  // a session ends, surface a small toast so the user knows to consider
+  // creating a skill. Click → opens settings → skills panel.
+  if (!window.__aideagentSkillListenerAttached) {
+    window.__aideagentSkillListenerAttached = true;
+    window.aideagent?.onPatternsDetected?.((/** @type {any} */ _event, /** @type {any} */ payload) => {
+      const list = payload?.suggestions || [];
+      if (!list.length) return;
+      showSkillSuggestionToast(list);
+    });
+  }
+
   await refreshSkillsList();
+}
+
+// ── Skill suggestion toast (Phase 2) ─────────────────────────────────────
+
+/**
+ * Show a small floating toast notifying the user that the agent detected
+ * repeated-task patterns from recent sessions. Click to open skills panel.
+ * @param {Array<{phrase: string, count: number, examples: string[]}>} suggestions
+ */
+function showSkillSuggestionToast(suggestions) {
+  // Avoid stacking: replace any existing toast.
+  const existing = document.getElementById("skill-suggestion-toast");
+  if (existing) existing.remove();
+
+  const top = suggestions[0];
+  const text = suggestions.length === 1
+    ? `💡 检测到重复模式 "${top.phrase}"（出现 ${top.count} 次），可提炼为技能`
+    : `💡 检测到 ${suggestions.length} 个重复任务模式，可提炼为技能`;
+
+  const toast = document.createElement("div");
+  toast.id = "skill-suggestion-toast";
+  toast.textContent = text;
+  toast.style.cssText = [
+    "position:fixed", "right:24px", "bottom:24px", "z-index:9999",
+    "max-width:360px", "padding:12px 16px", "border-radius:8px",
+    "background:#1f2937", "color:#f3f4f6", "box-shadow:0 6px 20px rgba(0,0,0,.35)",
+    "font-size:13px", "line-height:1.4", "cursor:pointer",
+    "border:1px solid #374151", "transition:opacity .25s",
+  ].join(";");
+  toast.title = "点击打开技能面板";
+  toast.onclick = () => {
+    toast.remove();
+    // Open settings panel and switch to skills tab
+    document.getElementById("settings-btn")?.click();
+    setTimeout(() => {
+      document.querySelectorAll(".settings-tab").forEach((el) => {
+        if (el instanceof HTMLElement && /技能|skills/i.test(el.textContent || "")) el.click();
+      });
+    }, 200);
+  };
+  document.body.appendChild(toast);
+  // Auto-dismiss after 12s
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 12000);
 }
 
 /** Refresh the L2 skills list, patterns card, and curator info bar. */

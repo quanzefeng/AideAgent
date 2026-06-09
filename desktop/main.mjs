@@ -102,6 +102,9 @@ app.whenReady().then(async () => {
   // first-pick detection sees the right state on first paint.
   initWorkspaceFromConfig();
 
+  // Skills (L2) startup wiring is handled later in this callback (line ~144):
+  // reindexSkills() + runCurator() + 6h periodic interval. No need to duplicate.
+
   createWindow();
 
   // CORS headers for custom API endpoints

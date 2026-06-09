@@ -566,4 +566,11 @@ export function registerIpcHandlers() {
     saveKeyStore(store);
     return { ok: true };
   });
+
+  // Note: the 12 skills:* IPC channels (skills:list-all, skills:load-one,
+  // skills:set-status, skills:delete, skills:detect-patterns,
+  // skills:curator-run, skills:curator-status, skills:curator-config,
+  // skills:health, skills:save, skills:search, skills:reindex) are
+  // registered earlier in this file (line 213+). Do NOT re-register them
+  // here or Electron throws "Attempted to register a second handler".
 }

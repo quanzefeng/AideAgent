@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   onL0Budget: (/** @type {any} */ cb) => ipcRenderer.on("l0:budget", (_event, d) => cb(d)),
   onContextUsage: (/** @type {any} */ cb) => ipcRenderer.on("context:usage", (_event, d) => cb(d)),
   onTaskClear: (/** @type {any} */ cb) => ipcRenderer.on("task:clear", () => cb()),
+  onPatternsDetected: (/** @type {any} */ cb) => ipcRenderer.on("agent-skill:patterns-detected", (_event, d) => cb(d)),
   // System prompt profiles
   listPromptProfiles: () => ipcRenderer.invoke("prompt:list"),
   getDefaultPrompt: () => ipcRenderer.invoke("prompt:default"),

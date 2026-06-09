@@ -8,6 +8,7 @@ import { runTool } from "./tool-executor.mjs";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.mjs";
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";
+import * as skills from "../skills-store.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -566,6 +567,25 @@ ${convText}
 
   hookManager.fire("SessionEnd", { sessionId: finalSessionId, aborted: false }).catch(() => {});
   autoReview(msgs, apiKey, apiUrl, model, apiFormat).catch(() => {});
+
+  // Phase 2 trigger: detect repeated-task patterns from the last 30 sessions.
+  // If a phrase appears in 3+ sessions and isn't covered by an existing skill,
+  // notify the renderer to suggest skill creation. Fire-and-forget; never block
+  // the response.
+  if (!silent) {
+    (async () => {
+      try {
+        /** @type {any} */
+        const db = sessionDb;
+        const suggestions = await skills.detectPatterns(/** @type {any} */ (db));
+        if (Array.isArray(suggestions) && suggestions.length > 0) {
+          sdr("agent-skill:patterns-detected", { suggestions });
+        }
+      } catch (/** @type {any} */ e) {
+        console.error("[agent-loop] detectPatterns failed:", e?.message);
+      }
+    })();
+  }
   return { text: allText || "(no text response)" };
 }
 
