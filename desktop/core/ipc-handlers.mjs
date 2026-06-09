@@ -224,6 +224,44 @@ export function registerIpcHandlers() {
   ipcMain.handle("skills:search", async (_e, query, limit) => skills.searchSkills(query, limit));
   ipcMain.handle("skills:reindex", async () => { skills.reindexSkills(); return { ok: true }; });
 
+  // Per-user skill name translations (display-only, in ~/.aideagent/skill-translations.json)
+  // Use the same union (L3 scanSkills + L2 listSkills) the renderer shows, so cache
+  // keys line up with what the user actually sees in the skills panel.
+  ipcMain.handle("skills:translations-get", async () => {
+    try { return { ok: true, translations: skills.loadTranslations() }; }
+    catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("skills:translations-missing", async () => {
+    try {
+      /** @type {any} */
+      const l3 = scanSkills() || [];
+      /** @type {any} */
+      const l2 = skills.listSkills() || [];
+      const seen = new Set(l3.map((/** @type {any} */ s) => s.name));
+      const all = /** @type {any} */ ([...l3, ...l2.filter((/** @type {any} */ s) => !seen.has(s.name))]);
+      return { ok: true, missing: skills.getMissingTranslations(all) };
+    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle("skills:translations-ensure", async (_e, apiConfig) => {
+    try {
+      /** @type {any} */
+      const l3 = scanSkills() || [];
+      /** @type {any} */
+      const l2 = skills.listSkills() || [];
+      const seen = new Set(l3.map((/** @type {any} */ s) => s.name));
+      const all = /** @type {any} */ ([...l3, ...l2.filter((/** @type {any} */ s) => !seen.has(s.name))]);
+      const missing = skills.getMissingTranslations(all);
+      if (missing.length === 0) return { ok: true, translated: 0, totalMissing: 0, errors: 0 };
+      /** @type {any} */
+      const cfg = apiConfig && apiConfig.apiKey ? apiConfig : (getLastApiConfig() || {});
+      const result = await skills.ensureTranslations(missing, cfg);
+      if (result.translated > 0) {
+        sendToRenderer("skills:translations-updated", { count: result.translated });
+      }
+      return { ok: true, ...result, skipped: result.skipped || (!cfg.apiKey ? "no api key in main process" : undefined) };
+    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+  });
+
   ipcMain.handle("permission:respond", (event, { id, allow }) => {
     const resolve = pendingPerms.get(id);
     if (resolve) { resolve(allow); pendingPerms.delete(id); }

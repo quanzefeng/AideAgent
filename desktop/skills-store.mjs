@@ -19,6 +19,175 @@ const SKILLS_DB_PATH = join(SKILLS_DIR, "skills.db");
 if (!existsSync(SKILLS_DIR)) mkdirSync(SKILLS_DIR, { recursive: true });
 if (!existsSync(ARCHIVE_DIR)) mkdirSync(ARCHIVE_DIR, { recursive: true });
 
+// ── Skill name translations (per-user cache, opt-in LLM-backed) ──────────
+const TRANSLATIONS_PATH = join(HOME, ".aideagent", "skill-translations.json");
+
+/**
+ * Load user's per-user translation cache. Empty object if missing/invalid.
+ * @returns {Object<string, string>}
+ */
+export function loadTranslations() {
+  try {
+    if (!existsSync(TRANSLATIONS_PATH)) return {};
+    const raw = readFileSync(TRANSLATIONS_PATH, "utf8");
+    const data = JSON.parse(raw);
+    /** @type {Object<string, string>} */
+    const out = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (k.startsWith("_")) continue;
+      if (typeof v === "string" && v.trim()) out[k] = v;
+    }
+    return out;
+  } catch (/** @type {any} */ e) {
+    console.error("[skills-store] loadTranslations:", e.message);
+    return {};
+  }
+}
+
+/**
+ * Persist translation map to disk. Stamps `_lastUpdated` for debugging.
+ * @param {Object<string, string>} map
+ * @returns {{ok: boolean, path: string}}
+ */
+export function saveTranslations(map) {
+  try {
+    const dir = join(HOME, ".aideagent");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const payload = { ...(map || {}), _lastUpdated: new Date().toISOString() };
+    writeFileSync(TRANSLATIONS_PATH, JSON.stringify(payload, null, 2), "utf8");
+    return { ok: true, path: TRANSLATIONS_PATH };
+  } catch (/** @type {any} */ e) {
+    console.error("[skills-store] saveTranslations:", e.message);
+    return { ok: false, path: TRANSLATIONS_PATH };
+  }
+}
+
+/**
+ * Find skills missing a Chinese translation in the user's cache.
+ * @param {Array<{name: string, description?: string}>} skills
+ * @returns {Array<{name: string, description: string}>}
+ */
+export function getMissingTranslations(skills) {
+  const cached = loadTranslations();
+  const missing = [];
+  for (const s of skills || []) {
+    if (!s?.name) continue;
+    if (cached[s.name]) continue;
+    missing.push({ name: s.name, description: s.description || "" });
+  }
+  return missing;
+}
+
+/**
+ * Translate missing skill names in batches via the user's configured LLM.
+ * Batches of 30 per call; saves incrementally so a partial failure still
+ * keeps what was already translated.
+ *
+ * @param {Array<{name: string, description?: string}>} missing
+ * @param {{apiKey: string, apiUrl: string, model?: string, apiFormat?: string}} apiConfig
+ * @returns {Promise<{translated: number, totalMissing: number, errors: number, skipped?: string}>}
+ */
+export async function ensureTranslations(missing, apiConfig) {
+  if (!Array.isArray(missing) || missing.length === 0) return { translated: 0, totalMissing: 0, errors: 0 };
+  if (!apiConfig?.apiKey || !apiConfig?.apiUrl) {
+    return { translated: 0, totalMissing: missing.length, errors: 0, skipped: "no api config" };
+  }
+
+  const cached = loadTranslations();
+  const BATCH = 30;
+  let translated = 0;
+  let errors = 0;
+
+  for (let i = 0; i < missing.length; i += BATCH) {
+    const batch = missing.slice(i, i + BATCH);
+    try {
+      const map = await translateBatchViaLLM(batch, apiConfig);
+      let added = 0;
+      for (const [name, zh] of Object.entries(map)) {
+        if (typeof zh === "string" && zh.trim() && zh.length <= 30) {
+          cached[name] = zh.trim();
+          added++;
+        }
+      }
+      if (added > 0) {
+        saveTranslations(cached);
+        translated += added;
+      }
+    } catch (/** @type {any} */ e) {
+      errors++;
+      console.error(`[skills-store] translate batch ${i / BATCH + 1} failed:`, e?.message);
+    }
+  }
+  return { translated, totalMissing: missing.length, errors };
+}
+
+/**
+ * Call the configured LLM to translate a batch of skill names to Chinese.
+ * @param {Array<{name: string, description?: string}>} batch
+ * @param {{apiKey: string, apiUrl: string, model?: string, apiFormat?: string}} apiConfig
+ * @returns {Promise<Object<string, string>>}
+ */
+async function translateBatchViaLLM(batch, apiConfig) {
+  const list = batch.map((b, i) => `${i + 1}. ${b.name} — ${b.description || "(无描述)"}`).join("\n");
+  const systemPrompt = `You are a skill-name translator. Given a list of English skill names (and short descriptions), output a JSON object mapping each English name to a concise Chinese translation (max 12 characters).
+
+Rules:
+- Keep brand/version tokens as-is (e.g. "1password", "v1.0.0", "MiniLM-L6", "3D")
+- Translate meaning, not just the literal word: "algorithmic-art" → "算法艺术" (not "算法-艺术")
+- For already-recognized terms, use the standard Chinese term (e.g. "QA" → "质量保障", "RAG" → "检索增强生成")
+- For tools that are well-known by their English name, keep the English plus a short Chinese hint (e.g. "GitHub" → "GitHub 代码托管")
+- Output ONLY the JSON object, no markdown, no commentary.`;
+
+  const userPrompt = `Translate these skill names to concise Chinese:\n\n${list}`;
+
+  let url = apiConfig.apiUrl.trim().replace(/\/+$/, "");
+  if (!url.includes("/chat/completions")) {
+    if (!url.endsWith("/v1")) url += "/v1";
+    url += "/chat/completions";
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiConfig.apiKey}` },
+    body: JSON.stringify({
+      model: apiConfig.model || "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 4096,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!res.ok) throw new Error(`API ${res.status} ${res.statusText}`);
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content || "";
+  return parseTranslationJson(text, batch);
+}
+
+/**
+ * Parse the LLM response into a {english: chinese} map. Tolerates fences.
+ * @param {string} text
+ * @param {Array<{name: string}>} batch
+ * @returns {Object<string, string>}
+ */
+function parseTranslationJson(text, batch) {
+  if (!text) return {};
+  let cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
+  try {
+    const obj = JSON.parse(cleaned);
+    /** @type {Object<string, string>} */
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === "string" && v.trim()) out[k.trim()] = v.trim();
+    }
+    return out;
+  } catch { return {}; }
+}
+
 // ── SQLite skills index (sidecar, flat files are primary) ──
 /** @type {DatabaseSync | null} */
 let skillsDb;

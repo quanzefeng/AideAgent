@@ -37,12 +37,20 @@ export async function loadAndRenderSkills() {
     if (countEl) countEl.textContent = t("skills.count").replace("{count}", String(skills.length));
 
     const enabled = loadEnabledSkills();
+    // Fetch Chinese translations (per-user cache; empty on first run). The
+    // preload bridge is `.cjs` so TS does not see the new methods.
+    /** @type {any} */
+    const api = window.aideagent;
+    const transResult = await api.skillsTranslationsGet?.() || { translations: {} };
+    const translations = transResult.translations || {};
 
     listEl.innerHTML = skills.map(s => {
       const isOn = enabled.includes(s.name);
+      const zh = translations[s.name] || "";
       return `<div class="skill-card">
         <div class="skill-card-info">
           <div class="skill-card-name">${sanitize(s.name)}</div>
+          ${zh ? `<div class="skill-card-name-zh">${sanitize(zh)}</div>` : ""}
           <div class="skill-card-meta">
             <span class="skill-card-source">${s.source === "agents" ? "🤖 .agents" : "📦 .claude"}</span>
             ${s.version ? `<span class="skill-card-version">v${sanitize(s.version)}</span>` : ""}
@@ -68,10 +76,49 @@ export async function loadAndRenderSkills() {
         saveEnabledSkills(en);
       });
     });
+
+    // Phase 2: incrementally translate any un-translated skills in the background.
+    triggerIncrementalTranslation(skills);
   } catch (err) {
     console.error("[skills] load error:", err);
     listEl.innerHTML = `<div class="skills-empty" style="color:var(--danger);">${t("skills.load_error")}</div>`;
   }
+}
+
+/**
+ * Fire-and-forget: ask main to translate any skills that don't have a Chinese
+ * label yet. The API key is read from the encrypted main-process store
+ * (api-keys.enc) since localStorage only ever holds the unencrypted fields
+ * (provider, url, model). The IPC handler falls back to getLastApiConfig()
+ * if the caller does not pass apiKey. On success, the IPC event
+ * `skills:translations-updated` triggers a re-render.
+ * @param {Array<{name: string}>} skills
+ */
+async function triggerIncrementalTranslation(skills) {
+  /** @type {any} */
+  const api = window.aideagent;
+  if (!api?.skillsTranslationsMissing) return;
+  try {
+    const missResult = await api.skillsTranslationsMissing();
+    if (!missResult?.ok || !Array.isArray(missResult.missing) || missResult.missing.length === 0) return;
+    // If the user has the API configured, send the url+model+provider along
+    // so the main process doesn't need to read localStorage (it can't, anyway).
+    // The key itself is fetched from the encrypted store by the IPC handler
+    // if not supplied.
+    const cfg = loadApiConfig();
+    if (!cfg.provider || !cfg.apiUrl) return;
+    const apiKey = await api.loadApiKey?.(cfg.provider);
+    if (!apiKey) return;
+    api.skillsTranslationsEnsure({ ...cfg, apiKey }).then((/** @type {any} */ r) => {
+      if (r?.ok && r.translated > 0) {
+        console.log(`[skills] auto-translated ${r.translated} skill name(s) (errors=${r.errors})`);
+      } else if (r?.skipped) {
+        console.debug("[skills] translation skipped:", r.skipped);
+      }
+    }).catch((/** @type {any} */ e) => {
+      console.warn("[skills] translation ensure failed:", e);
+    });
+  } catch { /* silent */ }
 }
 
 /**
@@ -138,6 +185,21 @@ export async function loadSkillsPanel() {
       const list = payload?.suggestions || [];
       if (!list.length) return;
       showSkillSuggestionToast(list);
+    });
+  }
+
+  // Phase 2 listener: when the main process finishes a background translation
+  // batch, re-render the skill list to surface the newly-translated Chinese
+  // names without a page reload.
+  if (!window.__aideagentTranslationListenerAttached) {
+    window.__aideagentTranslationListenerAttached = true;
+    /** @type {any} */
+    const _api = window.aideagent;
+    _api?.onTranslationsUpdated?.((/** @type {any} */ _event, /** @type {any} */ payload) => {
+      const n = payload?.count || 0;
+      if (n > 0 && _skillsPanelLoaded) {
+        loadAndRenderSkills().catch((e) => console.warn("[skills] re-render after translation failed:", e));
+      }
     });
   }
 

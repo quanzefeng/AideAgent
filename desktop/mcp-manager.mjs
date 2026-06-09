@@ -30,16 +30,6 @@ const BUILTIN_SERVERS = Object.freeze({
     env: {},
     docs: "https://www.npmjs.com/package/@playwright/mcp",
   },
-  filesystem: {
-    label: "文件系统",
-    labelEn: "File System",
-    description: "安全的文件读写操作（默认访问用户目录）",
-    descriptionEn: "Secure file read/write (defaults to user home)",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "C:\\", "D:\\"],
-    env: {},
-    docs: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
-  },
   "computer-use": {
     label: "桌面控制",
     labelEn: "Computer Use",

@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld("aideagent", {
   skillsSaveSkill: (/** @type {any} */ name, /** @type {any} */ meta, /** @type {any} */ body) => ipcRenderer.invoke("skills:save", name, meta, body),
   skillsSearch: (/** @type {any} */ query, /** @type {any} */ limit) => ipcRenderer.invoke("skills:search", query, limit),
   skillsReindex: () => ipcRenderer.invoke("skills:reindex"),
+  // Phase 2: per-user Chinese skill-name translations (display-only cache)
+  skillsTranslationsGet: () => ipcRenderer.invoke("skills:translations-get"),
+  skillsTranslationsMissing: () => ipcRenderer.invoke("skills:translations-missing"),
+  skillsTranslationsEnsure: (/** @type {any} */ apiConfig) => ipcRenderer.invoke("skills:translations-ensure", apiConfig),
+  onTranslationsUpdated: (/** @type {any} */ cb) => ipcRenderer.on("skills:translations-updated", (_event, d) => cb(d)),
   listSkills: () => ipcRenderer.invoke("skills:list"),
   loadSkill: (/** @type {any} */ name) => ipcRenderer.invoke("skills:load", name),
   onStreamStart: (/** @type {any} */ cb) => ipcRenderer.on("stream:start", () => cb()),

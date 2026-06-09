@@ -4,3 +4,5 @@ desktop/release/
 **/.playwright-mcp/
 *.log
 *.txt
+# Per-user skill name translations (Phase 2)
+**/skill-translations.json
