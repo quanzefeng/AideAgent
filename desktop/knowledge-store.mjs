@@ -429,7 +429,7 @@ async function detectModelContext(modelName) {
 }
 
 /** @param {string} text @returns {Promise<Float32Array|null>} */
-async function embedText(text) {
+export async function embedText(text) {
   const embedder = await getEmbedder();
   if (!embedder) return null;
 

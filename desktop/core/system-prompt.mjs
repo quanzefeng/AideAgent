@@ -181,8 +181,47 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   const filterSkills = enabledSkills && enabledSkills.length > 0
     ? allSkills.filter(s => enabledSkills.includes(s.name))
     : allSkills;
+
+  // Phase 2: match user prompt against skills using [A] trigger keywords + [B] embedding similarity.
+  // Matched skills are pinned to the top of the list with a ⚡ marker so the LLM sees them first.
+  // `kb` is imported as `* as kb` above — embedText is the only embedding entry point we need.
+  let matchedNames = new Set();
+  let matchedDetails = new Map();
+  if (userPrompt && userPrompt.trim() && filterSkills.length > 0) {
+    try {
+      const { embedText } = await import("../knowledge-store.mjs");
+      const matches = await skills.matchSkills(userPrompt, filterSkills, {
+        embedFn: embedText,
+        semanticThreshold: 0.5,
+        semanticTopK: 3,
+      });
+      for (const m of matches) {
+        matchedNames.add(m.skill.name);
+        matchedDetails.set(m.skill.name, m);
+      }
+    } catch (/** @type {any} */ e) {
+      // Fall back to no matching; the LLM still sees the full list and can self-select.
+      console.error("[system-prompt] skill match failed:", e.message);
+    }
+  }
+
+  // Build a top section listing matched skills, then a full list (matched ones repeated with a tag)
+  const matchedSkills = filterSkills.filter(s => matchedNames.has(s.name));
+  const otherSkills = filterSkills.filter(s => !matchedNames.has(s.name));
+  const matchedSection = matchedSkills.length > 0
+    ? "**Auto-matched (from your prompt — please use these if relevant):**\n" +
+      matchedSkills.map(s => {
+        const m = matchedDetails.get(s.name);
+        const tag = m?.via?.startsWith("trigger:") ? `trigger \`${m.via.slice(8)}\`` : "semantic match";
+        return `  - ⚡ \`${s.name}\`: ${s.description || "(no description)"} _(${tag})_`;
+      }).join("\n")
+    : "";
+
   const skillList = filterSkills.length > 0
-    ? filterSkills.map(s => `  - \`${s.name}\`: ${s.description || "(no description)"}`).join("\n")
+    ? filterSkills.map(s => {
+        const tag = matchedNames.has(s.name) ? " ⚡" : "";
+        return `  - \`${s.name}\`${tag}: ${s.description || "(no description)"}`;
+      }).join("\n")
     : "  (no skills enabled)";
 
   let content = "";
@@ -219,6 +258,7 @@ You can use the MCP tools listed above just like any other tool.`;
 
   content += `\n\n**Enabled skills (user-selected):**
 ${skillList}
+${matchedSection ? "\n" + matchedSection : ""}
 ${mcpSection}
 
 Working directory: ${WORKSPACE}`;

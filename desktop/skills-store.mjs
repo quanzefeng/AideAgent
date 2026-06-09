@@ -277,6 +277,91 @@ export function listSkills() {
   });
 }
 
+// ── Skill matching: trigger keywords + embedding similarity (Phase 2) ──
+
+/**
+ * Match user prompt against installed skills using a hybrid strategy:
+ *   [A] trigger keyword hard match (deterministic, score=1.0)
+ *   [B] embedding cosine similarity top-K (semantic, score=cos)
+ * Matched skills are returned with their score and the match channel.
+ * Skills without any match are excluded. Caller decides whether to also
+ * surface the full list for LLM self-selection.
+ *
+ * @param {string} userPrompt
+ * @param {Array<Object<string, any>>} allSkills
+ * @param {{ embedFn?: (text: string) => Promise<Float32Array | null>, semanticThreshold?: number, semanticTopK?: number }} [opts]
+ * @returns {Promise<Array<{ skill: Object<string, any>, score: number, via: string }>>}
+ */
+export async function matchSkills(userPrompt, allSkills, opts = {}) {
+  if (!userPrompt || !Array.isArray(allSkills) || allSkills.length === 0) return [];
+  const semanticThreshold = opts.semanticThreshold ?? 0.5;  // conservative; only strong matches
+  const semanticTopK = opts.semanticTopK ?? 3;
+  const embedFn = opts.embedFn || null;
+
+  const matched = new Map();
+  const lower = userPrompt.toLowerCase();
+
+  // [A] trigger keyword hard match
+  for (const s of allSkills) {
+    const triggers = Array.isArray(s.triggers) ? s.triggers : [];
+    for (const t of triggers) {
+      const trig = String(t || "").toLowerCase().trim();
+      if (trig && lower.includes(trig)) {
+        matched.set(s.name, { skill: s, score: 1.0, via: "trigger:" + trig });
+        break;  // one trigger hit is enough
+      }
+    }
+  }
+
+  // [B] embedding similarity (semantic fallback)
+  if (embedFn && typeof embedFn === "function") {
+    try {
+      const queryVec = await embedFn(userPrompt);
+      if (queryVec) {
+        // Score every skill by description-level similarity
+        const scored = [];
+        for (const s of allSkills) {
+          if (matched.has(s.name)) continue;  // already matched
+          const docText = (s.description || s.name || "").trim();
+          if (!docText) continue;
+          const docVec = await embedFn(docText);
+          if (!docVec) continue;
+          const sim = cosineSim(queryVec, docVec);
+          if (sim >= semanticThreshold) scored.push({ skill: s, score: sim, via: "semantic" });
+        }
+        scored.sort((a, b) => b.score - a.score);
+        for (const hit of scored.slice(0, semanticTopK)) {
+          if (!matched.has(hit.skill.name)) matched.set(hit.skill.name, hit);
+        }
+      }
+    } catch (/** @type {any} */ e) {
+      console.error("[skills-store] semantic match failed:", e.message);
+    }
+  }
+
+  return [...matched.values()].sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Cosine similarity between two equal-length Float32Array vectors.
+ * @param {Float32Array} a
+ * @param {Float32Array} b
+ * @returns {number}
+ */
+function cosineSim(a, b) {
+  const len = Math.min(a.length, b.length);
+  if (len === 0) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < len; i++) {
+    const x = a[i], y = b[i];
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom > 0 ? dot / denom : 0;
+}
+
 /**
  * @param {string} name
  * @returns {Object<string, any> | null}
