@@ -397,6 +397,208 @@ export async function runTool(tc) {
         };
       } catch (e) { return { error: e.message }; }
     }
+    case "list_tools": {
+      // P2-4: Authoritative tools inventory for the LLM.
+      // The LLM already sees tool defs in its own context, but this tool
+      // provides a structured summary with category breakdown and shadowing
+      // detection (built-in tool names that are also exposed by MCP).
+      try {
+        const { getAllToolDefs } = await import("./format-adapters.mjs");
+        const defs = getAllToolDefs(true, true) || [];
+        // Categorize by inspecting name + description
+        const categorize = (name) => {
+          if (["file_read", "file_write", "file_edit", "grep", "glob", "lsp"].includes(name)) return "file";
+          if (name === "bash") return "shell";
+          if (["web_search", "web_fetch"].includes(name)) return "web";
+          if (["git_diff", "git_commit", "git_branch"].includes(name)) return "git";
+          if (["gh_pr", "gh_issue", "gh_repo"].includes(name)) return "github";
+          if (["kb_search", "kb_write", "kb_get_note"].includes(name)) return "kb";
+          if (["TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent"].includes(name)) return "task";
+          if (["skill", "invoke_skill", "create_skill", "list_skills"].includes(name)) return "skill";
+          if (name === "write_memory") return "memory";
+          if (["list_memories", "list_kb", "list_mcp", "list_tools"].includes(name)) return "meta";
+          return "other";
+        };
+        const byCategory = {};
+        const builtins = new Set();
+        const allNames = [];
+        for (const d of defs) {
+          const n = d.function.name;
+          allNames.push(n);
+          const cat = categorize(n);
+          byCategory[cat] = (byCategory[cat] || 0) + 1;
+          // Built-in heuristic: built-ins live in tool-definitions.mjs, MCP tools
+          // are anything else. Use a list of known built-ins for now.
+          const KNOWN_BUILTINS = new Set([
+            "bash", "file_read", "file_write", "file_edit", "grep", "glob", "lsp",
+            "web_search", "web_fetch", "write_memory", "skill", "invoke_skill", "create_skill",
+            "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent",
+            "kb_search", "kb_write", "kb_get_note",
+            "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
+            "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
+          ]);
+          if (KNOWN_BUILTINS.has(n)) builtins.add(n);
+        }
+        // Shadowing: a tool name that exists in BOTH the built-in set AND
+        // the MCP-only set. The LLM needs this to disambiguate which one
+        // a bare `web_search(...)` call would route to.
+        const shadowing = allNames.filter(n => {
+          // If name appears more than once in defs, it's shadowed
+          return allNames.indexOf(n) !== allNames.lastIndexOf(n);
+        });
+        const uniqueShadowing = [...new Set(shadowing)];
+        return {
+          total: defs.length,
+          builtinCount: builtins.size,
+          mcpCount: defs.length - builtins.size,
+          byCategory,
+          currentMode: getPlanMode() ? "plan" : "normal",
+          shadowing: uniqueShadowing,
+          shadowingNote: uniqueShadowing.length > 0
+            ? `These tool names exist in both built-in and MCP forms. The runtime dispatch order is: MCP tools first, then built-in. To force built-in, the user must disable the MCP server in Settings → MCP.`
+            : "No tool name conflicts detected.",
+          // Per-tool summary (not full schemas to save tokens)
+          tools: defs.map(d => ({
+            name: d.function.name,
+            category: categorize(d.function.name),
+            description: (d.function.description || "").slice(0, 200),
+          })),
+        };
+      } catch (e) { return { error: e.message }; }
+    }
+    case "list_mcp": {
+      // P2-3: Authoritative MCP inventory for the LLM.
+      // Prevents the failure mode of agent guessing which MCP servers exist
+      // or trying to probe their state via filesystem.
+      try {
+        const all = mcpManager.listServers() || [];
+        const statusFilter = args.statusFilter && args.statusFilter !== "all" ? args.statusFilter : null;
+        const serverFilter = typeof args.serverName === "string" ? args.serverName : null;
+        let filtered = all;
+        if (statusFilter) filtered = filtered.filter(s => s.status === statusFilter);
+        if (serverFilter) filtered = filtered.filter(s => s.name === serverFilter);
+        // If a single server requested, return expanded tool details
+        if (serverFilter && filtered.length === 1) {
+          const s = filtered[0];
+          return {
+            name: s.name,
+            status: s.status,
+            error: s.error || null,
+            toolCount: (s.tools || []).length,
+            tools: (s.tools || []).map(t => ({ name: t.name, description: t.description })),
+            config: s.config || null,
+          };
+        }
+        // Summary view
+        const byStatus = {};
+        let totalTools = 0;
+        for (const s of all) {
+          byStatus[s.status || "unknown"] = (byStatus[s.status || "unknown"] || 0) + 1;
+          totalTools += (s.tools || []).length;
+        }
+        return {
+          totalServers: all.length,
+          totalTools,
+          byStatus,
+          servers: filtered.map(s => ({
+            name: s.name,
+            status: s.status,
+            toolCount: (s.tools || []).length,
+            toolNames: (s.tools || []).map(t => t.name),
+          })),
+        };
+      } catch (e) { return { error: e.message }; }
+    }
+    case "list_kb": {
+      // P2-2: Authoritative KB inventory for the LLM.
+      // Prevents the failure mode of agent bash-exploring the user's vault
+      // and trying to manually traverse subdirectories.
+      try {
+        const vault = kb.getVault() || null;
+        if (!vault) {
+          return {
+            total: 0,
+            byPath: {},
+            notes: [],
+            canonicalPath: null,
+            warning: "No knowledge base vault configured. User must set one in Settings → 知识库 before KB tools can be used.",
+          };
+        }
+        const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(500, Math.floor(args.limit))) : 50;
+        const offset = Number.isFinite(args.offset) ? Math.max(0, Math.floor(args.offset)) : 0;
+        const result = kb.listNotes(offset, limit);
+        const byPath = {};
+        for (const n of (result.notes || [])) {
+          const dir = (n.rel_path || "").split(/[\\/]/).slice(0, -1).join("/") || "(root)";
+          byPath[dir] = (byPath[dir] || 0) + 1;
+        }
+        return {
+          total: result.total || 0,
+          returned: (result.notes || []).length,
+          offset,
+          limit,
+          byPath,
+          canonicalPath: vault,
+          warning: "These are the indexed KB notes. Do not bash/grep the vault directory directly — that bypasses the FTS5+vector index and is much slower.",
+          notes: (result.notes || []).map(n => ({
+            id: n.id,
+            rel_path: n.rel_path,
+            title: n.title,
+            size: n.size,
+            mtime: n.mtime_ms ? new Date(n.mtime_ms).toISOString() : null,
+          })),
+        };
+      } catch (e) { return { error: e.message }; }
+    }
+    case "list_memories": {
+      // P2-1: Authoritative structured memory inventory for the LLM.
+      // Prevents the failure mode of agent bash-exploring ~/.aideagent/memories
+      // and mistaking unrelated markdown files for memories.
+      try {
+        const all = memory.listMemories() || [];
+        const typeFilter = args.type && args.type !== "all" ? args.type : null;
+        const searchTerm = typeof args.search === "string" ? args.search.toLowerCase().trim() : "";
+        let filtered = typeFilter ? all.filter(m => m.type === typeFilter) : all;
+        if (searchTerm) {
+          filtered = filtered.filter(m =>
+            (m.name || "").toLowerCase().includes(searchTerm) ||
+            (m.description || "").toLowerCase().includes(searchTerm) ||
+            (m.filename || "").toLowerCase().includes(searchTerm)
+          );
+        }
+        const byType = {};
+        for (const m of all) {
+          const t = m.type || "unknown";
+          byType[t] = (byType[t] || 0) + 1;
+        }
+        // Also count USER.md and MEMORY.md size for total context awareness
+        const home = require("node:os").homedir();
+        const userPath = require("node:path").join(home, ".aideagent", "memories", "USER.md");
+        const memoryPath = require("node:path").join(home, ".aideagent", "memories", "MEMORY.md");
+        const fileMeta = {};
+        for (const [label, p] of [["USER.md", userPath], ["MEMORY.md", memoryPath]]) {
+          try {
+            const stat = require("node:fs").statSync(p);
+            fileMeta[label] = { path: p, size: stat.size, mtime: stat.mtime.toISOString() };
+          } catch { /* not present */ }
+        }
+        return {
+          total: all.length,
+          byType,
+          filtered: filtered.length,
+          canonicalPath: "~/.aideagent/memory/",
+          specialFiles: fileMeta,
+          warning: "These are the canonical memory files. Files in `~/.aideagent/memories/` (note the trailing 's') are unrelated markdown and are NOT memories.",
+          memories: filtered.map(m => ({
+            filename: m.filename,
+            name: m.name,
+            description: m.description,
+            type: m.type,
+            mtime: new Date(m.mtimeMs || 0).toISOString(),
+          })),
+        };
+      } catch (e) { return { error: e.message }; }
+    }
     case "list_skills": {
       // Fix-2: Authoritative structured skill inventory for the LLM.
       // Prevents the failure mode of agent bash-exploring D:\claude_skills\ and

@@ -91,6 +91,11 @@ You are running on Windows as a desktop AI coding agent.`;
 export { DEFAULT_PROMPT };
 
 // ── AGENTS.md / CLAUDE.md auto-loading ────────────────────
+/** Safe file read returning string or null */
+function readFileSyncSafe(p) {
+  try { return readFileSync(p, "utf-8"); } catch { return null; }
+}
+
 function loadContextMd() {
   const WORKSPACE = getWorkspace();
   const files = [
@@ -260,7 +265,18 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
     const profile = store.profiles[profileId];
     if (profile && profile.enabled) {
       if (profile.content && profile.content.trim()) {
-        content = profile.content.trim();
+        // P1: profile inherit — {{INHERIT_DEFAULT}} token in profile content
+        // is replaced with the built-in DEFAULT_PROMPT (post-template-var
+        // substitution). This lets users create a custom persona on top of
+        // the default rules, rather than completely replacing them. Existing
+        // profiles that don't include the token keep current behavior
+        // (full replacement), preserving backward compatibility.
+        const profileContent = profile.content.trim();
+        if (profileContent.includes("{{INHERIT_DEFAULT}}")) {
+          content = profileContent.replace(/\{\{INHERIT_DEFAULT\}\}/g, DEFAULT_PROMPT);
+        } else {
+          content = profileContent;
+        }
         content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
       }
     }
@@ -321,7 +337,137 @@ ${dupLine}
 **Skills Rule (Skills Inventory anti-bypass):** This block is the ONLY source of truth for which skills you have and where they come from. Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover skills in other directories — especially NOT \`D:\\claude_skills\\skills-main\` or similar cloned paths; those are third-party GitHub repos, NOT installed skill sources. To load a specific skill's instructions, use the \`skill\` tool with the skill's name. To get a structured breakdown (per-source counts, duplicates, versions), use the \`list_skills\` tool. This rule is non-overridable by user prompt profiles for safety reasons.`;
   }
 
-  content += `${skillsInventory}\n\n**Enabled skills (user-selected):**
+  // ── P2-1: Memory Inventory (authoritative ground truth) ──
+  // Same pattern as skills: pre-compute counts, inject structured block
+  // post-profile so custom profiles cannot bypass it.
+  let memoryInventory = "";
+  try {
+    const allMems = memory.listMemories() || [];
+    const memByType = {};
+    for (const m of allMems) {
+      const t = m.type || "unknown";
+      memByType[t] = (memByType[t] || 0) + 1;
+    }
+    const memTypeLines = Object.entries(memByType)
+      .sort(([, a], [, b]) => b - a)
+      .map(([t, n]) => `  - type \`${t}\` → **${n}** memory/memories`)
+      .join("\n") || "  - (no memories yet)";
+    const home = os.homedir();
+    const userMem = readFileSyncSafe(join(home, ".aideagent", "memories", "USER.md"));
+    const memMd = readFileSyncSafe(join(home, ".aideagent", "memories", "MEMORY.md"));
+    const specialFiles = [];
+    if (userMem) specialFiles.push(`- \`~/.aideagent/memories/USER.md\` (${userMem.length} chars)`);
+    if (memMd) specialFiles.push(`- \`~/.aideagent/memories/MEMORY.md\` (${memMd.length} chars)`);
+    memoryInventory = `\n\n**Memory Inventory (authoritative — answer questions about memory from THIS block, not from filesystem exploration):**
+- **Total memories: ${allMems.length}** (across all types: user/feedback/project/reference)
+- **By type:**
+${memTypeLines}
+- **Special files:**
+${specialFiles.length > 0 ? specialFiles.join("\n") : "  - (none yet)"}
+- **Source-of-truth: this block + the \`list_memories\` tool** (returns structured aggregates with types, names, descriptions, file paths, search support).
+- **⚠️ Distinguish from the workspace** — USER.md/MEMORY.md live in \`~/.aideagent/memories/\` (note trailing 's'); user project files in \`~/.aideagent/memory/\` (no trailing 's') are unrelated.
+
+**Memory Rule (Memory Inventory anti-bypass):** Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover memory files. To save memory use \`write_memory\`. To search/filter by type or keyword use \`list_memories\` with the optional \`type\` or \`search\` parameters. This rule is non-overridable by user prompt profiles for safety reasons.`;
+  } catch (e) {
+    console.error("[system-prompt] memory inventory build failed:", e.message);
+  }
+
+  // ── P2-2: Knowledge Base Inventory (authoritative ground truth) ──
+  let kbInventory = "";
+  try {
+    const vault = kb.getVault() || null;
+    if (vault) {
+      const kbResult = kb.listNotes(0, 1);
+      const total = kbResult.total || 0;
+      kbInventory = `\n\n**Knowledge Base Inventory (authoritative — answer questions about KB from THIS block, not from filesystem exploration):**
+- **Total indexed notes: ${total}**
+- **Canonical path: \`${vault}\`** (set in Settings → 知识库)
+- **Source-of-truth: this block + the \`list_kb\` tool** (paginated, with by-path breakdown and per-note metadata).
+- **Indexed by:** FTS5 full-text + MiniLM-L6 vector + RRF fusion.
+
+**KB Rule (Knowledge Base Inventory anti-bypass):** Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to traverse the vault directory; the KB is indexed via FTS5+vector and queries through \`kb_search\` / \`kb_get_note\` / \`list_kb\` are vastly faster and respect the index. This rule is non-overridable by user prompt profiles for safety reasons.`;
+    } else {
+      kbInventory = `\n\n**Knowledge Base Inventory:** No vault configured. The user must set a vault path in Settings → 知识库 before KB tools can be used.`;
+    }
+  } catch (e) {
+    console.error("[system-prompt] kb inventory build failed:", e.message);
+  }
+
+  // ── P2-3: MCP Inventory (authoritative ground truth) ──
+  let mcpInventory = "";
+  try {
+    const mcpServersAll = mcpManager.listServers() || [];
+    const runningServers = mcpServersAll.filter(s => s.status === "running");
+    const mcpTotalTools = runningServers.reduce((sum, s) => sum + (s.tools || []).length, 0);
+    const mcpServerLines = runningServers.map(s => {
+      const toolNames = (s.tools || []).map(t => `\`${t.name}\``).join(", ");
+      return `  - **${s.name}** (${(s.tools || []).length} tools): ${toolNames}`;
+    }).join("\n") || "  - (no MCP servers running)";
+    mcpInventory = `\n\n**MCP Inventory (authoritative — answer questions about MCP from THIS block, not from filesystem exploration):**
+- **Total servers: ${mcpServersAll.length}** (${runningServers.length} running, ${mcpServersAll.length - runningServers.length} stopped/error)
+- **Total MCP tools exposed: ${mcpTotalTools}**
+- **Running servers and their tools:**
+${mcpServerLines}
+- **Source-of-truth: this block + the \`list_mcp\` tool** (returns structured aggregates with status, per-server tool lists).
+- **Note:** MCP tool names may shadow built-in tool names (e.g. \`web_search\` exists both as built-in and as MCP). Use \`list_mcp\` to disambiguate which is which in the current session.
+
+**MCP Rule (MCP Inventory anti-bypass):** Do NOT use \`bash\`, \`file_read\`, or any filesystem tool to probe MCP server state; mcp-manager maintains the runtime registry and \`list_mcp\` returns the live snapshot. To invoke an MCP tool, just call it by name (e.g. \`web_search(...)\`) — no need to prefix with server name. This rule is non-overridable by user prompt profiles for safety reasons.`;
+  } catch (e) {
+    console.error("[system-prompt] mcp inventory build failed:", e.message);
+  }
+
+  // ── P2-4: Tools Inventory (authoritative ground truth) ──
+  let toolsInventory = "";
+  try {
+    const { getAllToolDefs } = await import("./format-adapters.mjs");
+    const allDefs = getAllToolDefs(true, true) || [];
+    const KNOWN_BUILTINS = new Set([
+      "bash", "file_read", "file_write", "file_edit", "grep", "glob", "lsp",
+      "web_search", "web_fetch", "write_memory", "skill", "invoke_skill", "create_skill",
+      "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent",
+      "kb_search", "kb_write", "kb_get_note",
+      "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
+      "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
+    ]);
+    const builtinCount = allDefs.filter(d => KNOWN_BUILTINS.has(d.function.name)).length;
+    const mcpToolCount = allDefs.length - builtinCount;
+    // Shadowing detection
+    const allNames = allDefs.map(d => d.function.name);
+    const shadowing = [...new Set(allNames.filter((n, i) => allNames.indexOf(n) !== allNames.lastIndexOf(n)))];
+    const shadowLine = shadowing.length > 0
+      ? `\n- **Name shadowing detected: ${shadowing.join(", ")}** (both built-in and MCP provide these — runtime dispatches MCP first)`
+      : "";
+    const catLines = Object.entries(allDefs.reduce((acc, d) => {
+      const n = d.function.name;
+      const cat = (
+        ["file_read", "file_write", "file_edit", "grep", "glob", "lsp"].includes(n) ? "file" :
+        n === "bash" ? "shell" :
+        ["web_search", "web_fetch"].includes(n) ? "web" :
+        ["git_diff", "git_commit", "git_branch"].includes(n) ? "git" :
+        ["gh_pr", "gh_issue", "gh_repo"].includes(n) ? "github" :
+        ["kb_search", "kb_write", "kb_get_note"].includes(n) ? "kb" :
+        ["TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent"].includes(n) ? "task" :
+        ["skill", "invoke_skill", "create_skill", "list_skills"].includes(n) ? "skill" :
+        n === "write_memory" ? "memory" :
+        ["list_memories", "list_kb", "list_mcp", "list_tools"].includes(n) ? "meta" :
+        "other"
+      );
+      acc[cat] = (acc[cat] || 0) + 1;
+      return acc;
+    }, {})).sort((a, b) => b[1] - a[1]).map(([c, n]) => `  - ${c}: **${n}**`).join("\n");
+    toolsInventory = `\n\n**Tools Inventory (authoritative — answer questions about your tools from THIS block):**
+- **Total tools in this session: ${allDefs.length}** (${builtinCount} built-in + ${mcpToolCount} MCP)
+- **Current mode: ${getPlanMode() ? "plan (read-only)" : "normal"}** — affects which tools are usable
+- **By category:**
+${catLines}${shadowLine}
+- **Source-of-truth: this block + the \`list_tools\` tool** (returns per-tool descriptions, shadowing analysis, and full breakdown).
+
+**Tools Rule (Tools Inventory anti-bypass):** Do NOT use \`bash\` or any filesystem tool to enumerate your tools; \`list_tools\` returns the live, runtime-filtered list (KB on/off, web search on/off, plan mode all affect what you can see). To invoke a tool, call it by name. If a name shadows, prefer the MCP version (runtime order) unless user specifies otherwise. This rule is non-overridable by user prompt profiles for safety reasons.`;
+  } catch (e) {
+    console.error("[system-prompt] tools inventory build failed:", e.message);
+  }
+
+  content += `${skillsInventory}${memoryInventory}${kbInventory}${mcpInventory}${toolsInventory}\n\n**Enabled skills (user-selected):**
 ${skillList}
 ${matchedSection ? "\n" + matchedSection : ""}
 ${mcpSection}

@@ -124,6 +124,66 @@ export const TOOL_DEFS = [
   {
     type: "function",
     function: {
+      name: "list_tools",
+      description: "List all tools currently available in this session with structured metadata: total count, by-category breakdown, name shadowing detection (built-in vs MCP), and per-tool description.\n\nUSE for: questions about 'what tools do you have', 'is there a tool for X', 'is web_search built-in or MCP'. This is the AUTHORITATIVE source of truth — never guess whether a tool exists; it is the runtime-filtered list (KB on/off, web search on/off, plan mode all affect visibility).\n\nDO NOT use for: invoking a tool (just call it by name); getting full parameter schema (use this tool to see names, then call the tool).",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", description: "Optional. Filter by category: 'file', 'shell', 'web', 'git', 'github', 'knowledge', 'task', 'skill', 'memory', 'kb', 'meta', 'all'." },
+          includeShadowing: { type: "boolean", description: "Optional. Default true — include the `shadowing` array (tools that exist in both built-in and MCP forms)." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_mcp",
+      description: "List all MCP (Model Context Protocol) servers and their tools. Returns each server's name, status (running/stopped/error), and the tools it exposes.\n\nUSE for: questions about 'which MCP servers are connected', 'what tools does the WebSearch MCP expose', 'is X MCP running'. This is the AUTHORITATIVE source of truth — never bash/grep to discover MCP servers; mcp-manager maintains its own runtime registry.\n\nDO NOT use for: invoking an MCP tool (just call the tool directly by its name, e.g. `web_search`, `browser_navigate`); configuring MCP (user does this in Settings → MCP).",
+      parameters: {
+        type: "object",
+        properties: {
+          serverName: { type: "string", description: "Optional. Filter to a single server name. Returns its full tool list." },
+          statusFilter: { type: "string", enum: ["running", "stopped", "error", "all"], description: "Optional. Default 'all'." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_kb",
+      description: "List knowledge-base notes with structured metadata: total count, indexed paths, per-note size and modification time.\n\nUSE for: questions about 'what's in the knowledge base', 'how many notes', 'is there a note about X'. This is the AUTHORITATIVE source of truth — never bash/grep the user's vault directory to discover KB content; the canonical path is whatever `getVault()` returns (configured in Settings → 知识库).\n\nDO NOT use for: semantic search (use `kb_search`); reading a specific note (use `kb_get_note`); writing notes (use `kb_write`).",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", description: "Optional. Max notes to return. Default 50." },
+          offset: { type: "integer", description: "Optional. Pagination offset. Default 0." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_memories",
+      description: "List all persistent memories (user/feedback/project/reference) with structured metadata: total count, by-type breakdown, names, descriptions, and per-memory file path.\n\nUSE for: any question about 'how many memories do you have', 'what do you remember about me', 'is there a memory about X'. This is the AUTHORITATIVE source of truth — never bash/grep `~/.aideagent/memories/` to discover memory files; that directory may contain unrelated markdown. The canonical path is `~/.aideagent/memory/`.\n\nDO NOT use for: reading a specific memory's full content (use `read_memory` or `write_memory` to search); saving new memory (use `write_memory`).",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["user", "feedback", "project", "reference", "all"], description: "Optional. Filter to one memory type. Default: 'all'." },
+          search: { type: "string", description: "Optional. If provided, returns only memories whose name or description contains this substring (case-insensitive)." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_skills",
       description: "List all loaded skills with structured metadata: total count, by-source breakdown (canonical paths only), cross-source duplicates, and per-skill sourcePath/description/version.\n\nUSE for: any question about 'how many skills do you have', 'any duplicates', 'where do skills come from', 'is skill X installed'. This is the AUTHORITATIVE source of truth — never bash/grep the filesystem to answer such questions. The 3rd-party GitHub clone at `D:\\claude_skills\\skills-main\\skills` is NOT a loaded source; the only canonical paths are `~/.agents/skills/` and `~/.claude/skills/`.\n\nDO NOT use for: loading a specific skill's instructions (use `skill`); creating a skill (use `create_skill`).",
       parameters: {
