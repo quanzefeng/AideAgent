@@ -318,7 +318,40 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   let allText = "", allReasoning = "";
   let continuation = 0;
   let agentFinished = false;
-  let _contextMsg = contextBlock && contextBlock.trim() ? { role: "user", content: contextBlock.trim() } : null;
+  // ── P0 fix: rebuild context block from LIVE state on every continuation. ──
+  // Previously this was a single-shot snapshot, so any task/todo changes that
+  // happened mid-conversation were lost when the context was rebuilt.
+  const buildContextMsg = () => {
+    const liveActive = Array.from(taskStore.values()).filter(t => t.status !== "completed" && t.status !== "deleted");
+    const liveTodos = getTodoList();
+    const liveUnverified = Array.from(taskStore.values()).filter(t => t.unverified === true);
+    const parts = [];
+    if (liveActive.length > 0) {
+      let block = "## 当前任务状态\n";
+      for (const t of liveActive) {
+        const icon = t.status === "in_progress" ? "🔄" : "⬜";
+        block += `- ${icon} **${t.subject}** (${t.status}) — ${t.description}\n`;
+      }
+      parts.push(block);
+    }
+    if (liveTodos.length > 0) {
+      let block = "## 当前 Todo 清单\n";
+      for (const t of liveTodos) {
+        const icon = t.status === "completed" ? "✅" : t.status === "in_progress" ? "🔄" : "⬜";
+        block += `- ${icon} ${t.content}\n`;
+      }
+      parts.push(block);
+    }
+    if (liveUnverified.length > 0) {
+      let block = "## ⚠️ 未经验证的完成\n以下任务被标记为 completed 但未提供 evidence，用户可能需要复查：\n";
+      for (const t of liveUnverified) {
+        block += `- **${t.subject}** — status=completed (no evidence)\n`;
+      }
+      parts.push(block);
+    }
+    return parts.length > 0 ? { role: "user", content: parts.join("\n").trim() } : null;
+  };
+  let _contextMsg = buildContextMsg();
 
   compressContext(msgs);
   sendContextUsage(msgs);
@@ -327,6 +360,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   while (continuation < MAX_CONTINUATIONS && !agentFinished) {
     continuation++;
     let turns = 0;
+    let toolsCalledThisTurn = 0;  // P0: track tool calls to prevent pure-text "completion"
 
     if (continuation > 1) {
       const banner = `\n\n--- 第 ${continuation} 次自动继续 ---\n`;
@@ -394,7 +428,27 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       if (tcs.length > 0) asst.tool_calls = tcs;
       msgs.push(asst);
 
-      if (tcs.length === 0) { agentFinished = true; break; }
+      // P0: prevent "pure-text completion". If the LLM responds with no tool
+      // calls but also doesn't look like a final answer (i.e. still has unverified
+      // tasks), push back a reminder instead of accepting the reply as done.
+      if (tcs.length === 0) {
+        const unverified = Array.from(taskStore.values()).filter(t => t.unverified === true);
+        const activeTasks = Array.from(taskStore.values()).filter(t => t.status === "in_progress" || t.status === "pending");
+        if (unverified.length > 0 || activeTasks.length > 0) {
+          // Don't finish — push a reminder and continue the loop
+          const reminder = unverified.length > 0
+            ? `⚠️ 你有 ${unverified.length} 个任务被标记为 completed 但没有提供 evidence。请用 TaskUpdate(evidence=...) 补充证据，或者用 TaskUpdate(status='in_progress') 重新开始并实际执行。`
+            : `⚠️ 你还有 ${activeTasks.length} 个任务在 pending/in_progress 状态。请用 TaskUpdate 推进它们，或者在完成时提供 evidence。`;
+          msgs.push({ role: "user", content: reminder });
+          // Don't break — continue the inner turn loop so the LLM can act on the reminder
+          // But cap at 2 extra nudges to avoid infinite loops
+          turns++;
+          if (turns < MAX_TURNS) continue;
+        }
+        agentFinished = true;
+        break;
+      }
+      toolsCalledThisTurn += tcs.length;
 
       // ── Execute tools (Agent calls in parallel, others sequential) ──
       const agentCalls = tcs.filter(tc => tc.function?.name === "Agent");
@@ -453,6 +507,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       const recentMsgs = msgs.slice(-6);
       // contextBlock at end → [sys][summary][recent...][ctx] = cacheable prefix for continuation
       const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
+      // P0: rebuild context block from LIVE state instead of using stale snapshot
+      _contextMsg = buildContextMsg();
       msgs = [sysMsg, continuationMsg, ...recentMsgs];
       if (_contextMsg) msgs.push(_contextMsg);
 

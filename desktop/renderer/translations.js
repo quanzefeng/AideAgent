@@ -107,6 +107,8 @@ const translations = {
     "skills.load_error": "加载本地技能失败",
     "skills.triggers": "触发:",
     "skills.tools_count": "个工具",
+    "skills.toggle_all_on": "一键开启",
+    "skills.toggle_all_off": "全部关闭",
 
     // ── System Prompt Panel ──
     "prompt.new": "新建",
@@ -594,6 +596,8 @@ const translations = {
     "skills.empty": "No local skills found. Skills are stored in .agents/ or .claude/skills/ directories.",
     "skills.load_error": "Failed to load local skills",
     "skills.triggers": "Triggers:",
+    "skills.toggle_all_on": "Enable all",
+    "skills.toggle_all_off": "Disable all",
     "skills.tools_count": "tools",
 
     // ── System Prompt Panel ──

@@ -32,6 +32,7 @@ export async function loadAndRenderSkills() {
     if (!skills || skills.length === 0) {
       listEl.innerHTML = `<div class="skills-empty">${t("skills.empty")}</div>`;
       if (countEl) countEl.textContent = t("skills.count").replace("{count}", "0");
+      updateToggleAllButton();
       return;
     }
     if (countEl) countEl.textContent = t("skills.count").replace("{count}", String(skills.length));
@@ -74,8 +75,34 @@ export async function loadAndRenderSkills() {
         if (cb.checked) { if (!en.includes(name)) en.push(name); }
         else { const idx = en.indexOf(name); if (idx >= 0) en.splice(idx, 1); }
         saveEnabledSkills(en);
+        updateToggleAllButton();
       });
     });
+
+    // Wire up the "toggle all" button (one-click enable / disable all visible skills).
+    // Smart label: if any skill is OFF → label is "一键开启" (turn them all on);
+    // if every skill is ON → label is "全部关闭" (turn them all off).
+    const toggleAllBtn = document.getElementById("skills-toggle-all-btn");
+    if (toggleAllBtn) {
+      toggleAllBtn.onclick = () => {
+        const allBoxes = Array.from(listEl.querySelectorAll(".skill-toggle-input"));
+        if (allBoxes.length === 0) return;
+        const allOn = allBoxes.every((cb) => /** @type {HTMLInputElement} */ (cb).checked);
+        const target = !allOn; // if all on → turn all off; otherwise turn all on
+        const enabled = loadEnabledSkills();
+        for (const node of allBoxes) {
+          const cb = /** @type {HTMLInputElement} */ (node);
+          cb.checked = target;
+          const name = cb.dataset.skill;
+          if (!name) continue;
+          if (target) { if (!enabled.includes(name)) enabled.push(name); }
+          else { const idx = enabled.indexOf(name); if (idx >= 0) enabled.splice(idx, 1); }
+        }
+        saveEnabledSkills(enabled);
+        updateToggleAllButton();
+      };
+    }
+    updateToggleAllButton();
 
     // Phase 2: incrementally translate any un-translated skills in the background.
     triggerIncrementalTranslation(skills);
@@ -134,6 +161,32 @@ export function loadEnabledSkills() {
  */
 function saveEnabledSkills(skills) {
   try { localStorage.setItem(SKILLS_KEY, JSON.stringify(skills)); } catch {}
+}
+
+/**
+ * Update the "toggle all" button label and icon based on the current state of
+ * the visible skill toggles. Label: "一键开启" (turn all on) if any are off,
+ * "全部关闭" (turn all off) if every one is on. The icon flips between a
+ * check-all mark and an x-circle so the affordance reads clearly.
+ */
+function updateToggleAllButton() {
+  const listEl = document.getElementById("local-skills-list");
+  const label = document.getElementById("skills-toggle-all-label");
+  const icon = document.getElementById("skills-toggle-all-icon");
+  if (!listEl || !label) return;
+  const boxes = Array.from(listEl.querySelectorAll(".skill-toggle-input"));
+  if (boxes.length === 0) {
+    label.textContent = t("skills.toggle_all_on");
+    if (icon) icon.innerHTML = "<polyline points=\"20 6 9 17 4 12\"/>";
+    return;
+  }
+  const allOn = boxes.every((cb) => /** @type {HTMLInputElement} */ (cb).checked);
+  label.textContent = allOn ? t("skills.toggle_all_off") : t("skills.toggle_all_on");
+  if (icon) {
+    icon.innerHTML = allOn
+      ? "<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"/>"
+      : "<polyline points=\"20 6 9 17 4 12\"/>";
+  }
 }
 
 // ── L2 Skills Panel (managed in SQLite) ──

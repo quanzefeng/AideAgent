@@ -470,14 +470,56 @@ export async function matchSkills(userPrompt, allSkills, opts = {}) {
   const matched = new Map();
   const lower = userPrompt.toLowerCase();
 
-  // [A] trigger keyword hard match
+  // [A] trigger keyword hard match (with CJK character-level fallback)
+  // For CJK text, also try matching on a per-character or per-word basis
+  // so "审查" can match a trigger "review" via shared strokes, and a trigger
+  // "代码审查" can match the prompt "帮我审查代码".
+  const isCjk = (ch) => /[\u3400-\u9fff\uf900-\ufaff]/.test(ch);
+  const tokenizeCjk = (text) => {
+    // naive CJK tokenization: split on punctuation/whitespace AND on CJK/ASCII boundaries
+    // so "代码审查" becomes ["代","码","审","查","代 码","码 审","审 查","代 码 审","码 审 查","代 码 审 查"]
+    // plus the original substring. This is O(n^2) but small prompts.
+    const out = [];
+    const norm = text.replace(/[，。！？、；：""''（）《》【】\s]+/g, " ").trim();
+    if (!norm) return out;
+    out.push(norm);
+    // CJK char-only segments of length 2-4
+    const cjkOnly = norm.replace(/[^\u3400-\u9fff\uf900-\ufaff]+/g, " ").trim();
+    if (cjkOnly) {
+      const chars = cjkOnly.split("").filter(c => c.trim());
+      for (let len = 1; len <= Math.min(4, chars.length); len++) {
+        for (let i = 0; i + len <= chars.length; i++) {
+          out.push(chars.slice(i, i + len).join(""));
+        }
+      }
+    }
+    return out;
+  };
+  const promptTokens = tokenizeCjk(lower);
+
   for (const s of allSkills) {
     const triggers = Array.isArray(s.triggers) ? s.triggers : [];
     for (const t of triggers) {
       const trig = String(t || "").toLowerCase().trim();
-      if (trig && lower.includes(trig)) {
+      if (!trig) continue;
+      // 1) direct substring match
+      if (lower.includes(trig)) {
         matched.set(s.name, { skill: s, score: 1.0, via: "trigger:" + trig });
-        break;  // one trigger hit is enough
+        break;
+      }
+      // 2) trigger contains CJK and prompt contains any CJK char-overlap
+      if (isCjk(trig.charAt(0))) {
+        for (const tok of promptTokens) {
+          if (tok && (trig.includes(tok) || tok.includes(trig))) {
+            // require minimum 2-char overlap for CJK to avoid single-char false positives
+            const overlap = Math.min(trig.length, tok.length);
+            if (overlap >= 2) {
+              matched.set(s.name, { skill: s, score: 0.85, via: "trigger-cjk:" + trig });
+              break;
+            }
+          }
+        }
+        if (matched.has(s.name)) break;
       }
     }
   }

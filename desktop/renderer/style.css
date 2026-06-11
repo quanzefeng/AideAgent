@@ -2302,6 +2302,16 @@ html, body {
   margin-bottom: 16px;
 }
 
+.skills-toolbar .btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.skills-toolbar .btn-primary:hover {
+  filter: brightness(1.08);
+}
+
 .skills-count {
   font-size: 0.85rem;
   color: var(--text-muted);

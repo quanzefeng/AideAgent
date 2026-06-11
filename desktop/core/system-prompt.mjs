@@ -82,6 +82,8 @@ USE THE TOOLS. Don't just suggest — actually run commands, read files, make ch
 
 **Knowledge Base Rule:** A \`<knowledge-base>\` section in this prompt contains the user's Obsidian notes relevant to the question. Use it directly. Do NOT use \`glob\`, \`file_read\`, \`bash\`, or any filesystem tool to search for knowledge base files. If the knowledge base content answers the question, use it. If it's insufficient, use the \`kb_search\` tool to search for more notes. If still insufficient, say "知识库中没有更详细的信息" and offer to search the web.
 
+**Skills Rule (mirror of KB Rule):** The \`**Skills Inventory (authoritative)**\` block in this prompt is the source of truth for which skills you have, how many, where they live, and which are duplicates. Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover skills in other directories — especially NOT \`D:\\claude_skills\\skills-main\` or similar cloned paths; those are third-party GitHub repos, NOT installed skill sources. If you need a structured breakdown (per-source counts, duplicate names, version info), call the \`list_skills\` tool. If you need to load a specific skill's instructions, use the \`skill\` tool with the skill's name.
+
 If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
 
 You are running on Windows as a desktop AI coding agent.`;
@@ -196,6 +198,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   // `kb` is imported as `* as kb` above — embedText is the only embedding entry point we need.
   let matchedNames = new Set();
   let matchedDetails = new Map();
+  let skillMatchWarning = null;
   if (userPrompt && userPrompt.trim() && filterSkills.length > 0) {
     try {
       const { embedText } = await import("../knowledge-store.mjs");
@@ -208,9 +211,26 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
         matchedNames.add(m.skill.name);
         matchedDetails.set(m.skill.name, m);
       }
+      // P1: surface match outcomes to the renderer so silent zero-match is visible
+      try {
+        const { sendToRenderer } = await import("./state.mjs");
+        sendToRenderer("skill:match-result", {
+          userPrompt: userPrompt.slice(0, 200),
+          totalSkills: filterSkills.length,
+          matchedCount: matches.length,
+          matchedNames: matches.map(m => m.skill.name),
+        });
+      } catch { /* renderer may not be ready */ }
     } catch (/** @type {any} */ e) {
       // Fall back to no matching; the LLM still sees the full list and can self-select.
-      console.error("[system-prompt] skill match failed:", e.message);
+      // P1: surface the failure so the user knows why skills weren't auto-matched
+      const msg = `[system-prompt] skill match failed: ${e.message}`;
+      console.error(msg);
+      skillMatchWarning = `⚠️ 技能自动匹配失败 (${e.message})。LLM 将仅从全列表自选——可能错过相关技能。如持续失败请检查 embedding 服务（Ollama / 本地 MiniLM）。`;
+      try {
+        const { sendToRenderer } = await import("./state.mjs");
+        sendToRenderer("skill:match-error", { error: e.message, userPrompt: userPrompt.slice(0, 200) });
+      } catch { /* renderer may not be ready */ }
     }
   }
 
@@ -265,7 +285,43 @@ ${lines.join("\n")}\n
 You can use the MCP tools listed above just like any other tool.`;
   }
 
-  content += `\n\n**Enabled skills (user-selected):**
+  // ── Fix-1: Skills Inventory (authoritative ground truth) ──
+  // Inject a compact inventory BEFORE the full skill list so the LLM
+  // sees the totals / by-source breakdown / duplicates BEFORE the flat
+  // 140-row list. Prevents the "agent goes bash-exploring and arrives
+  // at wrong answer" failure mode (root cause: agent had no idea where
+  // its skills come from, confuses D:\claude_skills\ with ~/.agents).
+  let skillsInventory = "";
+  if (filterSkills.length > 0) {
+    const bySource = {};
+    const nameCount = new Map();
+    for (const s of filterSkills) {
+      const src = s.source || "unknown";
+      bySource[src] = (bySource[src] || 0) + 1;
+      nameCount.set(s.name, (nameCount.get(s.name) || 0) + 1);
+    }
+    const duplicateNames = [...nameCount.entries()].filter(([, n]) => n > 1).map(([n]) => n);
+    const totalLoaded = filterSkills.length;
+    const enabledCount = (enabledSkills && enabledSkills.length > 0) ? enabledSkills.length : totalLoaded;
+    const sourceLines = Object.entries(bySource)
+      .sort(([, a], [, b]) => b - a)
+      .map(([src, n]) => `  - \`~/${src === "agents" ? ".agents/skills" : ".claude/skills"}\` → **${n}** skill(s)`)
+      .join("\n");
+    const dupLine = duplicateNames.length > 0
+      ? `\n- **Duplicates (same name in multiple sources, ${duplicateNames.length}):** ${duplicateNames.slice(0, 8).map(n => `\`${n}\``).join(", ")}${duplicateNames.length > 8 ? ", ..." : ""}`
+      : "";
+    skillsInventory = `\n\n**Skills Inventory (authoritative — answer questions about skills from THIS block, not from filesystem exploration):**
+- **Total loaded: ${totalLoaded}** (${enabledCount} enabled this session)
+- **Loaded from (canonical paths only — NEVER bash/grep other directories):**
+${sourceLines}
+- **Source-of-truth: this list + the \`list_skills\` tool** (returns structured aggregates with locations, duplicates, and per-skill metadata).
+${dupLine}
+- **⚠️ Do not confuse with third-party clones** (e.g. \`D:\\claude_skills\\skills-main\\skills\` is a GitHub repo clone, NOT an installed skill source — files there are NOT loadable via the \`skill\` tool).
+
+**Skills Rule (Skills Inventory anti-bypass):** This block is the ONLY source of truth for which skills you have and where they come from. Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover skills in other directories — especially NOT \`D:\\claude_skills\\skills-main\` or similar cloned paths; those are third-party GitHub repos, NOT installed skill sources. To load a specific skill's instructions, use the \`skill\` tool with the skill's name. To get a structured breakdown (per-source counts, duplicates, versions), use the \`list_skills\` tool. This rule is non-overridable by user prompt profiles for safety reasons.`;
+  }
+
+  content += `${skillsInventory}\n\n**Enabled skills (user-selected):**
 ${skillList}
 ${matchedSection ? "\n" + matchedSection : ""}
 ${mcpSection}
@@ -282,6 +338,7 @@ Working directory: ${WORKSPACE}`;
   if (skillsCtx) content += skillsCtx;
 
   content += `\n\n**IMPORTANT: Before answering any user request, check both "Enabled skills" and "Available Skills" sections above. If a skill matches the user's request, you MUST call \`skill\` (for installed skills) or \`invoke_skill\` (for agent skills) with that skill name to load its full instructions, then follow them. Do not ignore matching skills.**`;
+  if (skillMatchWarning) content += `\n\n${skillMatchWarning}`;
 
   try {
     const patterns = skills.detectPatterns(/** @type {any} */ (sessionDb));

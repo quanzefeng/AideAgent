@@ -77,6 +77,35 @@ class SessionDB {
       )
     `);
 
+    // P2: task persistence — restore TaskCreate/TaskUpdate state across restarts
+    this.#ensureOpen().exec(`
+      CREATE TABLE IF NOT EXISTS session_tasks (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        active_form TEXT,
+        evidence TEXT,
+        unverified INTEGER DEFAULT 0,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+    this.#ensureOpen().exec(`
+      CREATE TABLE IF NOT EXISTS session_todos (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL,
+        active_form TEXT,
+        position INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
     this.#ready = true;
     return this;
   }
@@ -176,6 +205,110 @@ class SessionDB {
         timestamp: m.timestamp,
       })),
     };
+  }
+
+  // ── Task persistence (P2) ─────────────────────────────────────
+  /** @param {string} sessionId @param {Array<{id:string,subject:string,description?:string,status:string,activeForm?:string,evidence?:string|null,unverified?:boolean,completedAt?:string,createdAt?:string,updatedAt?:string}>} tasks */
+  saveSessionTasks(sessionId, tasks) {
+    this.#ensureOpen();
+    if (!sessionId || !Array.isArray(tasks)) return { saved: 0 };
+    const now = new Date().toISOString();
+    // Upsert each task; tasks not in the array for this session are NOT auto-deleted
+    // (allows partial persistence when caller only wants to save active ones)
+    const upsert = this.#ensureOpen().prepare(`
+      INSERT INTO session_tasks(id, session_id, subject, description, status, active_form, evidence, unverified, completed_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        subject=excluded.subject, description=excluded.description, status=excluded.status,
+        active_form=excluded.active_form, evidence=excluded.evidence, unverified=excluded.unverified,
+        completed_at=excluded.completed_at, updated_at=excluded.updated_at
+    `);
+    let saved = 0;
+    this.#ensureOpen().exec("BEGIN");
+    try {
+      for (const t of tasks) {
+        if (!t?.id || !t?.subject) continue;
+        upsert.run(
+          t.id, sessionId, t.subject, t.description || "", t.status || "pending",
+          t.activeForm || t.subject, t.evidence || null, t.unverified ? 1 : 0,
+          t.completedAt || null, t.createdAt || now, now
+        );
+        saved++;
+      }
+      this.#ensureOpen().exec("COMMIT");
+    } catch (/** @type {any} */ e) {
+      this.#ensureOpen().exec("ROLLBACK");
+      return { error: e.message, saved: 0 };
+    }
+    return { saved };
+  }
+
+  /** @param {string} sessionId @param {Array<{id:string,content:string,status:string,activeForm?:string}>} todos */
+  saveSessionTodos(sessionId, todos) {
+    this.#ensureOpen();
+    if (!sessionId || !Array.isArray(todos)) return { saved: 0 };
+    const deleteOld = this.#ensureOpen().prepare("DELETE FROM session_todos WHERE session_id = ?");
+    const insert = this.#ensureOpen().prepare(`
+      INSERT INTO session_todos(id, session_id, content, status, active_form, position)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    this.#ensureOpen().exec("BEGIN");
+    try {
+      deleteOld.run(sessionId);
+      todos.forEach((t, i) => {
+        if (!t?.id || !t?.content) return;
+        insert.run(t.id, sessionId, t.content, t.status || "pending", t.activeForm || t.content, i);
+      });
+      this.#ensureOpen().exec("COMMIT");
+    } catch (/** @type {any} */ e) {
+      this.#ensureOpen().exec("ROLLBACK");
+      return { error: e.message, saved: 0 };
+    }
+    return { saved: todos.length };
+  }
+
+  /** @param {string} sessionId */
+  loadSessionTasks(sessionId) {
+    this.#ensureOpen();
+    if (!sessionId) return [];
+    const rows = this.#ensureOpen().prepare(
+      "SELECT id, subject, description, status, active_form, evidence, unverified, completed_at, created_at, updated_at FROM session_tasks WHERE session_id = ? ORDER BY created_at ASC"
+    ).all(sessionId);
+    return rows.map(r => ({
+      id: r.id,
+      subject: r.subject,
+      description: r.description || undefined,
+      status: r.status,
+      activeForm: r.active_form,
+      evidence: r.evidence,
+      unverified: r.unverified === 1,
+      completedAt: r.completed_at || undefined,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  /** @param {string} sessionId */
+  loadSessionTodos(sessionId) {
+    this.#ensureOpen();
+    if (!sessionId) return [];
+    const rows = this.#ensureOpen().prepare(
+      "SELECT id, content, status, active_form FROM session_todos WHERE session_id = ? ORDER BY position ASC"
+    ).all(sessionId);
+    return rows.map(r => ({
+      id: r.id,
+      content: r.content,
+      status: r.status,
+      activeForm: r.active_form,
+    }));
+  }
+
+  /** @param {string} sessionId */
+  clearSessionTasks(sessionId) {
+    this.#ensureOpen();
+    if (!sessionId) return;
+    this.#ensureOpen().prepare("DELETE FROM session_tasks WHERE session_id = ?").run(sessionId);
+    this.#ensureOpen().prepare("DELETE FROM session_todos WHERE session_id = ?").run(sessionId);
   }
 
   /** @param {number} [limit] */

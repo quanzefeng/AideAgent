@@ -14,13 +14,24 @@ import mcpManager from "../mcp-manager.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
 import { searchMeta } from "../search-engine/index.mjs";
 import * as hookManager from "./hook-manager.mjs";
+import sessionDb from "../session-db.mjs";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
   taskStore, getTodoList, setTodoList,
   _askResolvers, nextAskId,
-  getLastApiConfig,
+  getLastApiConfig, getSessionId,
 } from "./state.mjs";
+
+/** Persist current task/todo state to the session DB (P2). Fire-and-forget. */
+function persistSessionState() {
+  const sid = getSessionId();
+  if (!sid) return;
+  try {
+    sessionDb.saveSessionTasks(sid, Array.from(taskStore.values()).filter(t => t.status !== "deleted"));
+    sessionDb.saveSessionTodos(sid, getTodoList());
+  } catch (e) { /* persistence is best-effort; never block tool execution */ }
+}
 
 // Re-export for use by other modules
 export { runShell, isDangerous, requestPermission };
@@ -184,9 +195,46 @@ export async function runTool(tc) {
       }
       const r = await runShell(args.command);
       if (r.error) return { error: r.error };
-      const outStr = r.err ? r.out + "\n--- stderr ---\n" + r.err : r.out;
-      const truncated = outStr.length > MAX_OUTPUT ? outStr.slice(0, MAX_OUTPUT) + `\n...(truncated ${outStr.length} chars)` : outStr;
-      return { stdout: r.out, stderr: r.err, exit_code: r.code, output: truncated };
+      // P2: pagination support — let the LLM ask for head/tail/offset slices
+      // when the output exceeds MAX_OUTPUT (60KB). Without this, the LLM gets
+      // only the first 60KB and the tail is silently lost.
+      let outStr = r.out;
+      if (r.err) outStr = outStr + "\n--- stderr ---\n" + r.err;
+      const fullLength = outStr.length;
+      const fullLines = outStr.split("\n");
+      const totalLines = fullLines.length;
+      let truncated = false;
+      let slicedOut = outStr;
+      let slicedLines = null;
+      const offset = Number.isFinite(args.offset) ? Math.max(0, Math.floor(args.offset)) : 0;
+      const head = Number.isFinite(args.head) ? Math.max(0, Math.floor(args.head)) : 0;
+      const tail = Number.isFinite(args.tail) ? Math.max(0, Math.floor(args.tail)) : 0;
+      if (head > 0) {
+        slicedLines = fullLines.slice(offset, offset + head);
+        slicedOut = slicedLines.join("\n");
+        truncated = (offset + head) < totalLines;
+      } else if (tail > 0) {
+        const start = Math.max(0, totalLines - tail);
+        slicedLines = fullLines.slice(start, start + tail);
+        slicedOut = slicedLines.join("\n");
+        truncated = start > 0;
+      } else if (outStr.length > MAX_OUTPUT) {
+        slicedOut = outStr.slice(0, MAX_OUTPUT);
+        truncated = true;
+      }
+      const result = {
+        stdout: r.out,
+        stderr: r.err,
+        exit_code: r.code,
+        output: slicedOut + (truncated ? `\n\n... (truncated: total ${fullLength} chars / ${totalLines} lines. Pass head=N or tail=N to see specific range, or offset=N to start at line N.)` : ""),
+      };
+      if (truncated) {
+        result.truncated = true;
+        result.totalLength = fullLength;
+        result.totalLines = totalLines;
+        result.hint = "Output was truncated. Re-run with head=N (first N lines), tail=N (last N lines), or offset=N (start at line N) to see specific parts.";
+      }
+      return result;
     }
     case "file_read": {
       try {
@@ -206,9 +254,42 @@ export async function runTool(tc) {
     case "file_edit": {
       try {
         const content = await readFile(args.path, "utf-8");
-        if (!content.includes(args.old_string)) return { error: "old_string not found in file" };
-        await writeFile(args.path, content.replace(args.old_string, args.new_string), "utf-8");
-        return { success: true, path: args.path };
+        if (!args.old_string) return { error: "old_string is required" };
+        // P1 fix: find all occurrences (not just first via String.replace)
+        // and require exactly one match by default, or explicit replaceAll=true.
+        const occurrences = [];
+        let from = 0;
+        while (true) {
+          const idx = content.indexOf(args.old_string, from);
+          if (idx === -1) break;
+          // Compute line number for better error messages
+          const lineNum = content.slice(0, idx).split("\n").length;
+          occurrences.push({ index: idx, line: lineNum });
+          from = idx + args.old_string.length;
+        }
+        if (occurrences.length === 0) {
+          return {
+            error: `old_string not found in file. The exact substring was not located. Use file_read to inspect the file, or check whitespace/line endings.`,
+            hint: "Note: the match is exact (no fuzzy/partial). Whitespace, line endings, and indentation must match exactly.",
+          };
+        }
+        if (occurrences.length > 1 && !args.replaceAll) {
+          return {
+            error: `old_string matches ${occurrences.length} locations in the file (lines: ${occurrences.map(o => o.line).join(", ")}). file_edit requires an exact match. Either include more surrounding context in old_string to make it unique, or pass replaceAll=true if you intentionally want to replace all occurrences.`,
+            matches: occurrences.map(o => ({ line: o.line, column: 0 })),
+          };
+        }
+        const newContent = args.replaceAll
+          ? content.split(args.old_string).join(args.new_string)
+          : content.slice(0, occurrences[0].index) + args.new_string + content.slice(occurrences[0].index + args.old_string.length);
+        await writeFile(args.path, newContent, "utf-8");
+        return {
+          success: true,
+          path: args.path,
+          replaced: occurrences.length,
+          replaceAll: !!args.replaceAll,
+          firstMatchLine: occurrences[0].line,
+        };
       } catch (e) { return { error: e.message }; }
     }
     case "grep": {
@@ -316,13 +397,88 @@ export async function runTool(tc) {
         };
       } catch (e) { return { error: e.message }; }
     }
-    case "skill": {
+    case "list_skills": {
+      // Fix-2: Authoritative structured skill inventory for the LLM.
+      // Prevents the failure mode of agent bash-exploring D:\claude_skills\ and
+      // mistaking a third-party clone for an installed skill source.
       try {
-        const installedSkills = scanSkills();
-        const skill = installedSkills.find(s => s.name === args.name);
-        if (!skill) return { error: `Skill "${args.name}" not found. Available: ${installedSkills.map(s => s.name).join(", ")}` };
-        const content = readFileSync(skill.path, "utf-8");
-        return { name: skill.name, description: skill.description, content };
+        const all = scanSkills();
+        const sourceFilter = args.source && args.source !== "all" ? args.source : null;
+        let filtered = sourceFilter ? all.filter(s => s.source === sourceFilter) : all;
+        // Per-skill lookup short-circuit
+        if (args.name) {
+          const target = filtered.find(s => s.name === args.name);
+          if (!target) {
+            const allNames = all.filter(s => !sourceFilter || s.source === sourceFilter).map(s => `\`${s.name}\``).join(", ");
+            return { error: `Skill "${args.name}" not found in loaded skills. Available: ${allNames || "(none)"}` };
+          }
+          return {
+            name: target.name,
+            description: target.description,
+            version: target.version,
+            source: target.source,
+            sourcePath: target.path,
+            triggers: target.triggers || [],
+            allowedTools: target.allowedTools || [],
+          };
+        }
+        // Aggregate view
+        const bySource = {};
+        const nameCount = new Map();
+        for (const s of filtered) {
+          bySource[s.source || "unknown"] = (bySource[s.source || "unknown"] || 0) + 1;
+          nameCount.set(s.name, (nameCount.get(s.name) || 0) + 1);
+        }
+        const includeDuplicates = args.includeDuplicates !== false; // default true
+        const duplicateNames = includeDuplicates
+          ? [...nameCount.entries()].filter(([, n]) => n > 1).map(([n, c]) => ({ name: n, occurrences: c }))
+          : [];
+        return {
+          total: filtered.length,
+          bySource,
+          canonicalPaths: {
+            agents: "~/​.agents/skills/",
+            claude: "~/​.claude/skills/",
+          },
+          warning: "These are the ONLY canonical skill sources. Files in other directories (e.g. D:\\claude_skills\\skills-main\\skills\\) are third-party GitHub clones and are NOT loadable via the `skill` tool.",
+          duplicates: duplicateNames,
+          duplicatesCount: duplicateNames.length,
+          skills: filtered.map(s => ({
+            name: s.name,
+            description: s.description,
+            source: s.source,
+            version: s.version,
+            triggers: s.triggers || [],
+          })),
+        };
+      } catch (e) { return { error: e.message }; }
+    }
+    case "skill": {
+      // P2 fix: unified lookup — L2 (agent-created) first, L3 (installed) fallback.
+      // Previously this only searched L3 installed skills, forcing the LLM to pick
+      // between two near-identical tools (`skill` vs `invoke_skill`). Now both names
+      // work the same way. `invoke_skill` is kept as a deprecated alias below.
+      try {
+        let skill = /** @type {any} */ (skills.loadSkill(args.name));
+        let tier = "L2";
+        if (!skill) {
+          const installedSkills = scanSkills();
+          skill = installedSkills.find(s => s.name === args.name);
+          tier = "L3";
+        }
+        if (!skill) {
+          const l2 = skills.listSkills().map(s => s.name).join(", ");
+          const l3 = scanSkills().map(s => s.name).join(", ");
+          const all = [...new Set([...l2.split(", "), ...l3.split(", ")].filter(Boolean))].join(", ");
+          return { error: `Skill "${args.name}" not found. Available skills: ${all || "(none)"}` };
+        }
+        skills.recordSkillUsage(args.name, true);
+        return {
+          name: skill.name,
+          description: skill.description,
+          content: skill.body || skill.content || readFileSync(skill.path, "utf-8"),
+          tier,
+        };
       } catch (e) { return { error: e.message }; }
     }
     case "write_memory": {
@@ -346,14 +502,16 @@ export async function runTool(tc) {
       } catch (e) { return { error: e.message }; }
     }
     case "invoke_skill": {
+      // Deprecated alias for `skill` (P2: unified the two tools).
+      // We re-route to the same handler to keep the unified behavior,
+      // and tag the response so callers can see they hit the old name.
       try {
-        // skills.loadSkill returns the full meta (name, body, description, etc.) but
-        // TS infers a narrow shape — cast to any for the union with scanSkills' shape.
         let skill = /** @type {any} */ (skills.loadSkill(args.name));
-        // Fallback to L3 installed skills
+        let tier = "L2";
         if (!skill) {
           const installedSkills = scanSkills();
           skill = installedSkills.find(s => s.name === args.name);
+          tier = "L3";
         }
         if (!skill) {
           const l2 = skills.listSkills().map(s => s.name).join(", ");
@@ -362,7 +520,13 @@ export async function runTool(tc) {
           return { error: `Skill "${args.name}" not found. Available skills: ${all || "(none)"}` };
         }
         skills.recordSkillUsage(args.name, true);
-        return { name: skill.name, description: skill.description, content: skill.body || skill.content || "(no instructions)" };
+        return {
+          name: skill.name,
+          description: skill.description,
+          content: skill.body || skill.content || readFileSync(skill.path, "utf-8"),
+          tier,
+          _deprecated: "invoke_skill is an alias for `skill`; please use `skill` going forward",
+        };
       } catch (e) { return { error: e.message }; }
     }
     case "create_skill": {
@@ -411,6 +575,7 @@ export async function runTool(tc) {
         owner: "", metadata: args.metadata || {}, createdAt: new Date().toISOString(),
       };
       taskStore.set(id, task);
+      persistSessionState();
       return { task: { id, subject: task.subject } };
     }
     case "TaskUpdate": {
@@ -419,23 +584,45 @@ export async function runTool(tc) {
       const updatedFields = [];
       if (args.status === "deleted") {
         taskStore.delete(args.taskId);
+        persistSessionState();
         return { success: true, taskId: args.taskId, updatedFields: ["status"], statusChange: { from: t.status, to: "deleted" } };
+      }
+      // ── Evidence required to mark a task completed (P0 anti-hallucination) ──
+      // Forces the LLM to attach proof: command output, file path, or diff summary.
+      // Empty evidence is accepted but recorded as "unverified" so users can see it.
+      if (args.status === "completed") {
+        if (!args.evidence || (typeof args.evidence === "string" && args.evidence.trim().length === 0)) {
+          t.evidence = null;
+          t.unverified = true;
+          updatedFields.push("unverified");
+        } else if (typeof args.evidence === "string") {
+          t.evidence = args.evidence.trim().slice(0, 1000);
+          t.unverified = false;
+          updatedFields.push("evidence");
+        } else {
+          return { error: "evidence must be a string (e.g. command output, file path, or diff summary)" };
+        }
+        t.completedAt = new Date().toISOString();
+        updatedFields.push("completedAt");
       }
       if (args.status) { t.status = args.status; taskStore.set(args.taskId, t); updatedFields.push("status"); }
       if (args.subject) { t.subject = args.subject; taskStore.set(args.taskId, t); updatedFields.push("subject"); }
       if (args.description) { t.description = args.description; taskStore.set(args.taskId, t); updatedFields.push("description"); }
-      return { success: true, taskId: args.taskId, updatedFields };
+      t.updatedAt = new Date().toISOString();
+      persistSessionState();
+      return { success: true, taskId: args.taskId, updatedFields, unverified: t.unverified || false };
     }
     case "TaskList": {
       const tasks = Array.from(taskStore.values()).filter(t => t.status !== "deleted");
       return {
-        tasks: tasks.map(t => ({ id: t.id, subject: t.subject, status: t.status, activeForm: t.activeForm })),
+        tasks: tasks.map(t => ({ id: t.id, subject: t.subject, status: t.status, activeForm: t.activeForm, evidence: t.evidence, unverified: t.unverified || false })),
         summary: `${tasks.filter(t => t.status === "completed").length}/${tasks.length} completed, ${tasks.filter(t => t.status === "in_progress").length} in progress`,
       };
     }
     case "TodoWrite": {
       const oldTodos = [...getTodoList()];
       setTodoList((args.todos || []).map((t, i) => ({ id: `todo_${i + 1}`, content: t.content, status: t.status, activeForm: t.activeForm })));
+      persistSessionState();
       return { oldTodos, newTodos: getTodoList() };
     }
     case "Agent": {

@@ -66,6 +66,11 @@ export function registerIpcHandlers() {
     if (sessionId && history.length > 0) {
       const title = getHistoryTitle(history);
       await saveSession(sessionId, history, title);
+      // P2: persist the current task/todo state before clearing in-memory
+      try {
+        sessionDb.saveSessionTasks(sessionId, Array.from(taskStore.values()).filter(t => t.status !== "deleted"));
+        sessionDb.saveSessionTodos(sessionId, getTodoList());
+      } catch (e) { console.error("[session:reset] task persist failed:", e?.message); }
     }
     setSessionId(null); setHistory([]);
     setEpisodicSearched(false);
@@ -87,6 +92,22 @@ export function registerIpcHandlers() {
       if (!opts?.readOnly) {
         setSessionId(/** @type {string} */ (data.id));
         setHistory(/** @type {Array<{role: string, content: string}>} */ (data.history || []));
+        // P2: restore task/todo state from DB
+        try {
+          const tasks = sessionDb.loadSessionTasks(id) || [];
+          taskStore.clear();
+          for (const t of tasks) {
+            taskStore.set(t.id, {
+              id: t.id, subject: t.subject, description: t.description, status: t.status,
+              activeForm: t.activeForm, evidence: t.evidence, unverified: t.unverified,
+              completedAt: t.completedAt, createdAt: t.createdAt, updatedAt: t.updatedAt,
+              owner: "", metadata: {},
+            });
+          }
+          const todos = sessionDb.loadSessionTodos(id) || [];
+          setTodoList(todos);
+          sendToRenderer("task:restored", { taskCount: tasks.length, todoCount: todos.length });
+        } catch (e) { console.error("[session:load] task restore failed:", e?.message); }
         sendToRenderer("session:update", { sessionId: data.id });
       }
       return { sessionId: data.id, title: data.title, history: /** @type {Array<{role: string, content: string}>} */ (data.history || []) };
@@ -96,6 +117,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("session:delete", async (_event, id) => {
     await sessionDb.deleteSession(id);
+    // P2: cascade task/todo cleanup (FK ON DELETE CASCADE handles it, but be explicit)
+    try { sessionDb.clearSessionTasks(id); } catch { /* ignored */ }
   });
 
   ipcMain.handle("session:delete-all", async () => {

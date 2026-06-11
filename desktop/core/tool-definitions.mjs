@@ -14,12 +14,15 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "bash",
-      description: "Run a PowerShell command on Windows. Returns stdout/stderr/exit code.\n\nUSE for: running builds, tests, git/npm/Node commands, exploring project structure (`Get-ChildItem`, `Select-String`), one-off shell operations.\n\nDO NOT use for: reading a file you already know the path to (use `file_read`); searching code (use `grep`); finding files by name (use `glob`). The shell is your fallback — prefer the dedicated tools above whenever possible.",
+      description: "Run a PowerShell command on Windows. Returns stdout/stderr/exit code.\n\nUSE for: running builds, tests, git/npm/Node commands, exploring project structure (`Get-ChildItem`, `Select-String`), one-off shell operations.\n\nDO NOT use for: reading a file you already know the path to (use `file_read`); searching code (use `grep`); finding files by name (use `glob`). The shell is your fallback — prefer the dedicated tools above whenever possible.\n\n**Output handling (P2):** If output exceeds 60,000 chars or the response indicates truncation, re-run with `head=N` (first N lines), `tail=N` (last N lines), or `offset=N` (start at line N) to page through large outputs. Combining `offset=100` and `head=50` shows lines 100-149.",
       parameters: {
         type: "object",
         properties: {
           command: { type: "string", description: "The PowerShell command to execute" },
           description: { type: "string", description: "Brief description shown to user" },
+          head: { type: "integer", description: "If set, return only the first N lines (useful for paginating large output)." },
+          tail: { type: "integer", description: "If set, return only the last N lines (useful for seeing the end of build/test output)." },
+          offset: { type: "integer", description: "If set with `head`, start at line N instead of line 0." },
         },
         required: ["command"],
       },
@@ -54,12 +57,13 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "file_edit",
-      description: "Replace exact text in a file (surgical edit). Safer than `file_write` because it cannot accidentally delete unrelated code.\n\nUSE for: any modification to an existing file where you know the surrounding text.\n\nDO NOT use for: creating a new file (use `file_write`); replacing an entire file (use `file_write` if rewriting from scratch). The `old_string` must match EXACTLY (whitespace, punctuation, capitalization included).",
+      description: "Replace exact text in a file (surgical edit). Safer than `file_write` because it cannot accidentally delete unrelated code.\n\nUSE for: any modification to an existing file where you know the surrounding text.\n\nDO NOT use for: creating a new file (use `file_write`); replacing an entire file (use `file_write` if rewriting from scratch). The `old_string` must match EXACTLY (whitespace, punctuation, capitalization included).\n\n**Matching rules:**\n- If `old_string` matches 0 locations: returns an error. Use file_read to inspect.\n- If `old_string` matches 2+ locations: returns an error listing the line numbers. Add more surrounding context to make it unique, or set `replaceAll=true` to replace all.\n- If `old_string` matches exactly 1 location: replaces it.\n- `replaceAll=true` is required for batch replacement (use with care).",
       parameters: {
         type: "object", properties: {
           path: { type: "string", description: "Path to the file" },
-          old_string: { type: "string", description: "Exact text to find" },
+          old_string: { type: "string", description: "Exact text to find (must match exactly, including whitespace and line endings)" },
           new_string: { type: "string", description: "Replacement text" },
+          replaceAll: { type: "boolean", description: "Set to true to replace all occurrences. Default is false (must be unique).", default: false },
         }, required: ["path", "old_string", "new_string"],
       },
     },
@@ -120,8 +124,24 @@ export const TOOL_DEFS = [
   {
     type: "function",
     function: {
+      name: "list_skills",
+      description: "List all loaded skills with structured metadata: total count, by-source breakdown (canonical paths only), cross-source duplicates, and per-skill sourcePath/description/version.\n\nUSE for: any question about 'how many skills do you have', 'any duplicates', 'where do skills come from', 'is skill X installed'. This is the AUTHORITATIVE source of truth — never bash/grep the filesystem to answer such questions. The 3rd-party GitHub clone at `D:\\claude_skills\\skills-main\\skills` is NOT a loaded source; the only canonical paths are `~/.agents/skills/` and `~/.claude/skills/`.\n\nDO NOT use for: loading a specific skill's instructions (use `skill`); creating a skill (use `create_skill`).",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Optional. If provided, returns detailed metadata for that skill only (path, description, triggers, version, source, allowedTools)." },
+          source: { type: "string", enum: ["agents", "claude", "all"], description: "Optional. Filter to one source. Default: 'all'." },
+          includeDuplicates: { type: "boolean", description: "Optional. Default true — include the `duplicates` array (names appearing in multiple sources)." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "skill",
-      description: "Load a user-installed skill (a guided workflow in SKILL.md format).\n\nUSE for: when the system prompt's <skills> section lists a skill whose name or description matches the task — call this FIRST before improvising. The skill's SKILL.md contains step-by-step instructions the user has already curated.\n\nDO NOT use for: when no skill clearly matches the task; when you have already loaded the skill in this session (call `invoke_skill` instead to re-execute).",
+      description: "Load a skill (agent-created L2 or user-installed L3) by name and return its full instructions.\n\n**Unified tool (P2):** searches agent-created skills (L2) first, then installed skills (L3) as fallback. You do NOT need to choose between `skill` and `invoke_skill` — they are the same tool now; `invoke_skill` is kept as a deprecated alias.\n\nUSE for: when the system prompt's <skills> section lists a skill whose name or description matches the task — call this FIRST before improvising. The skill's SKILL.md contains step-by-step instructions the user has already curated.\n\nDO NOT use for: when no skill clearly matches the task; when you have already loaded the skill in this session (it will be re-loaded, which is fine but wasteful).",
       parameters: {
         type: "object", properties: {
           name: { type: "string", description: "The skill name to load (e.g. 'review', 'qa', 'investigate')" },
@@ -149,7 +169,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "invoke_skill",
-      description: "Execute a skill that was previously loaded. Skills are reusable workflows created by the user or generated by the agent.\n\nUSE for: tasks that match a skill you have already loaded this session (or one listed in <skills>).\n\nDO NOT use for: a skill you have not loaded yet (call `skill` first); generic tasks not covered by any skill.",
+      description: "**DEPRECATED — use `skill` instead.** This is an alias for the `skill` tool with identical behavior. Kept only for backward compatibility; new tool calls should use `skill`.",
       parameters: {
         type: "object", properties: {
           name: { type: "string", description: "The skill name to invoke" },
@@ -190,13 +210,14 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "TaskUpdate",
-      description: "Update a task's status or details. Mark in_progress when starting, completed when done.\n\nUSE for: transitioning task lifecycle; editing a task's subject/description.\n\nDO NOT use for: deleting a finished task that's just clutter (it's fine to leave completed tasks; only use status='deleted' for obsolete ones).",
+      description: "Update a task's status or details. Mark in_progress when starting, completed when done.\n\n**IMPORTANT (anti-hallucination):** When setting status='completed', you MUST provide a non-empty `evidence` string that proves the task was actually done — e.g. a relevant command output line ('$ npm test → 12 passed'), a created/modified file path, a git commit hash, or a 1-line diff summary. If you cannot provide evidence, omit `status='completed'` and explain in your reply what went wrong instead. Tasks marked completed without evidence are recorded as 'unverified' in the UI so the user can double-check.",
       parameters: {
         type: "object", properties: {
           taskId: { type: "string", description: "The ID of the task to update" },
           status: { type: "string", enum: ["pending", "in_progress", "completed", "deleted"], description: "New status" },
           subject: { type: "string", description: "New subject" },
           description: { type: "string", description: "New description" },
+          evidence: { type: "string", description: "REQUIRED when status='completed': one-line proof the task was actually done (command output, file path, commit hash, or diff summary). Leave empty only if the task genuinely could not be completed." },
         }, required: ["taskId"],
       },
     },
