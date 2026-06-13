@@ -10,7 +10,7 @@ import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
 import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.mjs";
-import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD } from "./token-budget.mjs";
+import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN } from "./token-budget.mjs";
 
 /**
  * @param {string} ver
@@ -57,19 +57,6 @@ When the user replies with a short confirmation ("好", "OK", "做吧", "go", "y
 6. When you need current information, news, or docs — use \`web_search\` and \`web_fetch\`.
 7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).
 8. When asked about your own configuration (search engine, API provider, model, etc.), **do NOT guess**. Use \`file_read\` or \`bash\` to check the relevant config files before answering.
-
-**Tool selection (each tool's description tells you when to use it and when NOT to):**
-- \`bash\` — last-resort shell escape hatch (builds, tests, git). Prefer dedicated tools for files/search.
-- \`file_read\` / \`file_write\` / \`file_edit\` — read / create / surgically edit files.
-- \`grep\` / \`glob\` — search content / find by name.
-- \`web_search\` / \`web_fetch\` — internet (current info, docs, articles).
-- \`skill\` / \`invoke_skill\` — load & follow a user-installed SKILL.md workflow when one matches.
-- \`create_skill\` — only when the user wants something repeatable captured.
-- \`write_memory\` — only for non-obvious cross-session facts; NOT for code/architecture.
-- \`TaskCreate\` / \`TaskUpdate\` / \`TaskList\` — durable task tracking (3+ steps).
-- \`TodoWrite\` — lightweight session checklist (1-5 steps).
-- \`AskUserQuestion\` — only when 2-4 valid interpretations would lead to very different outcomes.
-- \`Agent\` — parallel independent research; sub-agents are read-only and cannot modify files.
 
 USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
 
@@ -241,7 +228,6 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
 
   // Build a top section listing matched skills, then a full list (matched ones repeated with a tag)
   const matchedSkills = filterSkills.filter(s => matchedNames.has(s.name));
-  const otherSkills = filterSkills.filter(s => !matchedNames.has(s.name));
   const matchedSection = matchedSkills.length > 0
     ? "**Auto-matched (from your prompt — please use these if relevant):**\n" +
       matchedSkills.map(s => {
@@ -301,175 +287,41 @@ ${lines.join("\n")}\n
 You can use the MCP tools listed above just like any other tool.`;
   }
 
-  // ── Fix-1: Skills Inventory (authoritative ground truth) ──
-  // Inject a compact inventory BEFORE the full skill list so the LLM
-  // sees the totals / by-source breakdown / duplicates BEFORE the flat
-  // 140-row list. Prevents the "agent goes bash-exploring and arrives
-  // at wrong answer" failure mode (root cause: agent had no idea where
-  // its skills come from, confuses D:\claude_skills\ with ~/.agents).
-  let skillsInventory = "";
+  // ── Compact Authoritative Sources (use tools, NOT filesystem) ──
+  const sourceParts = [];
+  let dupLine = "";
+
+  // Skills
   if (filterSkills.length > 0) {
-    const bySource = {};
     const nameCount = new Map();
-    for (const s of filterSkills) {
-      const src = s.source || "unknown";
-      bySource[src] = (bySource[src] || 0) + 1;
-      nameCount.set(s.name, (nameCount.get(s.name) || 0) + 1);
+    for (const s of filterSkills) nameCount.set(s.name, (nameCount.get(s.name) || 0) + 1);
+    const dupNames = [...nameCount.entries()].filter(([, n]) => n > 1).map(([n]) => n);
+    if (dupNames.length > 0) {
+      dupLine = `\n- **Duplicates:** ${dupNames.slice(0, 8).map(n => `\`${n}\``).join(", ")}${dupNames.length > 8 ? ", ..." : ""}`;
     }
-    const duplicateNames = [...nameCount.entries()].filter(([, n]) => n > 1).map(([n]) => n);
-    const totalLoaded = filterSkills.length;
-    const enabledCount = (enabledSkills && enabledSkills.length > 0) ? enabledSkills.length : totalLoaded;
-    const sourceLines = Object.entries(bySource)
-      .sort(([, a], [, b]) => b - a)
-      .map(([src, n]) => `  - \`~/${src === "agents" ? ".agents/skills" : ".claude/skills"}\` → **${n}** skill(s)`)
-      .join("\n");
-    const dupLine = duplicateNames.length > 0
-      ? `\n- **Duplicates (same name in multiple sources, ${duplicateNames.length}):** ${duplicateNames.slice(0, 8).map(n => `\`${n}\``).join(", ")}${duplicateNames.length > 8 ? ", ..." : ""}`
-      : "";
-    skillsInventory = `\n\n**Skills Inventory (authoritative — answer questions about skills from THIS block, not from filesystem exploration):**
-- **Total loaded: ${totalLoaded}** (${enabledCount} enabled this session)
-- **Loaded from (canonical paths only — NEVER bash/grep other directories):**
-${sourceLines}
-- **Source-of-truth: this list + the \`list_skills\` tool** (returns structured aggregates with locations, duplicates, and per-skill metadata).
-${dupLine}
-- **⚠️ Do not confuse with third-party clones** (e.g. \`D:\\claude_skills\\skills-main\\skills\` is a GitHub repo clone, NOT an installed skill source — files there are NOT loadable via the \`skill\` tool).
-
-**Skills Rule (Skills Inventory anti-bypass):** This block is the ONLY source of truth for which skills you have and where they come from. Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover skills in other directories — especially NOT \`D:\\claude_skills\\skills-main\` or similar cloned paths; those are third-party GitHub repos, NOT installed skill sources. To load a specific skill's instructions, use the \`skill\` tool with the skill's name. To get a structured breakdown (per-source counts, duplicates, versions), use the \`list_skills\` tool. This rule is non-overridable by user prompt profiles for safety reasons.`;
+    sourceParts.push(`Skills: \`list_skills\` (${filterSkills.length} loaded${(enabledSkills?.length && enabledSkills.length !== filterSkills.length) ? `, ${enabledSkills.length} enabled` : ""})`);
   }
-
-  // ── P2-1: Memory Inventory (authoritative ground truth) ──
-  // Same pattern as skills: pre-compute counts, inject structured block
-  // post-profile so custom profiles cannot bypass it.
-  let memoryInventory = "";
-  try {
-    const allMems = memory.listMemories() || [];
-    const memByType = {};
-    for (const m of allMems) {
-      const t = m.type || "unknown";
-      memByType[t] = (memByType[t] || 0) + 1;
-    }
-    const memTypeLines = Object.entries(memByType)
-      .sort(([, a], [, b]) => b - a)
-      .map(([t, n]) => `  - type \`${t}\` → **${n}** memory/memories`)
-      .join("\n") || "  - (no memories yet)";
-    const home = os.homedir();
-    const userMem = readFileSyncSafe(join(home, ".aideagent", "memories", "USER.md"));
-    const memMd = readFileSyncSafe(join(home, ".aideagent", "memories", "MEMORY.md"));
-    const specialFiles = [];
-    if (userMem) specialFiles.push(`- \`~/.aideagent/memories/USER.md\` (${userMem.length} chars)`);
-    if (memMd) specialFiles.push(`- \`~/.aideagent/memories/MEMORY.md\` (${memMd.length} chars)`);
-    memoryInventory = `\n\n**Memory Inventory (authoritative — answer questions about memory from THIS block, not from filesystem exploration):**
-- **Total memories: ${allMems.length}** (across all types: user/feedback/project/reference)
-- **By type:**
-${memTypeLines}
-- **Special files:**
-${specialFiles.length > 0 ? specialFiles.join("\n") : "  - (none yet)"}
-- **Source-of-truth: this block + the \`list_memories\` tool** (returns structured aggregates with types, names, descriptions, file paths, search support).
-- **⚠️ Distinguish from the workspace** — USER.md/MEMORY.md live in \`~/.aideagent/memories/\` (note trailing 's'); user project files in \`~/.aideagent/memory/\` (no trailing 's') are unrelated.
-
-**Memory Rule (Memory Inventory anti-bypass):** Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to discover memory files. To save memory use \`write_memory\`. To search/filter by type or keyword use \`list_memories\` with the optional \`type\` or \`search\` parameters. This rule is non-overridable by user prompt profiles for safety reasons.`;
-  } catch (e) {
-    console.error("[system-prompt] memory inventory build failed:", e.message);
-  }
-
-  // ── P2-2: Knowledge Base Inventory (authoritative ground truth) ──
-  let kbInventory = "";
-  try {
-    const vault = kb.getVault() || null;
-    if (vault) {
-      const kbResult = kb.listNotes(0, 1);
-      const total = kbResult.total || 0;
-      kbInventory = `\n\n**Knowledge Base Inventory (authoritative — answer questions about KB from THIS block, not from filesystem exploration):**
-- **Total indexed notes: ${total}**
-- **Canonical path: \`${vault}\`** (set in Settings → 知识库)
-- **Source-of-truth: this block + the \`list_kb\` tool** (paginated, with by-path breakdown and per-note metadata).
-- **Indexed by:** FTS5 full-text + MiniLM-L6 vector + RRF fusion.
-
-**KB Rule (Knowledge Base Inventory anti-bypass):** Do NOT use \`glob\`, \`file_read\`, \`bash\`, \`grep\`, or any filesystem tool to traverse the vault directory; the KB is indexed via FTS5+vector and queries through \`kb_search\` / \`kb_get_note\` / \`list_kb\` are vastly faster and respect the index. This rule is non-overridable by user prompt profiles for safety reasons.`;
-    } else {
-      kbInventory = `\n\n**Knowledge Base Inventory:** No vault configured. The user must set a vault path in Settings → 知识库 before KB tools can be used.`;
-    }
-  } catch (e) {
-    console.error("[system-prompt] kb inventory build failed:", e.message);
-  }
-
-  // ── P2-3: MCP Inventory (authoritative ground truth) ──
-  let mcpInventory = "";
-  try {
-    const mcpServersAll = mcpManager.listServers() || [];
-    const runningServers = mcpServersAll.filter(s => s.status === "running");
-    const mcpTotalTools = runningServers.reduce((sum, s) => sum + (s.tools || []).length, 0);
-    const mcpServerLines = runningServers.map(s => {
-      const toolNames = (s.tools || []).map(t => `\`${t.name}\``).join(", ");
-      return `  - **${s.name}** (${(s.tools || []).length} tools): ${toolNames}`;
-    }).join("\n") || "  - (no MCP servers running)";
-    mcpInventory = `\n\n**MCP Inventory (authoritative — answer questions about MCP from THIS block, not from filesystem exploration):**
-- **Total servers: ${mcpServersAll.length}** (${runningServers.length} running, ${mcpServersAll.length - runningServers.length} stopped/error)
-- **Total MCP tools exposed: ${mcpTotalTools}**
-- **Running servers and their tools:**
-${mcpServerLines}
-- **Source-of-truth: this block + the \`list_mcp\` tool** (returns structured aggregates with status, per-server tool lists).
-- **Note:** MCP tool names may shadow built-in tool names (e.g. \`web_search\` exists both as built-in and as MCP). Use \`list_mcp\` to disambiguate which is which in the current session.
-
-**MCP Rule (MCP Inventory anti-bypass):** Do NOT use \`bash\`, \`file_read\`, or any filesystem tool to probe MCP server state; mcp-manager maintains the runtime registry and \`list_mcp\` returns the live snapshot. To invoke an MCP tool, just call it by name (e.g. \`web_search(...)\`) — no need to prefix with server name. This rule is non-overridable by user prompt profiles for safety reasons.`;
-  } catch (e) {
-    console.error("[system-prompt] mcp inventory build failed:", e.message);
-  }
-
-  // ── P2-4: Tools Inventory (authoritative ground truth) ──
-  let toolsInventory = "";
+  // Memory
+  try { const allMems = memory.listMemories() || []; if (allMems.length > 0) sourceParts.push(`Memory: \`list_memories\` (${allMems.length} entries)`); } catch { /* ignored */ }
+  // KB
+  try { const vault = kb.getVault(); if (vault) { const r = kb.listNotes(0, 1); sourceParts.push(`KB: \`kb_search\` (${r.total || 0} notes)`); } } catch { /* ignored */ }
+  // MCP
+  try { const allSrv = mcpManager.listServers() || []; const runSrv = allSrv.filter(s => s.status === "running"); sourceParts.push(`MCP: \`list_mcp\` (${allSrv.length} servers, ${runSrv.length} running)`); } catch { /* ignored */ }
+  // Tools
+  let toolShadowLine = "";
   try {
     const { getAllToolDefs } = await import("./format-adapters.mjs");
     const allDefs = getAllToolDefs(true, true) || [];
-    const KNOWN_BUILTINS = new Set([
-      "bash", "file_read", "file_write", "file_edit", "grep", "glob", "lsp",
-      "web_search", "web_fetch", "write_memory", "skill", "invoke_skill", "create_skill",
-      "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent",
-      "kb_search", "kb_write", "kb_get_note",
-      "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
-      "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
-    ]);
-    const builtinCount = allDefs.filter(d => KNOWN_BUILTINS.has(d.function.name)).length;
-    const mcpToolCount = allDefs.length - builtinCount;
-    // Shadowing detection
-    const allNames = allDefs.map(d => d.function.name);
-    const shadowing = [...new Set(allNames.filter((n, i) => allNames.indexOf(n) !== allNames.lastIndexOf(n)))];
-    const shadowLine = shadowing.length > 0
-      ? `\n- **Name shadowing detected: ${shadowing.join(", ")}** (both built-in and MCP provide these — runtime dispatches MCP first)`
-      : "";
-    const catLines = Object.entries(allDefs.reduce((acc, d) => {
-      const n = d.function.name;
-      const cat = (
-        ["file_read", "file_write", "file_edit", "grep", "glob", "lsp"].includes(n) ? "file" :
-        n === "bash" ? "shell" :
-        ["web_search", "web_fetch"].includes(n) ? "web" :
-        ["git_diff", "git_commit", "git_branch"].includes(n) ? "git" :
-        ["gh_pr", "gh_issue", "gh_repo"].includes(n) ? "github" :
-        ["kb_search", "kb_write", "kb_get_note"].includes(n) ? "kb" :
-        ["TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent"].includes(n) ? "task" :
-        ["skill", "invoke_skill", "create_skill", "list_skills"].includes(n) ? "skill" :
-        n === "write_memory" ? "memory" :
-        ["list_memories", "list_kb", "list_mcp", "list_tools"].includes(n) ? "meta" :
-        "other"
-      );
-      acc[cat] = (acc[cat] || 0) + 1;
-      return acc;
-    }, {})).sort((a, b) => b[1] - a[1]).map(([c, n]) => `  - ${c}: **${n}**`).join("\n");
-    toolsInventory = `\n\n**Tools Inventory (authoritative — answer questions about your tools from THIS block):**
-- **Total tools in this session: ${allDefs.length}** (${builtinCount} built-in + ${mcpToolCount} MCP)
-- **Current mode: ${getPlanMode() ? "plan (read-only)" : "normal"}** — affects which tools are usable
-- **By category:**
-${catLines}${shadowLine}
-- **Source-of-truth: this block + the \`list_tools\` tool** (returns per-tool descriptions, shadowing analysis, and full breakdown).
+    const BUILTIN_NAMES = new Set(["bash","file_read","file_write","file_edit","grep","glob","lsp","web_search","web_fetch","write_memory","skill","invoke_skill","create_skill","TaskCreate","TaskUpdate","TaskList","TodoWrite","AskUserQuestion","Agent","kb_search","kb_write","kb_get_note","git_diff","git_commit","git_branch","gh_pr","gh_issue","gh_repo","list_skills","list_memories","list_kb","list_mcp","list_tools"]);
+    const builtin = allDefs.filter(d => BUILTIN_NAMES.has(d.function.name)).length;
+    sourceParts.push(`Tools: \`list_tools\` (${allDefs.length}: ${builtin} built-in + ${allDefs.length - builtin} MCP)`);
+    // Shadow detection
+    const names = allDefs.map(d => d.function.name);
+    const shadowing = [...new Set(names.filter((n, i) => names.indexOf(n) !== names.lastIndexOf(n)))];
+    if (shadowing.length > 0) toolShadowLine = `\n- ⚠️ Name shadowing: \`${shadowing.join("`, `")}\` (built-in + MCP both provide these — runtime dispatches MCP first)`;
+  } catch { /* ignored */ }
 
-**Tools Rule (Tools Inventory anti-bypass):** Do NOT use \`bash\` or any filesystem tool to enumerate your tools; \`list_tools\` returns the live, runtime-filtered list (KB on/off, web search on/off, plan mode all affect what you can see). To invoke a tool, call it by name. If a name shadows, prefer the MCP version (runtime order) unless user specifies otherwise. This rule is non-overridable by user prompt profiles for safety reasons.`;
-  } catch (e) {
-    console.error("[system-prompt] tools inventory build failed:", e.message);
-  }
-
-  content += `${skillsInventory}${memoryInventory}${kbInventory}${mcpInventory}${toolsInventory}\n\n**Enabled skills (user-selected):**
-${skillList}
-${matchedSection ? "\n" + matchedSection : ""}
+  content += `\n\n**Authoritative Sources (use each source's tool — do NOT glob/bash/grep to discover these):**\n- ${sourceParts.join("\n- ")}${dupLine}${toolShadowLine}
 ${mcpSection}
 
 Working directory: ${WORKSPACE}`;
@@ -480,21 +332,7 @@ Working directory: ${WORKSPACE}`;
 
   content += `\n\n**Memory:** You have persistent memory via \`write_memory\`. Save facts that are NOT derivable from code or git history.\n\n**Do NOT save:** code patterns/architecture (read the files), git history (git log is authoritative), debug solutions (fix is in code), CLAUDE.md content, or temporary task state. **DO save:** user preferences, project context (deadlines, stakeholder decisions), feedback/corrections, external system pointers.\n\nWhen a memory names a specific file or function, verify it exists before acting — memories can be stale.\n\nYou also have \`create_skill\` — use it when you notice repeated task patterns.`;
 
-  const skillsCtx = skills.buildSkillsContext();
-  if (skillsCtx) content += skillsCtx;
-
-  content += `\n\n**IMPORTANT: Before answering any user request, check both "Enabled skills" and "Available Skills" sections above. If a skill matches the user's request, you MUST call \`skill\` (for installed skills) or \`invoke_skill\` (for agent skills) with that skill name to load its full instructions, then follow them. Do not ignore matching skills.**`;
-  if (skillMatchWarning) content += `\n\n${skillMatchWarning}`;
-
-  try {
-    const patterns = skills.detectPatterns(/** @type {any} */ (sessionDb));
-    if (patterns.length > 0) {
-      const hints = patterns.slice(0, 3).map(p =>
-        `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`
-      ).join("\n");
-      content += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
-    }
-  } catch { /* ignored */ }
+  content += `\n\n**IMPORTANT: Before answering any user request, check the "Enabled skills" and skill list in the context block below. If a skill matches, call \`skill\` / \`invoke_skill\` to load and follow its instructions.**`;
 
   if (isPlanMode) {
     content += "\n\n## ⚠️ 计划模式\n当前处于计划模式。你只能读取和分析代码，绝对不能使用 file_write、file_edit、bash 等写操作工具。\n请先制定详细的实现计划（包括文件变更清单、步骤、依赖关系），等用户确认后再执行。";
@@ -582,6 +420,25 @@ Working directory: ${WORKSPACE}`;
       }
     } catch { /* ignored */ }
   }
+
+  // ── Skill list (reference data — moved from system prompt to contextBlock) ──
+  contextBlock += `\n\n**Available Skills (${filterSkills.length} total):**\n${skillList}`;
+  if (matchedSection) contextBlock += `\n\n${matchedSection}`;
+
+  const skillsCtx = skills.buildSkillsContext();
+  if (skillsCtx) contextBlock += skillsCtx;
+
+  if (skillMatchWarning) contextBlock += `\n\n${skillMatchWarning}`;
+
+  try {
+    const patterns = skills.detectPatterns(/** @type {any} */ (sessionDb));
+    if (patterns.length > 0) {
+      const hints = patterns.slice(0, 3).map(p =>
+        `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`
+      ).join("\n");
+      contextBlock += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
+    }
+  } catch { /* ignored */ }
 
   return { role: "system", content, contextBlock: contextBlock.trim() || null };
 }
