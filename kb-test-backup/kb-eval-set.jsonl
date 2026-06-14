@@ -1,0 +1,15 @@
+{"id": "opencode-usage", "query": "opencode 怎么用", "expected_paths": ["人工智能/opencode/opencode命令使用教程.md"], "difficulty": "exact", "notes": "工具教程类查询，应 @1 命中"}
+{"id": "openclaw-install-skill", "query": "openclaw 安装 skill", "expected_paths": ["人工智能/openclaw/openclaw安装skills.md"], "difficulty": "exact", "notes": "高 rrf (0.0325) — 验证关键词精准度"}
+{"id": "context7", "query": "context7", "expected_paths": ["人工智能/claude code/claude code技巧.md"], "difficulty": "exact", "notes": "英文专有名词"}
+{"id": "mcp-protocol", "query": "mcp 协议", "expected_paths": ["人工智能/opencode/MCP 与 Skills 对比及选择.md"], "difficulty": "exact", "notes": "概念检索"}
+{"id": "feishu-bot", "query": "飞书机器人配置", "expected_paths": ["人工智能/hermes/群聊配置.md"], "difficulty": "exact", "min_rank": 3, "notes": "正确结果 sim 仅 0.458（接近噪声阈值 0.55）。当前 'I don't know' 阈值会让此查询返回 0 — 是诚实行为但代价是失去可用但弱的匹配。降阈值到 0.45 可恢复此查询；升级到更强的 embedding 模型（bge-m3）也可解决。"}
+{"id": "ollama-local-llm", "query": "本地大模型", "expected_paths": ["人工智能/hermes/Hermes Agent 配置 Ollama 本地模型.md"], "difficulty": "conceptual", "min_rank": 5, "notes": "正确结果在 #5（rrf=0.0147），排名靠后"}
+{"id": "ragflow-local-deploy", "query": "RAGFlow 本地部署", "expected_paths": ["人工智能/RAGFlow本地部署操作手册_备份_2026-06-10.md"], "difficulty": "conceptual", "min_rank": 5, "notes": "概念查询，正确结果在 #4"}
+{"id": "wechat-bot", "query": "微信机器人", "expected_paths": ["人工智能/openclaw/openclaw接入企业微信.md"], "difficulty": "conceptual", "notes": "已知缺漏：vault 有相关文档但 @5 找不到（#5 才是 hermes 群聊配置），跟踪能否修复"}
+{"id": "remote-control-pc", "query": "远程控制电脑", "expected_paths": ["计算机系统知识/远程操控电脑.md"], "difficulty": "conceptual", "notes": "已知缺漏：vault 有相关文档但 @5 完全找不到"}
+{"id": "how-to-take-notes", "query": "如何快速做笔记", "expected_paths": [], "difficulty": "vague", "notes": "vault 中似乎无相关笔记，跟踪假阳性"}
+{"id": "anxiety-help", "query": "焦虑怎么办", "expected_paths": [], "difficulty": "vague", "notes": "vault 中无心理学内容，应为 0 命中（验证假阳性）"}
+{"id": "novel-character", "query": "小说人物塑造", "expected_paths": [], "difficulty": "vague", "notes": "vault 中无小说写作内容，应为 0 命中"}
+{"id": "gibberish-query", "query": "asdfghjkl 完全乱码", "expected_paths": [], "difficulty": "vague", "notes": "乱码查询，应为 0 命中"}
+{"id": "fast-check", "query": "fast-check", "expected_paths": [], "difficulty": "exact", "notes": "node_modules 污染：当前 top-1 是 .opencode/node_modules/fast-check/README.md，应排除。修复后该 query 应无结果或来自真实笔记"}
+{"id": "zod-schema", "query": "zod schema", "expected_paths": [], "difficulty": "exact", "notes": "node_modules 污染：top-1/2 都是 .opencode/node_modules/ 下的 README"}

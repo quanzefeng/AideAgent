@@ -11,7 +11,7 @@
 import { join, relative, extname, basename, dirname } from "path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "os";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, unlinkSync, watch } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, unlinkSync, watch, realpathSync } from "fs";
 import { DatabaseSync } from "node:sqlite";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -63,7 +63,7 @@ async function reindexSingleFile(relPath) {
     const stat = statSync(fullPath);
     const title = extractTitle(content, basename(relPath));
     const tags = extractTags(content);
-    const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").replace(/#{1,6}\s+/g, "").trim();
+    const body = stripNoteBody(content);
 
     const db = getDb();
     const existing = db.prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
@@ -98,8 +98,12 @@ async function reindexSingleFile(relPath) {
           if (embedding) {
             db.prepare("INSERT INTO kb_embeddings(chunk_id, embedding, dim) VALUES (?,?,?)")
               .run(chunkId, vectorToBuffer(embedding), _embeddingDim);
+          } else {
+            console.warn(`[kb] embedText returned null for chunk ${ci} of ${relPath}`);
           }
-        } catch { /* ignored */ }
+        } catch (/** @type {any} */ e) {
+          console.error(`[kb] embedText failed for chunk ${ci} of ${relPath}: ${e.message}`);
+        }
       }
       return;
     }
@@ -121,7 +125,10 @@ async function reindexSingleFile(relPath) {
           db.prepare("INSERT INTO kb_embeddings(chunk_id, embedding, dim) VALUES (?,?,?)")
             .run(chunkId, vectorToBuffer(embedding), _embeddingDim);
         }
-      } catch { /* ignored */ }
+      } catch (/** @type {any} */ e) {
+        _logError("embed", e);
+        console.error(`[kb] embedText failed for chunk ${ci} of ${relPath}: ${e.message}`);
+      }
     }
 
     console.log(`[kb-watcher] re-indexed: ${relPath} (${chunks.length} chunks)`);
@@ -198,7 +205,7 @@ export function isWatcherActive() {
  */
 export function stopWatcher() {
   if (_watcher) {
-    try { _watcher.close(); } catch { /* ignored */ }
+    try { _watcher.close(); } catch (/** @type {any} */ e) { _logError("fs", e); }
     _watcher = null;
     console.log("[kb-watcher] stopped");
   }
@@ -208,23 +215,128 @@ export function stopWatcher() {
   }
 }
 
-/** @param {string} relPath @returns {boolean} */
+/**
+ * Validate that `relPath` resolves to a location inside the vault.
+ *
+ * Defends against:
+ *   - ".." path traversal (e.g. "../../etc/passwd")
+ *   - Absolute paths and UNC paths (\\server\share)
+ *   - Symlinks inside the vault that point outside (e.g. a malicious
+ *     Obsidian plugin or user-created symlink to C:\Windows\System32)
+ *   - NTFS alternate data streams ("foo.md:hidden")
+ *   - Null bytes and other control characters
+ *
+ * Uses realpathSync on both sides to defeat symlink-based bypasses that
+ * a pure string prefix check would miss.
+ * @param {string} relPath
+ * @returns {boolean}
+ */
 function isSafeVaultPath(relPath) {
   if (!relPath || typeof relPath !== "string") return false;
-  if (relPath.includes("..") || relPath.startsWith("/") || relPath.startsWith("\\")) return false;
+  // Reject obviously dangerous patterns upfront
+  if (relPath.includes("..")) return false;          // traversal segments
+  if (relPath.startsWith("/") || relPath.startsWith("\\")) return false; // absolute / UNC
+  if (/[\x00-\x1f]/.test(relPath)) return false;     // control chars incl. NUL
+  if (/^[A-Za-z]:/.test(relPath)) return false;      // Windows drive-relative
+  if (relPath.includes(":")) return false;           // NTFS ADS (foo.md:hidden)
+  if (!_vaultPath) return false;
+
   const resolved = join(_vaultPath, relPath);
-  return resolved.startsWith(_vaultPath);
+  // Compare real paths (resolve symlinks on both sides)
+  let realVault, realTarget;
+  try {
+    realVault = realpathSync(_vaultPath);
+  } catch {
+    return false;
+  }
+  try {
+    // If the target doesn't exist yet (e.g. createNote on a new file),
+    // resolve the parent directory and re-append the basename.
+    realTarget = realpathSync.native
+      ? realpathSync(resolved, { throwIfNoEntry: false })
+      : null;
+    if (!realTarget) {
+      const parent = dirname(resolved);
+      const base = basename(resolved);
+      const realParent = realpathSync(parent);
+      realTarget = join(realParent, base);
+    }
+  } catch {
+    return false;
+  }
+  // Normalize Windows path separators before comparison
+  const norm = (p) => p.replace(/\\/g, "/");
+  return norm(realTarget).startsWith(norm(realVault) + "/") || norm(realTarget) === norm(realVault);
 }
 
 // ── Configuration ─────────────────────────────────────────
 
 let _vaultPath = "";
-/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number}} */
-let _config = { embeddingProvider: "local", ollamaEmbedModel: "nomic-embed-text", maxNotes: 20, maxChars: 20000, maxBodyChars: 0 };
+/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} */
+let _config = { embeddingProvider: "local", ollamaEmbedModel: "nomic-embed-text", maxNotes: 20, maxChars: 20000, maxBodyChars: 0, queryRewriteModel: "qwen3.5:9b", queryRewriteEnabled: true, rerankEnabled: true, rerankModel: "gemma4:e4b", rerankTopN: 15 };
 // maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
 
 // Cached auto-detected limit (computed in getEmbedder when provider is ollama)
 let _autoDetectedMaxBodyChars = 0;
+
+// ── Query Rewriting (LRU cache + Ollama chat model) ───────
+// Turns "本地大模型" into ["本地大模型", "本地运行的大语言模型", "Ollama 本地模型", ...]
+// Helps both FTS keyword matching AND vector similarity for short/conceptual queries.
+const REWRITE_CACHE_MAX = 256;
+const rewriteCache = new Map(); // query → variants[]
+let _rewriteEverSucceeded = false;
+/** @type {Map<string, Promise<string[]>>} */
+let _rewriteInFlight = new Map(); // Map<query, Promise> for per-key concurrent-call coalescing
+
+// ── Error counter (exposed via getStatus) ────────────────────
+// Tracks silently-swallowed errors so operators can detect degraded operation
+// without grepping logs. Counters are monotonically increasing since process start.
+/** @type {{rewrites:number, reranks:number, fts:number, embed:number, fs:number, db:number, total:number}} */
+let _errCounts = { rewrites: 0, reranks: 0, fts: 0, embed: 0, fs: 0, db: 0, total: 0 };
+
+/**
+ * Increment an error counter and log a single-line warning.
+ * Centralizing this prevents the prior pattern of 33+ unlogged catches.
+ * @param {"rewrites"|"reranks"|"fts"|"embed"|"fs"|"db"} bucket
+ * @param {any} err
+ */
+function _logError(bucket, err) {
+  if (!_errCounts[bucket]) _errCounts[bucket] = 0;
+  _errCounts[bucket]++;
+  _errCounts.total++;
+  const msg = err?.message || String(err);
+  // Truncate stack to keep logs readable
+  console.warn(`[kb] ${bucket} error: ${msg.slice(0, 200)}`);
+}
+
+const REWRITE_PROMPT = `You are a search query rewriter for a personal Obsidian knowledge base.
+Given a user's search query, output 3-5 alternative phrasings that would find the same information.
+Rules:
+- SHORT alternatives (3-15 words each)
+- Mix synonyms, related concepts, and natural Chinese/English variations
+- Output ONLY the alternatives, one per line, no numbering, no explanation
+
+Query: {query}
+
+Alternatives:`;
+
+const RERANK_PROMPT = `You are a relevance judge for a personal Obsidian knowledge base search.
+Given a search query and a list of candidate results, output the indices (1-based) of the most relevant results IN ORDER OF RELEVANCE, comma-separated, no spaces, no other text.
+Include only results that are actually relevant to the query. If a result is not relevant, OMIT its index.
+
+Query: {query}
+
+Candidates:
+{candidates}
+
+Most relevant indices (comma-separated):`;
+
+// ── Rerank LRU cache (query+chunk_ids → ordered indices) ────
+const RERANK_CACHE_MAX = 128;
+const rerankCache = new Map(); // "query|chunk_id1,chunk_id2,..." → indices[]
+let _rerankEverSucceeded = false; // Tracks first-call cold start for adaptive timeout
+/** @type {Map<string, Promise<any[]|null>>} */
+let _rerankInFlight = new Map(); // Map<cacheKey, Promise> for per-key concurrent-call coalescing
 
 function loadConfig() {
   try {
@@ -232,13 +344,19 @@ function loadConfig() {
     const cfg = JSON.parse(raw);
     _vaultPath = cfg.vaultPath || "";
     _config = { ..._config, ...cfg };
-  } catch { /* ignored */ }
+  } catch (/** @type {any} */ e) {
+    // Missing/corrupt config file is normal on first run.
+    _logError("fs", e);
+  }
 }
 
 function saveConfig() {
   try {
     writeFileSync(CONFIG_PATH, JSON.stringify({ ..._config, vaultPath: _vaultPath }, null, 2), "utf-8");
-  } catch { /* ignored */ }
+  } catch (/** @type {any} */ e) {
+    // Config write failure is non-fatal (settings won't persist this session).
+    _logError("fs", e);
+  }
 }
 
 loadConfig();
@@ -258,7 +376,7 @@ export function setVault(path) {
   return { ok: true, vault: _vaultPath };
 }
 
-/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number}} cfg @returns {{ok:boolean, config:object}} */
+/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} cfg @returns {{ok:boolean, config:object}} */
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
   if (cfg.ollamaEmbedModel && cfg.ollamaEmbedModel !== _config.ollamaEmbedModel) {
@@ -267,7 +385,27 @@ export function setConfig(cfg) {
   }
   if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
   if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(50000, cfg.maxChars));
-  if (cfg.maxBodyChars !== undefined) _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(String(cfg.maxBodyChars)) || 0));
+  if (cfg.maxBodyChars !== undefined) {
+    _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(String(cfg.maxBodyChars)) || 0));
+    // Setting maxBodyChars=0 means "auto-detect from Ollama model". If we
+    // previously auto-detected a value, that's now stale (e.g. user switched
+    // from a long-context model to a short-context one). Force re-detection.
+    if (_config.maxBodyChars === 0) _autoDetectedMaxBodyChars = 0;
+  }
+  // Clear LLM result caches when the model changes — old outputs are invalid
+  if (cfg.queryRewriteModel && cfg.queryRewriteModel !== _config.queryRewriteModel) {
+    rewriteCache.clear();
+    _rewriteEverSucceeded = false;
+  }
+  if (cfg.rerankModel && cfg.rerankModel !== _config.rerankModel) {
+    rerankCache.clear();
+    _rerankEverSucceeded = false;
+  }
+  if (cfg.queryRewriteEnabled !== undefined) _config.queryRewriteEnabled = Boolean(cfg.queryRewriteEnabled);
+  if (cfg.rerankEnabled !== undefined) _config.rerankEnabled = Boolean(cfg.rerankEnabled);
+  if (cfg.queryRewriteModel) _config.queryRewriteModel = String(cfg.queryRewriteModel);
+  if (cfg.rerankModel) _config.rerankModel = String(cfg.rerankModel);
+  if (cfg.rerankTopN !== undefined) _config.rerankTopN = Math.max(5, Math.min(50, parseInt(String(cfg.rerankTopN)) || 20));
   saveConfig();
   return { ok: true, config: _config };
 }
@@ -288,6 +426,20 @@ function spaceCJK(text) {
 }
 
 /**
+ * Sanitize a single token before it goes into an FTS5 MATCH expression.
+ * FTS5 has many metacharacters (" * ( ) : ^ - + . ,) that can break the
+ * parser or change query semantics in surprising ways. Strip all but
+ * letters/digits/CJK/underscore/dash, then re-quote with double quotes.
+ * @param {string} term
+ * @returns {string} sanitized term safe to wrap in "..." for FTS5
+ */
+function sanitizeFtsTerm(term) {
+  if (!term) return "";
+  // Keep letters, digits, CJK, underscore, dash. Strip everything else.
+  return term.replace(/[^\w一-鿿㐀-䶿\-]/g, "");
+}
+
+/**
  * Strip Markdown formatting for clean embedding text.
  * Removes headings markers, bold/italic, wikilinks, code markers, strikethrough.
  * Collapses multiple newlines.
@@ -298,6 +450,25 @@ function stripMarkdown(text) {
   return text
     .replace(/#{1,6}\s+/g, "")
     .replace(/\*{1,3}_ {1,3}/g, "")
+    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
+    .replace(/[*_`~]/g, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+/**
+ * Strip a full note's raw content to its embeddable body.
+ * Handles frontmatter, headings, wikilinks, formatting, and whitespace — the
+ * SAME logic for ALL paths (rebuild, watcher, create, update). Previously the
+ * watcher path skipped wikilinks/formatting, producing different chunk content
+ * from the rebuild path. This is the single source of truth.
+ * @param {string} content
+ * @returns {string}
+ */
+function stripNoteBody(content) {
+  return content
+    .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
+    .replace(/#{1,6}\s+/g, "")
     .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
     .replace(/[*_`~]/g, "")
     .replace(/\n{2,}/g, "\n")
@@ -330,6 +501,16 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
   const headingMatches = [...body.matchAll(/^(#{2,6})\s+(.+)$/gm)];
 
   if (headingMatches.length >= 2) {
+    // Capture content BEFORE the first heading as a lead chunk. Previously
+    // this was silently dropped — intro/lead content was invisible to
+    // search. Now it gets indexed under the note title (≥20 chars guard
+    // skips trivial frontmatter leftovers).
+    const firstHeadingStart = headingMatches[0].index;
+    const lead = body.slice(0, firstHeadingStart).trim();
+    if (lead && lead.length >= 20) {
+      chunks.push({ heading: fallbackTitle || "", content: stripMarkdown(lead) });
+    }
+
     for (let i = 0; i < headingMatches.length; i++) {
       const start = headingMatches[i].index;
       const end = i + 1 < headingMatches.length ? headingMatches[i + 1].index : body.length;
@@ -347,6 +528,13 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
   if (chunks.length === 0) {
     const h1Matches = [...body.matchAll(/^#{1}\s+(.+)$/gm)];
     if (h1Matches.length >= 2) {
+      // Same lead-capture fix as Attempt 1
+      const firstH1Start = h1Matches[0].index;
+      const lead = body.slice(0, firstH1Start).trim();
+      if (lead && lead.length >= 20) {
+        chunks.push({ heading: fallbackTitle || "", content: stripMarkdown(lead) });
+      }
+
       for (let i = 0; i < h1Matches.length; i++) {
         const start = h1Matches[i].index;
         const end = i + 1 < h1Matches.length ? h1Matches[i + 1].index : body.length;
@@ -447,6 +635,9 @@ function getDb() {
   _db = new DatabaseSync(DB_PATH);
   _db.exec("PRAGMA journal_mode=WAL");
   _db.exec("PRAGMA foreign_keys=ON");
+  // Wait up to 5s for write locks held by other processes (e.g. second
+  // AideAgent instance) instead of failing immediately with SQLITE_BUSY.
+  _db.exec("PRAGMA busy_timeout=5000");
 
   _db.exec(`
     CREATE TABLE IF NOT EXISTS kb_notes (
@@ -514,7 +705,11 @@ function getDb() {
           content TEXT
         )
       `);
-    } catch { /* ignored */ }
+    } catch (/** @type {any} */ e) {
+      // Fallback table creation is best-effort; if it already exists
+      // (or the DB is read-only), we proceed with whatever worked.
+      _logError("db", e);
+    }
   }
 
   // Chunk-level embeddings
@@ -551,13 +746,20 @@ function ftsDeleteByRelPath(relPath) {
     const noteId = Number(noteRows[0].id);
     const chunks = db.prepare("SELECT id FROM kb_chunks WHERE note_id = ?").all(noteId);
     const stmt = db.prepare("DELETE FROM kb_fts WHERE chunk_id = ?");
-    for (const ch of chunks) { try { stmt.run(Number(ch.id)); } catch { /* ignored */ } }
-  } catch { /* ignored */ }
+    for (const ch of chunks) {
+      try { stmt.run(Number(ch.id)); }
+      catch (/** @type {any} */ e) { _logError("fts", e); }
+    }
+  } catch (/** @type {any} */ e) {
+    // FTS5 delete failures leak ghost rows; surfaced via getStatus().
+    _logError("fts", e);
+  }
 }
 
 /** Delete a single chunk from FTS by chunk_id. */
 function ftsDeleteChunk(chunkId) {
-  try { getDb().prepare("DELETE FROM kb_fts WHERE chunk_id = ?").run(chunkId); } catch { /* ignored */ }
+  try { getDb().prepare("DELETE FROM kb_fts WHERE chunk_id = ?").run(chunkId); }
+  catch (/** @type {any} */ e) { _logError("fts", e); }
 }
 
 /** Insert a chunk into FTS. */
@@ -577,19 +779,31 @@ function ftsSearch(query, limit) {
   if (_hasFts5) {
     try {
       const terms = query.split(/\s+/).filter(Boolean);
-      const spacedTerms = terms.map(t => '"' + spaceCJK(t) + '"');
+      // Sanitize each term: strip FTS5 metacharacters that could change
+      // query semantics or break the parser. Then quote + space-CJK.
+      const spacedTerms = terms
+        .map(t => sanitizeFtsTerm(spaceCJK(t)))
+        .filter(t => t.length > 0)
+        .map(t => '"' + t + '"');
+      if (spacedTerms.length === 0) return [];
       const matchExpr = spacedTerms.join(" ");
       return db.prepare(
         'SELECT rowid, chunk_id, heading, snippet(kb_fts, 2, \'<mark>\', \'</mark>\', \'…\', 256) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
       ).all(matchExpr, limit);
-    } catch { /* ignored */ }
+    } catch (/** @type {any} */ e) {
+      _logError("fts", e);
+      return [];
+    }
   }
   // LIKE fallback
   try {
     return db.prepare(
       "SELECT id as rowid, chunk_id, heading, content as snippet FROM kb_fts WHERE heading LIKE ? OR content LIKE ? LIMIT ?"
     ).all("%" + query + "%", "%" + query + "%", limit);
-  } catch { return []; }
+  } catch (/** @type {any} */ e) {
+    _logError("fts", e);
+    return [];
+  }
 }
 
 // ── Local Model Path Resolution ──────────────────────────
@@ -663,7 +877,8 @@ async function getEmbedder() {
       } finally {
         // Restore original release name to avoid side effects
         if (isElectron) {
-          try { Object.defineProperty(process.release, "name", { value: "electron", configurable: true }); } catch {}
+          try { Object.defineProperty(process.release, "name", { value: "electron", configurable: true }); }
+          catch (/** @type {any} */ e) { _logError("fs", e); }
         }
       }
     }
@@ -720,7 +935,11 @@ async function getEmbedder() {
           console.log(`[kb] Auto-detected max body chars: ${_autoDetectedMaxBodyChars} (model context: ${ctx})`);
         }
         return _embedder;
-      } catch { /* ignored */ }
+      } catch (/** @type {any} */ e) {
+        // Probe failure is expected (Ollama may not be running) and the
+        // outer loop will try the next provider. Logged at debug level.
+        _logError("embed", e);
+      }
     }
 
   }
@@ -840,17 +1059,38 @@ function reciprocalRankFusion(resultLists, k = 60) {
 
 // ── File Scanning ─────────────────────────────────────────
 
+// Directories that should NEVER be indexed. These pollute search results
+// with unrelated content (e.g. .opencode/node_modules/zod/README.md
+// drowning out actual user notes). Configurable via setVaultExcludes.
+const DEFAULT_SKIP_DIRS = new Set([
+  ".obsidian",    // Obsidian config + plugins
+  "node_modules", // npm/pnpm package internals (huge, noisy)
+  ".git",         // git internals (binary)
+  ".trash",       // Obsidian trash
+  ".vscode",      // IDE config
+  ".idea",        // JetBrains config
+]);
+let _customSkipDirs = new Set();
+
+/**
+ * Add custom directory names to skip during scanning.
+ * @param {string[]} names
+ */
+export function setVaultExcludes(names) {
+  _customSkipDirs = new Set((names || []).map(String));
+}
+
 /** @param {string} dir @param {string} baseDir @returns {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
 function scanVault(dir, baseDir) {
   /** @type {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
   const results = [];
   if (!existsSync(dir)) return results;
   const entries = readdirSync(dir, { withFileTypes: true });
+  const skipDirs = new Set([...DEFAULT_SKIP_DIRS, ..._customSkipDirs]);
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      // Skip .obsidian directory
-      if (entry.name === ".obsidian") continue;
+      if (skipDirs.has(entry.name)) continue;
       results.push(...scanVault(fullPath, baseDir));
     } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
       try {
@@ -860,14 +1100,8 @@ function scanVault(dir, baseDir) {
         const title = extractTitle(content, entry.name);
         /** @type {string[]} */
         const tags = extractTags(content);
-        // Strip frontmatter and markdown for body
-        const body = content
-          .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
-          .replace(/#{1,6}\s+/g, "")
-          .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
-          .replace(/[*_`~]/g, "")
-          .replace(/\n{2,}/g, "\n")
-          .trim();
+        // Strip frontmatter and markdown for body (single source of truth)
+        const body = stripNoteBody(content);
         results.push({
           relPath,
           filename: entry.name,
@@ -877,7 +1111,9 @@ function scanVault(dir, baseDir) {
           wordCount: body.length,
           mtimeMs: stat.mtimeMs,
         });
-      } catch { /* ignored */ }
+      } catch (/** @type {any} */ e) {
+        console.warn(`[kb] Skipping ${fullPath}: ${e.message}`);
+      }
     }
   }
   return results;
@@ -897,8 +1133,8 @@ export async function rebuildIndex(progressCb) {
   const notes = scanVault(_vaultPath, _vaultPath);
 
   // Clear existing data (cascade deletes chunks/embeddings/FTS)
-  try { db.exec("DELETE FROM kb_fts"); } catch { /* ignored */ }
-  try { db.exec("DELETE FROM kb_embeddings"); } catch { /* ignored */ }
+  try { db.exec("DELETE FROM kb_fts"); } catch (/** @type {any} */ e) { _logError("fts", e); }
+  try { db.exec("DELETE FROM kb_embeddings"); } catch (/** @type {any} */ e) { _logError("db", e); }
   db.exec("DELETE FROM kb_chunks");
   db.exec("DELETE FROM kb_notes");
 
@@ -971,6 +1207,81 @@ export async function rebuildIndex(progressCb) {
 
 // ── Hybrid Search ─────────────────────────────────────────
 
+// "I don't know" thresholds — empirically derived from your vault stats.
+// VECTOR_SIMILARITY_FLOOR: with N=1345 chunks of 384-dim normalized vectors,
+//   E[max random similarity] ≈ √(2·ln(N)/N) ≈ 0.08. Anything below 0.25 is
+//   almost certainly noise from a query that has no semantic match in the vault.
+// VECTOR_CONFIDENT_SIM: when FTS has no keyword matches, the query has no
+//   lexical anchor. MiniLM-L6 is overconfident on short Chinese queries
+//   (e.g. "本地大模型" → 数据宝地址 0.611, a non-match), so we require
+//   >0.55 to be sure the match is real. This filters pure noise like
+//   "asdfghjkl" (0.504), 焦虑 (0.424), 小说 (0.498).
+// MIN_TOP_RRF_SCORE: even with FTS hit, a top RRF < 0.012 means rank ≥ 84 in a
+//   single list — effectively random. Return [] rather than force-answer.
+const VECTOR_SIMILARITY_FLOOR = 0.25;
+const VECTOR_CONFIDENT_SIM = 0.55;
+const MIN_TOP_RRF_SCORE = 0.012;
+
+/**
+ * Expand a query into 3-5 semantic variants using a small local chat model.
+ * Falls back to [query] if rewrite is disabled, model unavailable, or times out.
+ * @param {string} query
+ * @returns {Promise<string[]>}
+ */
+async function rewriteQuery(query) {
+  if (_config.queryRewriteEnabled === false) return [query];
+  const cacheKey = query.toLowerCase().trim();
+  if (rewriteCache.has(cacheKey)) return rewriteCache.get(cacheKey);
+  // Coalesce concurrent calls PER KEY — if a rewrite for the same query is
+  // already in flight, share its promise. Previously a single shared promise
+  // caused query B to silently get query A's variant set (cross-query leakage).
+  const existing = _rewriteInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const model = _config.queryRewriteModel || "qwen3.5:9b";
+    // First call may need to load the model into RAM (cold start). Adaptive timeout.
+    const isFirstCall = rewriteCache.size === 0 && !_rewriteEverSucceeded;
+    const timeoutMs = isFirstCall ? 30000 : 3000;
+    try {
+      const res = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          prompt: REWRITE_PROMPT.replace("{query}", query),
+          stream: false,
+          options: { temperature: 0.3, num_predict: 200, num_ctx: 512 },
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return [query];
+      const data = await res.json();
+      const variants = String(data.response || "")
+        .split("\n")
+        .map((s) => s.trim().replace(/^[\d\-\.\)\*]+\s*/, ""))
+        .filter((s) => s.length >= 2 && s.length <= 100 && s.toLowerCase() !== cacheKey)
+        .slice(0, 5);
+      const result = variants.length > 0 ? [query, ...variants] : [query];
+      // LRU cache (evict oldest when full)
+      if (rewriteCache.size >= REWRITE_CACHE_MAX) {
+        const firstKey = rewriteCache.keys().next().value;
+        rewriteCache.delete(firstKey);
+      }
+      rewriteCache.set(cacheKey, result);
+      _rewriteEverSucceeded = true;
+      return result;
+    } catch (/** @type {any} */ e) {
+      _logError("rewrite", e);
+      return [query]; // Quietly fall back to original query
+    } finally {
+      _rewriteInFlight.delete(cacheKey); // Release per-key in-flight slot
+    }
+  })();
+  _rewriteInFlight.set(cacheKey, promise);
+  return promise;
+}
+
 /** @param {string} query @param {number} [limit] @returns {Promise<Array<{id:number, rel_path:string, title:string, tags:string[], snippet:string, heading:string, rrfScore:number}>>} */
 export async function search(query, limit = 5) {
   if (!_vaultPath) return [];
@@ -979,42 +1290,106 @@ export async function search(query, limit = 5) {
   const db = getDb();
   const searchLimit = limit * 3; // Over-fetch for RRF
 
-  // 1. Chunk-level keyword search (FTS5 or LIKE fallback)
-  let ftsResults = ftsSearch(query, searchLimit);
+  // 0. Query rewriting: get semantic variants (original + expansions).
+  // Falls back to [query] if rewrite disabled, model unavailable, or times out.
+  const variants = await rewriteQuery(query);
 
-  // 2. Chunk-level vector similarity search
-  /** @type {Array<{id:number, similarity:number}>} */
-  let vectorResults = [];
-  try {
-    const queryEmbedding = await embedText(query);
-    if (queryEmbedding) {
-      const allEmbeddings = db.prepare("SELECT chunk_id, embedding FROM kb_embeddings").all();
-      vectorResults = allEmbeddings
-        .map(/** @param {any} row */ row => ({
-          id: row.chunk_id,
-          similarity: cosineSimilarity(queryEmbedding, bufferToVector(row.embedding)),
-        }))
-        .filter(/** @param {{similarity:number}} r */ r => r.similarity > 0.1)
-        .sort(/** @param {{similarity:number}} a @param {{similarity:number}} b */ (a, b) => b.similarity - a.similarity)
-        .slice(0, searchLimit);
+  // Pre-load all chunk vectors ONCE (avoid re-scanning for each variant).
+  // Guard against runaway memory: a 384-dim Float32 vector is 1.5KB raw +
+  // ~100B JS overhead. At 50K chunks this is ~75MB per concurrent search call.
+  const allEmbeddings = db.prepare("SELECT chunk_id, embedding FROM kb_embeddings").all();
+  if (allEmbeddings.length > 50000) {
+    console.warn(
+      `[kb] Large vector index (${allEmbeddings.length} chunks). ` +
+      `Consider sqlite-vec extension or a smaller chunk size. ` +
+      `Latency and memory will degrade linearly with chunk count.`
+    );
+  }
+  /** @type {Array<{id:number, vec:Float32Array}>} */
+  const allChunkVectors = allEmbeddings.map((r) => ({
+    id: r.chunk_id,
+    vec: bufferToVector(r.embedding),
+  }));
+
+  // 1+2. For each variant, run FTS + vector search in parallel.
+  /** @type {Array<{ftsIds:Array<{id:number, rank:number, ftsResult:any}>, vecIds:Array<{id:number, rank:number}>, ftsResults:any[], topSim:number}>} */
+  const variantResults = await Promise.all(variants.map(async (variant) => {
+    const fts = ftsSearch(variant, searchLimit);
+    const ftsIds = fts
+      .map((r, i) => ({ id: Number(r.chunk_id), rank: i, ftsResult: r }))
+      .filter((x) => x.id > 0);
+
+    /** @type {Array<{id:number, rank:number}>} */
+    let vecIds = [];
+    let topSim = 0;
+    try {
+      const qe = await embedText(variant);
+      if (qe) {
+        const scored = allChunkVectors
+          .map((c) => ({ id: c.id, sim: cosineSimilarity(qe, c.vec) }))
+          .filter((r) => r.sim > VECTOR_SIMILARITY_FLOOR)
+          .sort((a, b) => b.sim - a.sim);
+        topSim = scored.length > 0 ? scored[0].sim : 0;
+        vecIds = scored.slice(0, searchLimit).map((r, i) => ({ id: r.id, rank: i }));
+      }
+    } catch (/** @type {any} */ e) {
+      console.error(`[kb] embedText failed for variant "${variant.slice(0, 50)}": ${e.message}`);
     }
-  } catch { /* ignored */ }
 
-  // 3. Fuse chunk-level results via RRF, then aggregate by note
-  const ftsChunkIds = ftsResults.map(/** @param {any} r @param {number} i */ (r, i) => {
-    const cid = Number(r.chunk_id);
-    return cid > 0 ? { id: cid, rank: i } : null;
-  }).filter(/** @returns {boolean} */ (x) => x != null);
-  const vecChunkIds = vectorResults.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, rank: i }));
+    return { ftsIds, vecIds, ftsResults: fts, topSim };
+  }));
 
-  let fusedChunks;
-  if (ftsChunkIds.length > 0 && vecChunkIds.length > 0) {
-    fusedChunks = reciprocalRankFusion([ftsChunkIds, vecChunkIds]);
-  } else if (ftsChunkIds.length > 0) {
-    fusedChunks = ftsChunkIds.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
-  } else if (vecChunkIds.length > 0) {
-    fusedChunks = vecChunkIds.map(/** @param {{id:number}} r @param {number} i */ (r, i) => ({ id: r.id, score: 1 / (60 + i + 1) }));
-  } else {
+  // 3. Aggregate RRF scores across all variants using MAX-per-variant.
+  // For each variant, compute its (FTS + vector) RRF sum. For each chunk, keep
+  // the best RRF score across all variants. This way a chunk that's a perfect
+  // match for ONE variant (but noise for the others) still gets a high score.
+  // The previous sum/Normalize approach was silently dropping such chunks.
+  /** @type {Map<number, {score:number, ftsResult:any}>} */
+  const chunkScores = new Map();
+  let totalFtsHits = 0;
+  // Only use the ORIGINAL query's vector sim for the "I don't know" gate —
+  // a garbage rewritten variant's accidental high similarity should NOT
+  // bypass the gate. (Bug fix: previously used max across all variants.)
+  const originalTopVectorSim = variantResults[0]?.topSim || 0;
+  for (const vr of variantResults) {
+    totalFtsHits += vr.ftsIds.length;
+    // Per-variant RRF: sum within this variant's FTS+vector lists
+    /** @type {Map<number, number>} */
+    const variantScores = new Map();
+    for (const { id, rank, ftsResult } of vr.ftsIds) {
+      variantScores.set(id, (variantScores.get(id) || 0) + 1 / (60 + rank + 1));
+      // Capture the first FTS result we see (used for snippet later)
+      if (!chunkScores.has(id) || !chunkScores.get(id).ftsResult) {
+        if (ftsResult) {
+          const cur = chunkScores.get(id) || { score: 0, ftsResult: null };
+          cur.ftsResult = ftsResult;
+          chunkScores.set(id, cur);
+        }
+      }
+    }
+    for (const { id, rank } of vr.vecIds) {
+      variantScores.set(id, (variantScores.get(id) || 0) + 1 / (60 + rank + 1));
+    }
+    // For each chunk in this variant, take max with previous best
+    for (const [id, vScore] of variantScores) {
+      const cur = chunkScores.get(id) || { score: 0, ftsResult: null };
+      if (vScore > cur.score) cur.score = vScore;
+      chunkScores.set(id, cur);
+    }
+  }
+  // Max possible score ≈ single-list top rank (1/61 ≈ 0.0164), so MIN_TOP_RRF_SCORE (0.012) still works.
+  const fusedChunks = [...chunkScores.entries()]
+    .map(([id, { score, ftsResult }]) => ({ id, score, ftsResult }))
+    .sort((a, b) => b.score - a.score);
+
+  // 3.1 "I don't know" gate — early bail.
+  // Uses ORIGINAL query's vector sim only (not max across variants) to avoid
+  // a garbage rewritten variant's accidental high similarity from bypassing
+  // the gate.
+  if (totalFtsHits === 0 && originalTopVectorSim < VECTOR_CONFIDENT_SIM) {
+    return [];
+  }
+  if (!fusedChunks.length || fusedChunks[0].score < MIN_TOP_RRF_SCORE) {
     return [];
   }
 
@@ -1023,25 +1398,35 @@ export async function search(query, limit = 5) {
   const bestPerNote = new Map();
   const chunkToNote = new Map();
 
-  // Pre-fetch all chunk→note mappings for fused chunk IDs
-  for (const { id: chunkId } of fusedChunks) {
+  // Batched lookup: single query for all chunk IDs instead of N+1.
+  // If fusedChunks is large (50-150), this is a 100x+ speedup.
+  if (fusedChunks.length > 0) {
     try {
-      const row = db.prepare("SELECT note_id, heading, content FROM kb_chunks WHERE id = ?").get(chunkId);
-      if (row) {
-        const noteId = Number(row.note_id);
-        chunkToNote.set(chunkId, { noteId, heading: String(row.heading), content: String(row.content) });
+      const ids = fusedChunks.map((c) => c.id);
+      const placeholders = ids.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT id, note_id, heading, content FROM kb_chunks WHERE id IN (${placeholders})`
+      ).all(...ids);
+      for (const row of rows) {
+        chunkToNote.set(Number(row.id), {
+          noteId: Number(row.note_id),
+          heading: String(row.heading),
+          content: String(row.content),
+        });
       }
-    } catch { /* ignored */ }
+    } catch (/** @type {any} */ e) {
+      console.error(`[kb] batched chunk lookup failed: ${e.message}`);
+    }
   }
 
-  for (const { id: chunkId, score } of fusedChunks) {
+  for (const { id: chunkId, score, ftsResult } of fusedChunks) {
     const mapping = chunkToNote.get(chunkId);
     if (!mapping) continue;
     const { noteId, heading, content } = mapping;
 
-    // Find FTS snippet for this chunk if available
-    const ftsMatch = ftsResults.find(/** @param {any} r */ r => Number(r.chunk_id) === chunkId);
-    const snippet = ftsMatch?.snippet || content.slice(0, 300);
+    // Use the FTS snippet if any variant contributed an FTS hit; else fall
+    // back to first 300 chars of the chunk content.
+    const snippet = ftsResult?.snippet || content.slice(0, 300);
 
     if (!bestPerNote.has(noteId) || score > bestPerNote.get(noteId).score) {
       bestPerNote.set(noteId, { noteId, chunkId, score, heading, snippet });
@@ -1049,16 +1434,21 @@ export async function search(query, limit = 5) {
   }
 
   // 5. Sort notes by their best chunk's score, return top-K
+  // 5. Aggregate chunks by parent note (best per note) — hydrate full results.
+  // Take top `rerankTopN` (independent of `limit`) so LLM rerank has a buffer
+  // to swap in better candidates. e.g. limit=5 + rerankTopN=30 → fetch 30, rerank, return 5.
+  const rerankTopN = _config.rerankTopN || 30;
   const sortedNotes = [...bestPerNote.entries()]
     .sort((a, b) => b[1].score - a[1].score)
-    .slice(0, limit);
+    .slice(0, rerankTopN);
 
-  const results = [];
+  /** @type {Array<{id:number, rel_path:string, title:string, tags:string[], snippet:string, heading:string, rrfScore:number}>} */
+  const candidates = [];
   for (const [noteId, best] of sortedNotes) {
     try {
       const note = db.prepare("SELECT * FROM kb_notes WHERE id = ?").get(noteId);
       if (!note) continue;
-      results.push({
+      candidates.push({
         id: Number(note.id),
         rel_path: String(note.rel_path),
         title: String(note.title),
@@ -1067,10 +1457,109 @@ export async function search(query, limit = 5) {
         heading: best.heading,
         rrfScore: best.score,
       });
-    } catch { /* ignored */ }
+    } catch (/** @type {any} */ e) {
+      // Per-candidate hydration failure: skip this candidate and continue
+      // with the rest. If this fires often, the index may be corrupt.
+      _logError("db", e);
+    }
   }
 
-  return results;
+  // 6. Optional LLM rerank — reorders candidates by semantic relevance.
+  // Falls back gracefully to RRF order if model is unavailable / times out.
+  if (candidates.length > limit) {
+    const reranked = await rerankResults(query, candidates, limit);
+    if (reranked && reranked.length > 0) return reranked;
+  }
+  return candidates.slice(0, limit);
+}
+
+/**
+ * Use a small local chat model to rerank top-N candidates by relevance to the query.
+ * Cache key: query + ordered list of candidate ids (so the same query against
+ * the same index state returns the same rerank without an LLM call).
+ * @param {string} query
+ * @param {Array<{id:number, rel_path:string, title:string, snippet:string}>} candidates
+ * @param {number} limit
+ * @returns {Promise<Array<any>|null>} Reranked top-`limit`, or null on failure
+ */
+async function rerankResults(query, candidates, limit) {
+  if (_config.rerankEnabled === false) return null;
+
+  // Cache: identical query + identical candidate set → reuse previous order
+  const cacheKey = query.toLowerCase().trim() + "|" + candidates.map((c) => c.id).join(",");
+  if (rerankCache.has(cacheKey)) {
+    const cachedIndices = rerankCache.get(cacheKey);
+    return cachedIndices.map((i) => candidates[i]).filter(Boolean).slice(0, limit);
+  }
+  // Coalesce concurrent calls PER KEY — share promise for identical query+set.
+  // Previously a single shared promise leaked the first in-flight's result to
+  // every concurrent call (cross-query contamination).
+  const existing = _rerankInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const model = _config.rerankModel || "gemma4:e4b";
+    // Build the candidates block: title + truncated snippet. Keep snippets small
+    // (150 chars) so 15 candidates fit comfortably in a 4K-token context.
+    const items = candidates
+      .map((c, i) => `[${i + 1}] ${c.title}\n${(c.snippet || "").slice(0, 150).replace(/\s+/g, " ")}`)
+      .join("\n\n");
+    const prompt = RERANK_PROMPT
+      .replace("{query}", query)
+      .replace("{candidates}", items);
+
+    // First call may need to load the model into RAM (10-30s on cold start).
+    // Adaptive timeout: 30s for the first call, 8s for warm ones.
+    const isFirstCall = rerankCache.size === 0 && !_rerankEverSucceeded;
+    const timeoutMs = isFirstCall ? 30000 : 8000;
+
+    try {
+      const res = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          prompt,
+          stream: false,
+          options: { temperature: 0.0, num_predict: 200, num_ctx: 4096 },
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const text = String(data.response || "");
+      // Parse "3,1,5,2" → [3, 1, 5, 2]; tolerate "3 1 5 2" or "3,1,5,2,"
+      const parsed = text
+        .match(/\d+/g)
+        ?.map((s) => parseInt(s, 10) - 1)
+        .filter((i) => i >= 0 && i < candidates.length) || [];
+      // Dedup while preserving order
+      const seen = new Set();
+      const unique = [];
+      for (const i of parsed) {
+        if (!seen.has(i)) {
+          seen.add(i);
+          unique.push(i);
+        }
+      }
+      if (unique.length === 0) return null;
+      // LRU cache (evict oldest)
+      if (rerankCache.size >= RERANK_CACHE_MAX) {
+        const firstKey = rerankCache.keys().next().value;
+        rerankCache.delete(firstKey);
+      }
+      rerankCache.set(cacheKey, unique);
+      _rerankEverSucceeded = true;
+      return unique.slice(0, limit).map((i) => candidates[i]);
+    } catch (/** @type {any} */ e) {
+      _logError("rerank", e);
+      return null; // Quietly fall back to RRF order
+    } finally {
+      _rerankInFlight.delete(cacheKey); // Release per-key in-flight slot
+    }
+  })();
+  _rerankInFlight.set(cacheKey, promise);
+  return promise;
 }
 
 // ── CRUD Operations ───────────────────────────────────────
@@ -1092,7 +1581,11 @@ export function listNotes(offset = 0, limit = 50) {
         mtime_ms: Number(n.mtime_ms),
       })),
     };
-  } catch { return { total: 0, notes: [] }; }
+  } catch (/** @type {any} */ e) {
+    // listNotes is read-only; on DB error, return empty list and log.
+    _logError("db", e);
+    return { total: 0, notes: [] };
+  }
 }
 
 /** @param {string} relPath @returns {object|null} */
@@ -1109,7 +1602,11 @@ export function getNote(relPath) {
       tags: JSON.parse(String(note.tags || "[]")),
       content,
     };
-  } catch { return null; }
+  } catch (/** @type {any} */ e) {
+    // getNote is read-only; on missing file or DB error, return null and log.
+    _logError("db", e);
+    return null;
+  }
 }
 
 /** @param {string} relPath @param {string} content @param {string[]} [tags] @returns {Promise<{ok:boolean, relPath:string, title:string}|{error:string}>} */
@@ -1130,7 +1627,7 @@ export async function createNote(relPath, content, tags = []) {
     const stat = statSync(fullPath);
     const title = extractTitle(content, basename(relPath));
     const noteTags = tags.length > 0 ? tags : extractTags(content);
-    const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").replace(/#{1,6}\s+/g, "").trim();
+    const body = stripNoteBody(content);
 
     const db = getDb();
     const noteResult = db.prepare(
@@ -1158,7 +1655,9 @@ export async function createNote(relPath, content, tags = []) {
           db.prepare("INSERT INTO kb_embeddings(chunk_id, embedding, dim) VALUES (?,?,?)")
             .run(chunkId, vectorToBuffer(embedding), _embeddingDim);
         }
-      } catch { /* ignored */ }
+      } catch (/** @type {any} */ e) {
+        _logError("embed", e);
+      }
     }
 
     return { ok: true, relPath, title };
@@ -1178,7 +1677,7 @@ export async function updateNote(relPath, content) {
     const title = extractTitle(content, basename(relPath));
     /** @type {string[]} */
     const tags = extractTags(content);
-    const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").replace(/#{1,6}\s+/g, "").trim();
+    const body = stripNoteBody(content);
 
     const db = getDb();
     db.prepare(
@@ -1212,7 +1711,9 @@ export async function updateNote(relPath, content) {
             db.prepare("INSERT INTO kb_embeddings(chunk_id, embedding, dim) VALUES (?,?,?)")
               .run(chunkId, vectorToBuffer(embedding), _embeddingDim);
           }
-        } catch { /* ignored */ }
+        } catch (/** @type {any} */ e) {
+          _logError("embed", e);
+        }
       }
     }
 
@@ -1254,7 +1755,11 @@ export async function listOllamaModels() {
     if (!res.ok) return [];
     const data = await res.json();
     return (data.models || []).map(/** @param {{name:string}} m */ m => m.name);
-  } catch { return []; }
+  } catch (/** @type {any} */ e) {
+    // Ollama may be down; return empty list (UI shows "no models").
+    _logError("embed", e);
+    return [];
+  }
 }
 
 // ── Status ────────────────────────────────────────────────
@@ -1276,6 +1781,12 @@ export function getStatus() {
       maxBodyChars: _config.maxBodyChars,
       autoDetectedMaxBodyChars: _autoDetectedMaxBodyChars,
       effectiveMaxBodyChars: getEffectiveMaxBodyChars(),
+      // Expose error counters so operators can detect degraded operation
+      // (silent FTS drift, embed failures, etc.) without grepping logs.
+      errorCounts: { ..._errCounts },
     };
-  } catch { return { vault: _vaultPath, noteCount: 0, chunkCount: 0, embeddedCount: 0 }; }
+  } catch (/** @type {any} */ e) {
+    _logError("db", e);
+    return { vault: _vaultPath, noteCount: 0, chunkCount: 0, embeddedCount: 0, errorCounts: { ..._errCounts } };
+  }
 }

@@ -1,0 +1,911 @@
+{
+  "timestamp": "2026-06-14T07:49:05.800Z",
+  "vault": "D:\\总知识库",
+  "noteCount": 173,
+  "chunkCount": 1345,
+  "embeddedCount": 1345,
+  "embeddingProvider": "ollama",
+  "testSet": "D:\\AideAgent\\desktop\\test\\kb-eval-set.jsonl",
+  "totalQueries": 15,
+  "evaluableQueries": 9,
+  "hitAtK": 0.8888888888888888,
+  "hitAt10": 1,
+  "mrr": 0.8271604938271604,
+  "byDifficulty": {
+    "exact": {
+      "total": 5,
+      "hit": 5
+    },
+    "conceptual": {
+      "total": 4,
+      "hit": 3
+    }
+  },
+  "results": [
+    {
+      "id": "opencode-usage",
+      "query": "opencode 怎么用",
+      "expected_paths": [
+        "人工智能/opencode/opencode命令使用教程.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "工具教程类查询，应 @1 命中",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 17,
+      "topResults": [
+        {
+          "rel_path": "人工智能/opencode/opencode命令使用教程.md",
+          "title": "OpenCode 命令使用教程",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode的mcp配置.md",
+          "title": "opencode的mcp配置",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode的skills安装位置.md",
+          "title": "输出类似：C:\\Users\\xiaoz\\AppData\\Roaming\\npm\\node_modules",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": ".opencode/skills/command-creator/SKILL.md",
+          "title": "command-creator",
+          "rrfScore": 0.014705882352941176
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.014084507042253521
+        },
+        {
+          "rel_path": "人工智能/claude code/Superpowers安装.md",
+          "title": "1. 克隆仓库（放用户配置目录，方便更新）",
+          "rrfScore": 0.013513513513513514
+        },
+        {
+          "rel_path": "人工智能/opencode/oh my opencode的mcp位置.md",
+          "title": "oh my opencode的mcp位置",
+          "rrfScore": 0.0125
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.011764705882352941
+        },
+        {
+          "rel_path": ".opencode/skills/plugin-creator/SKILL.md",
+          "title": "plugin-creator",
+          "rrfScore": 0.010638297872340425
+        },
+        {
+          "rel_path": "编程/python/python函数参数/Python 函数可变位置参数.md",
+          "title": "调用示例1：传入0个参数（args为空元组）",
+          "rrfScore": 0.010416666666666666
+        }
+      ]
+    },
+    {
+      "id": "openclaw-install-skill",
+      "query": "openclaw 安装 skill",
+      "expected_paths": [
+        "人工智能/openclaw/openclaw安装skills.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "高 rrf (0.0325) — 验证关键词精准度",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 16,
+      "topResults": [
+        {
+          "rel_path": "人工智能/openclaw/openclaw安装skills.md",
+          "title": "帮助/测试 CLI 是否可用",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw更新.md",
+          "title": "openclaw更新",
+          "rrfScore": 0.015625
+        },
+        {
+          "rel_path": "人工智能/openclaw/windows中npm安装openclaw.md",
+          "title": "管理员 PowerShell",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw-install-guide-xiaohongshu.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.014705882352941176
+        },
+        {
+          "rel_path": "人工智能/openclaw/OpenClaw 安装教程 - 飞书版.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw接入企业微信.md",
+          "title": "openclaw接入企业微信",
+          "rrfScore": 0.014084507042253521
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw公众号风格改写.md",
+          "title": "openclaw公众号风格改写",
+          "rrfScore": 0.0125
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw功能.md",
+          "title": "openclaw功能",
+          "rrfScore": 0.012345679012345678
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw对接飞书的原因.md",
+          "title": "openclaw对接飞书的原因",
+          "rrfScore": 0.011764705882352941
+        },
+        {
+          "rel_path": "人工智能/openclaw/OpenClaw-OpenCode-Claude-Code对比.md",
+          "title": "OpenClaw-OpenCode-Claude-Code对比",
+          "rrfScore": 0.011627906976744186
+        }
+      ]
+    },
+    {
+      "id": "context7",
+      "query": "context7",
+      "expected_paths": [
+        "人工智能/claude code/claude code技巧.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "英文专有名词",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "人工智能/claude code/claude code技巧.md",
+          "title": "启用自动权限模式",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "temp/placeholder.md",
+          "title": "placeholder",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": ".opencode/commands/GetStarted.md",
+          "title": "GetStarted",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode的mcp配置.md",
+          "title": "opencode的mcp配置",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": ".opencode/commands/learn-plugins.md",
+          "title": "learn-plugins",
+          "rrfScore": 0.015625
+        },
+        {
+          "rel_path": ".opencode/commands/learn-skills.md",
+          "title": "learn-skills",
+          "rrfScore": 0.015384615384615385
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.015151515151515152
+        },
+        {
+          "rel_path": ".opencode/skills/skill-creator/SKILL.md",
+          "title": "skill-creator",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.014705882352941176
+        }
+      ]
+    },
+    {
+      "id": "mcp-protocol",
+      "query": "mcp 协议",
+      "expected_paths": [
+        "人工智能/opencode/MCP 与 Skills 对比及选择.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "概念检索",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "人工智能/opencode/MCP 与 Skills 对比及选择.md",
+          "title": "MCP 与 Skills 对比及选择",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/claude code/MCP文档分析报告.md",
+          "title": "Connect Claude Code to tools via MCP 分析报告",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode的mcp配置.md",
+          "title": "opencode的mcp配置",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "人工智能/opencode/oh my opencode的mcp位置.md",
+          "title": "oh my opencode的mcp位置",
+          "rrfScore": 0.015151515151515152
+        },
+        {
+          "rel_path": "人工智能/claude code/claude code技巧.md",
+          "title": "启用自动权限模式",
+          "rrfScore": 0.013513513513513514
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode命令使用教程.md",
+          "title": "OpenCode 命令使用教程",
+          "rrfScore": 0.013157894736842105
+        },
+        {
+          "rel_path": "计算机/Windows 系统下 SearXNG MCP 完整安装指南.md",
+          "title": "Windows 安装 SearXNG MCP 完整指南",
+          "rrfScore": 0.012658227848101266
+        },
+        {
+          "rel_path": "人工智能/opencode/浏览器自动化技能汇总.md",
+          "title": "浏览器自动化技能汇总",
+          "rrfScore": 0.0125
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.012195121951219513
+        },
+        {
+          "rel_path": ".opencode/commands/learn-plugins.md",
+          "title": "learn-plugins",
+          "rrfScore": 0.011764705882352941
+        }
+      ]
+    },
+    {
+      "id": "feishu-bot",
+      "query": "飞书机器人配置",
+      "expected_paths": [
+        "人工智能/hermes/群聊配置.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": 3,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "正确结果 sim 仅 0.458（接近噪声阈值 0.55）。当前 'I don't know' 阈值会让此查询返回 0 — 是诚实行为但代价是失去可用但弱的匹配。降阈值到 0.45 可恢复此查询；升级到更强的 embedding 模型（bge-m3）也可解决。",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "人工智能/hermes/群聊配置.md",
+          "title": "群聊配置",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/openclaw/OpenClaw 安装教程 - 飞书版.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw对接飞书的原因.md",
+          "title": "openclaw对接飞书的原因",
+          "rrfScore": 0.015151515151515152
+        },
+        {
+          "rel_path": "附件文件夹/GoodAgent——我花两个星期自己做了一个AI助手，原因很简单.md",
+          "title": "GoodAgent——我花两个星期自己做了一个AI助手，原因很简单",
+          "rrfScore": 0.014084507042253521
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.013513513513513514
+        },
+        {
+          "rel_path": "人工智能/hermes/配对模式.md",
+          "title": "配对模式",
+          "rrfScore": 0.01282051282051282
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.012345679012345678
+        },
+        {
+          "rel_path": "人工智能/claude code/Superpowers安装.md",
+          "title": "1. 克隆仓库（放用户配置目录，方便更新）",
+          "rrfScore": 0.011904761904761904
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw安装skills.md",
+          "title": "帮助/测试 CLI 是否可用",
+          "rrfScore": 0.011494252873563218
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.011235955056179775
+        }
+      ]
+    },
+    {
+      "id": "ollama-local-llm",
+      "query": "本地大模型",
+      "expected_paths": [
+        "人工智能/hermes/Hermes Agent 配置 Ollama 本地模型.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": 5,
+      "difficulty": "conceptual",
+      "tags": [],
+      "notes": "正确结果在 #5（rrf=0.0147），排名靠后",
+      "status": "RANK",
+      "rank": 9,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "skills/大模型资讯.md",
+          "title": "大模型资讯",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/RAGFlow本地部署操作手册_备份_2026-06-10.md",
+          "title": "RAGFlow 本地部署操作手册",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": "人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md",
+          "title": "Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "计算机/个人项目/github-ai-hotspot-report-2026-05-13.md",
+          "title": "GitHub 本周 AI 热点项目报告",
+          "rrfScore": 0.015151515151515152
+        },
+        {
+          "rel_path": "人工智能/AI新闻/2.12 AI新闻.md",
+          "title": "2.12 AI新闻",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": "人工智能/AI模型/2026年6月AI大模型排名.md",
+          "title": "目前最强的AI大模型（2026年6月版）",
+          "rrfScore": 0.013888888888888888
+        },
+        {
+          "rel_path": "人工智能/AI新闻/2.14 AI新闻.md",
+          "title": "全球人工智能领域24小时最新进展报告（2026年2月13日-2月14日）",
+          "rrfScore": 0.0136986301369863
+        },
+        {
+          "rel_path": "人工智能/ollama/Ollama 模型参数调整：从查看参数到创建自定义模型.md",
+          "title": "Modelfile generated by ollama show",
+          "rrfScore": 0.013333333333333334
+        },
+        {
+          "rel_path": "人工智能/hermes/Hermes Agent 配置 Ollama 本地模型.md",
+          "title": "Ollama 配置",
+          "rrfScore": 0.013157894736842105
+        },
+        {
+          "rel_path": "人工智能/llama.cpp/Windows 11 + RTX 5060Ti 16GB：Hugging Face模型下载、量化与本地部署完整教程.md",
+          "title": "Windows 11 + RTX 5060Ti 16GB：Hugging Face模型下载、量化与本地部署完整教程",
+          "rrfScore": 0.012987012987012988
+        }
+      ]
+    },
+    {
+      "id": "ragflow-local-deploy",
+      "query": "RAGFlow 本地部署",
+      "expected_paths": [
+        "人工智能/RAGFlow本地部署操作手册_备份_2026-06-10.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": 5,
+      "difficulty": "conceptual",
+      "tags": [],
+      "notes": "概念查询，正确结果在 #4",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 19,
+      "topResults": [
+        {
+          "rel_path": "人工智能/RAGFlow本地部署操作手册_备份_2026-06-10.md",
+          "title": "RAGFlow 本地部署操作手册",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.012987012987012988
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode命令使用教程.md",
+          "title": "OpenCode 命令使用教程",
+          "rrfScore": 0.012658227848101266
+        },
+        {
+          "rel_path": "附件文件夹/GoodAgent——我花两个星期自己做了一个AI助手，原因很简单.md",
+          "title": "GoodAgent——我花两个星期自己做了一个AI助手，原因很简单",
+          "rrfScore": 0.0125
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.012195121951219513
+        },
+        {
+          "rel_path": "人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md",
+          "title": "Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！",
+          "rrfScore": 0.011494252873563218
+        },
+        {
+          "rel_path": "人工智能/claude code/Claude-Code-子代理-文档分析报告.md",
+          "title": "Claude Code 子代理 文档 - 分析报告",
+          "rrfScore": 0.011235955056179775
+        },
+        {
+          "rel_path": ".opencode/skills/skill-creator/SKILL.md",
+          "title": "skill-creator",
+          "rrfScore": 0.01098901098901099
+        },
+        {
+          "rel_path": ".opencode/commands/learn-files.md",
+          "title": "learn-files",
+          "rrfScore": 0.010869565217391304
+        },
+        {
+          "rel_path": "人工智能/hermes/Hermes Agent 配置 Ollama 本地模型.md",
+          "title": "Ollama 配置",
+          "rrfScore": 0.010638297872340425
+        }
+      ]
+    },
+    {
+      "id": "wechat-bot",
+      "query": "微信机器人",
+      "expected_paths": [
+        "人工智能/openclaw/openclaw接入企业微信.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "conceptual",
+      "tags": [],
+      "notes": "已知缺漏：vault 有相关文档但 @5 找不到（#5 才是 hermes 群聊配置），跟踪能否修复",
+      "status": "PASS",
+      "rank": 3,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "附件文件夹/GoodAgent——我花两个星期自己做了一个AI助手，原因很简单.md",
+          "title": "GoodAgent——我花两个星期自己做了一个AI助手，原因很简单",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw接入企业微信.md",
+          "title": "openclaw接入企业微信",
+          "rrfScore": 0.015625
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.015384615384615385
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw对接飞书的原因.md",
+          "title": "openclaw对接飞书的原因",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": "人工智能/openclaw/OpenClaw 安装教程 - 飞书版.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.014084507042253521
+        },
+        {
+          "rel_path": "人工智能/hermes/群聊配置.md",
+          "title": "群聊配置",
+          "rrfScore": 0.0136986301369863
+        },
+        {
+          "rel_path": "人工智能/openclaw/openclaw-install-guide-xiaohongshu.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.013513513513513514
+        },
+        {
+          "rel_path": "人工智能/hermes/配对模式.md",
+          "title": "配对模式",
+          "rrfScore": 0.01282051282051282
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.012345679012345678
+        }
+      ]
+    },
+    {
+      "id": "remote-control-pc",
+      "query": "远程控制电脑",
+      "expected_paths": [
+        "计算机/系统知识/远程操控电脑.md"
+      ],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "conceptual",
+      "tags": [],
+      "notes": "vault 有唯一相关文档，RAG 找到但 @5 排名靠后",
+      "status": "PASS",
+      "rank": 1,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "计算机/系统知识/远程操控电脑.md",
+          "title": "远程操控电脑",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": ".opencode/agents/openwork.md",
+          "title": "openwork",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": "人工智能/ollama/open WebUI打开方法.md",
+          "title": "open WebUI打开方法",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "人工智能/ollama/open webui 更新.md",
+          "title": "open webui 更新",
+          "rrfScore": 0.015625
+        },
+        {
+          "rel_path": ".opencode/commands/learn-files.md",
+          "title": "learn-files",
+          "rrfScore": 0.015384615384615385
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode命令使用教程.md",
+          "title": "OpenCode 命令使用教程",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": ".opencode/commands/learn-plugins.md",
+          "title": "learn-plugins",
+          "rrfScore": 0.014705882352941176
+        },
+        {
+          "rel_path": "人工智能/claude code/Claude Code 国内平替方案 - 国产大模型 + CC-Switch 教程.md",
+          "title": "Claude Code 国内完美平替方案｜无需魔法，5 分钟用上国产大模型！",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": "人工智能/openclaw/OpenClaw 安装教程 - 飞书版.md",
+          "title": "🦞 10 分钟搞定你的私人 AI 助理！OpenClaw 安装教程来啦～",
+          "rrfScore": 0.014285714285714285
+        },
+        {
+          "rel_path": "人工智能/claude code/MCP文档分析报告.md",
+          "title": "Connect Claude Code to tools via MCP 分析报告",
+          "rrfScore": 0.014084507042253521
+        }
+      ]
+    },
+    {
+      "id": "how-to-take-notes",
+      "query": "如何快速做笔记",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "vague",
+      "tags": [],
+      "notes": "vault 中似乎无相关笔记，跟踪假阳性",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": "心理学/表达能力/提升语言表达能力.md",
+          "title": "一、初始问题：表达卡顿、逻辑不清、前后不连贯",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": "人工智能/提示词工程/高效使用AI的方法.md",
+          "title": "高效使用AI的方法",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": "test/test_note.md",
+          "title": "测试笔记",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": "skills/知识点分析.md",
+          "title": "知识点分析",
+          "rrfScore": 0.014705882352941176
+        },
+        {
+          "rel_path": "附件文件夹/超详细 Markdown 从入门到精通教程.md",
+          "title": "超详细 Markdown 从入门到精通教程",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.014285714285714285
+        },
+        {
+          "rel_path": "互联网/自媒体/🎯 AI 自媒体博主起步指南.md",
+          "title": "🎯 AI 自媒体博主起步指南",
+          "rrfScore": 0.014084507042253521
+        },
+        {
+          "rel_path": "附件文件夹/GoodAgent——我花两个星期自己做了一个AI助手，原因很简单.md",
+          "title": "GoodAgent——我花两个星期自己做了一个AI助手，原因很简单",
+          "rrfScore": 0.013888888888888888
+        },
+        {
+          "rel_path": ".opencode/commands/learn-files.md",
+          "title": "learn-files",
+          "rrfScore": 0.012987012987012988
+        },
+        {
+          "rel_path": "互联网/自媒体/AI自媒体.md",
+          "title": "AI自媒体",
+          "rrfScore": 0.01282051282051282
+        }
+      ]
+    },
+    {
+      "id": "anxiety-help",
+      "query": "焦虑怎么办",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "vague",
+      "tags": [],
+      "notes": "vault 中无心理学内容，应为 0 命中（验证假阳性）",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 0,
+      "topResults": []
+    },
+    {
+      "id": "novel-character",
+      "query": "小说人物塑造",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "vague",
+      "tags": [],
+      "notes": "vault 中无小说写作内容，应为 0 命中",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 0,
+      "topResults": []
+    },
+    {
+      "id": "gibberish-query",
+      "query": "asdfghjkl 完全乱码",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "vague",
+      "tags": [],
+      "notes": "乱码查询，应为 0 命中",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 0,
+      "topResults": []
+    },
+    {
+      "id": "fast-check",
+      "query": "fast-check",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "node_modules 污染：当前 top-1 是 .opencode/node_modules/fast-check/README.md，应排除。修复后该 query 应无结果或来自真实笔记",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 20,
+      "topResults": [
+        {
+          "rel_path": ".opencode/skills/command-creator/SKILL.md",
+          "title": "command-creator",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": ".opencode/commands/learn-files.md",
+          "title": "learn-files",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": ".opencode/skills/skill-creator/SKILL.md",
+          "title": "skill-creator",
+          "rrfScore": 0.014705882352941176
+        },
+        {
+          "rel_path": ".opencode/commands/learn-plugins.md",
+          "title": "learn-plugins",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": ".opencode/skills/workspace-guide/SKILL.md",
+          "title": "workspace-guide",
+          "rrfScore": 0.014285714285714285
+        },
+        {
+          "rel_path": ".opencode/agents/openwork.md",
+          "title": "openwork",
+          "rrfScore": 0.0136986301369863
+        },
+        {
+          "rel_path": ".opencode/commands/GetStarted.md",
+          "title": "GetStarted",
+          "rrfScore": 0.013513513513513514
+        },
+        {
+          "rel_path": "附件文件夹/COMPARISON.md",
+          "title": "三方对比报告:GoodAgent vs Claude Code vs Hermes Agent",
+          "rrfScore": 0.013333333333333334
+        },
+        {
+          "rel_path": ".opencode/commands/learn-skills.md",
+          "title": "learn-skills",
+          "rrfScore": 0.013157894736842105
+        }
+      ]
+    },
+    {
+      "id": "zod-schema",
+      "query": "zod schema",
+      "expected_paths": [],
+      "expected_tags": null,
+      "must_contain": null,
+      "must_contain_any": null,
+      "min_rank": null,
+      "difficulty": "exact",
+      "tags": [],
+      "notes": "node_modules 污染：top-1/2 都是 .opencode/node_modules/ 下的 README",
+      "status": "INFO",
+      "rank": null,
+      "containOk": true,
+      "resultCount": 19,
+      "topResults": [
+        {
+          "rel_path": "人工智能/claude code/Claude Code 使用技巧.md",
+          "title": "Claude Code 使用技巧",
+          "rrfScore": 0.031099324975891997
+        },
+        {
+          "rel_path": ".opencode/commands/GetStarted.md",
+          "title": "GetStarted",
+          "rrfScore": 0.01639344262295082
+        },
+        {
+          "rel_path": ".opencode/skills/command-creator/SKILL.md",
+          "title": "command-creator",
+          "rrfScore": 0.016129032258064516
+        },
+        {
+          "rel_path": ".opencode/commands/learn-files.md",
+          "title": "learn-files",
+          "rrfScore": 0.015873015873015872
+        },
+        {
+          "rel_path": ".opencode/commands/learn-skills.md",
+          "title": "learn-skills",
+          "rrfScore": 0.015625
+        },
+        {
+          "rel_path": ".opencode/skills/skill-creator/SKILL.md",
+          "title": "skill-creator",
+          "rrfScore": 0.015151515151515152
+        },
+        {
+          "rel_path": ".opencode/skills/agent-creator/SKILL.md",
+          "title": "agent-creator",
+          "rrfScore": 0.014925373134328358
+        },
+        {
+          "rel_path": ".opencode/commands/learn-plugins.md",
+          "title": "learn-plugins",
+          "rrfScore": 0.014492753623188406
+        },
+        {
+          "rel_path": "人工智能/opencode/opencode命令使用教程.md",
+          "title": "OpenCode 命令使用教程",
+          "rrfScore": 0.014285714285714285
+        },
+        {
+          "rel_path": "人工智能/GitHub/Next.js个人博客开发完整教程.md",
+          "title": "Next.js 个人博客开发完整教程",
+          "rrfScore": 0.0136986301369863
+        }
+      ]
+    }
+  ]
+}
