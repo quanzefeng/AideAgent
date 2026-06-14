@@ -1,6 +1,6 @@
 {
   "name": "aideagent-desktop",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "AideAgent Desktop — Electron GUI wrapper",
   "repository": "https://github.com/quanzefeng/AideAgent",
   "author": "quanzefeng <quanzefeng@gmail.com>",
