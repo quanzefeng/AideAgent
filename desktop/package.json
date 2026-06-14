@@ -41,6 +41,7 @@
     ],
     "files": [
       "*.mjs",
+      "kb/**",
       "preload.cjs",
       "renderer/**",
       "core/**",
