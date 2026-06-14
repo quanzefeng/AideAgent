@@ -231,7 +231,7 @@ export function stopWatcher() {
  * @param {string} relPath
  * @returns {boolean}
  */
-function isSafeVaultPath(relPath) {
+export function isSafeVaultPath(relPath) {
   if (!relPath || typeof relPath !== "string") return false;
   // Reject obviously dangerous patterns upfront
   if (relPath.includes("..")) return false;          // traversal segments
@@ -250,16 +250,28 @@ function isSafeVaultPath(relPath) {
     return false;
   }
   try {
-    // If the target doesn't exist yet (e.g. createNote on a new file),
-    // resolve the parent directory and re-append the basename.
-    realTarget = realpathSync.native
-      ? realpathSync(resolved, { throwIfNoEntry: false })
-      : null;
-    if (!realTarget) {
-      const parent = dirname(resolved);
+    if (existsSync(resolved)) {
+      // Existing file/dir — resolve any symlinks
+      realTarget = realpathSync(resolved);
+    } else {
+      // New file (e.g. createNote): resolve the closest EXISTING ancestor
+      // and re-append. This catches symlinks in intermediate directories
+      // while gracefully handling "file doesn't exist yet" + "parent
+      // directory doesn't exist yet" (the latter is allowed for new files).
+      let cursor = resolved;
+      let realCursor = null;
+      while (cursor && cursor !== dirname(cursor)) {
+        if (existsSync(cursor)) {
+          realCursor = realpathSync(cursor);
+          break;
+        }
+        cursor = dirname(cursor);
+      }
+      // If no ancestor exists, the resolved path is new within the vault
+      // root — append basename to the vault's real path. This still rejects
+      // relPath values that escaped the vault, because join() is bounded.
       const base = basename(resolved);
-      const realParent = realpathSync(parent);
-      realTarget = join(realParent, base);
+      realTarget = join(realCursor || realVault, base);
     }
   } catch {
     return false;
@@ -420,7 +432,7 @@ export function getEffectiveMaxBodyChars() {
 // Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
 // "故宫博物院" → "故 宫 博 物 院"
 /** @param {string} text @returns {string} */
-function spaceCJK(text) {
+export function spaceCJK(text) {
   if (!text) return text;
   return text.replace(/([一-鿿㐀-䶿⺀-⻿])/g, "$1 ").trim();
 }
@@ -433,7 +445,7 @@ function spaceCJK(text) {
  * @param {string} term
  * @returns {string} sanitized term safe to wrap in "..." for FTS5
  */
-function sanitizeFtsTerm(term) {
+export function sanitizeFtsTerm(term) {
   if (!term) return "";
   // Keep letters, digits, CJK, underscore, dash. Strip everything else.
   return term.replace(/[^\w一-鿿㐀-䶿\-]/g, "");
@@ -446,11 +458,14 @@ function sanitizeFtsTerm(term) {
  * @param {string} text
  * @returns {string}
  */
-function stripMarkdown(text) {
+export function stripMarkdown(text) {
   return text
     .replace(/#{1,6}\s+/g, "")
     .replace(/\*{1,3}_ {1,3}/g, "")
-    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
+    // [[note]] → "note", [[note|display text]] → "display text"
+    // The display text is the user-facing semantic content; the note path
+    // is for link resolution and shouldn't dominate embedding/keyword signals.
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, display) => display || target)
     .replace(/[*_`~]/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
@@ -469,7 +484,8 @@ function stripNoteBody(content) {
   return content
     .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
     .replace(/#{1,6}\s+/g, "")
-    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
+    // [[note]] → "note", [[note|display text]] → "display text"
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, display) => display || target)
     .replace(/[*_`~]/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
@@ -489,7 +505,7 @@ function stripNoteBody(content) {
  * @param {string} [fallbackTitle] - Note title used when no heading is found
  * @returns {Array<{heading:string, content:string}>}
  */
-function splitIntoChunks(rawBody, fallbackTitle = "") {
+export function splitIntoChunks(rawBody, fallbackTitle = "") {
   /** @type {Array<{heading:string, content:string}>} */
   const chunks = [];
   const body = (rawBody || "").trim();
@@ -498,6 +514,8 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
   // ── Attempt 1: heading-based split ──────────────────────────
   // Match ## or higher (level 2-6). We skip # (level 1) because
   // that's usually the document title, not a section divider.
+  // Note: capture group 1 is the hashes (## or ###...), group 2 is the
+  // heading text. With {2,6} the hash group IS captured.
   const headingMatches = [...body.matchAll(/^(#{2,6})\s+(.+)$/gm)];
 
   if (headingMatches.length >= 2) {
@@ -526,7 +544,11 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
 
   // ── Attempt 2: single # heading ────────────────────────────
   if (chunks.length === 0) {
-    const h1Matches = [...body.matchAll(/^#{1}\s+(.+)$/gm)];
+    // BUGFIX: with #{1}, V8 may optimize away the capture group for the
+    // single-hash, leaving only group 1 = heading text. Using [1] works
+    // for both cases (the {1}-quantified hash is not captured, and the
+    // text is the first group).
+    const h1Matches = [...body.matchAll(/^#\s+(.+)$/gm)];
     if (h1Matches.length >= 2) {
       // Same lead-capture fix as Attempt 1
       const firstH1Start = h1Matches[0].index;
@@ -541,7 +563,7 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
         const rawSection = body.slice(start, end).trim();
         if (rawSection) {
           chunks.push({
-            heading: h1Matches[i][2].trim(),
+            heading: h1Matches[i][1].trim(),
             content: stripMarkdown(rawSection),
           });
         }
@@ -570,7 +592,7 @@ function splitIntoChunks(rawBody, fallbackTitle = "") {
 // ── Frontmatter Parser ────────────────────────────────────
 
 /** @param {string} text @returns {{title:string, tags:string[], aliases:string[]}} */
-function parseFrontMatter(text) {
+export function parseFrontMatter(text) {
   /** @type {{title:string, tags:string[], aliases:string[]}} */
   const meta = { title: "", tags: [], aliases: [] };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
@@ -602,7 +624,7 @@ function parseFrontMatter(text) {
 }
 
 /** @param {string} text @param {string} filename @returns {string} */
-function extractTitle(text, filename) {
+export function extractTitle(text, filename) {
   // Try frontmatter title first
   const fm = parseFrontMatter(text);
   if (fm.title) return fm.title;
@@ -614,7 +636,7 @@ function extractTitle(text, filename) {
 }
 
 /** @param {string} text @returns {string[]} */
-function extractTags(text) {
+export function extractTags(text) {
   const fm = parseFrontMatter(text);
   /** @type {Set<string>} */
   const tags = new Set(fm.tags);
@@ -1014,17 +1036,17 @@ export async function embedText(text) {
 // ── Vector Operations ─────────────────────────────────────
 
 /** @param {Float32Array} vec @returns {Buffer} */
-function vectorToBuffer(vec) {
+export function vectorToBuffer(vec) {
   return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
 }
 
 /** @param {Buffer} buf @returns {Float32Array} */
-function bufferToVector(buf) {
+export function bufferToVector(buf) {
   return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
 }
 
 /** @param {Float32Array|number[]} a @param {Float32Array|number[]} b @returns {number} */
-function cosineSimilarity(a, b) {
+export function cosineSimilarity(a, b) {
   if (a.length !== b.length) {
     console.warn(`[kb] Dimension mismatch in similarity: ${a.length} vs ${b.length}. Rebuild index.`);
     return 0;
@@ -1042,7 +1064,7 @@ function cosineSimilarity(a, b) {
 // ── Reciprocal Rank Fusion ────────────────────────────────
 
 /** @param {Array<Array<{id:number, rank?:number}>>} resultLists @param {number} [k] @returns {Array<{id:number, score:number}>} */
-function reciprocalRankFusion(resultLists, k = 60) {
+export function reciprocalRankFusion(resultLists, k = 60) {
   const scores = new Map();
   for (const results of resultLists) {
     results.forEach((doc, index) => {
