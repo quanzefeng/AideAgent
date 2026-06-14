@@ -14,19 +14,21 @@ import { homedir } from "os";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, unlinkSync, watch, realpathSync } from "fs";
 import { DatabaseSync } from "node:sqlite";
 
+// ── Pure-function modules (Wave 1 split) ──────────────────
+import { spaceCJK, sanitizeFtsTerm } from "./kb/text-utils.mjs";
+import { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.mjs";
+import { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.mjs";
+import { reciprocalRankFusion } from "./kb/rank-fusion.mjs";
+
+// ── Infrastructure modules (Wave 2 split) ─────────────────
+import { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, getAutoDetectedMaxBodyChars, _setAutoDetectedMaxBodyChars as _markAutoDetectedMaxBodyChars } from "./kb/config.mjs";
+import { getDb, hasFts5 } from "./kb/db.mjs";
+import { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const HOME = homedir();
-const DATA_DIR = join(HOME, ".aideagent");
-const DB_PATH = join(DATA_DIR, "knowledge.db");
-const CONFIG_PATH = join(DATA_DIR, "kb-config.json");
+// HOME / DATA_DIR / DB_PATH / CONFIG_PATH → moved to kb/config.mjs
 let _embeddingDim = 384; // Auto-detected at runtime from the actual embedding model
-
-// ── Chunking configuration ──────────────────────────────
-const CHUNK_SIZE = 500;   // chars per chunk (fixed-size fallback)
-const CHUNK_OVERLAP = 100; // overlap between consecutive fixed-size chunks
-
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 // ── File Watcher ─────────────────────────────────────────────
 /** @type {import("fs").FSWatcher | null} */
@@ -53,6 +55,7 @@ function debounced(fn) {
  * @param {string} relPath - relative path within the vault
  */
 async function reindexSingleFile(relPath) {
+  const _vaultPath = getVault();
   if (!_vaultPath) return;
   if (!relPath.endsWith(".md")) return;
   const fullPath = join(_vaultPath, relPath);
@@ -144,6 +147,7 @@ async function reindexSingleFile(relPath) {
  * @returns {{ ok: boolean, error?: string }}
  */
 export function startWatcher() {
+  const _vaultPath = getVault();
   if (!_vaultPath || !existsSync(_vaultPath)) return { ok: false, error: "vault not set" };
   if (_watcher) return { ok: true, error: "already watching" };
 
@@ -153,7 +157,8 @@ export function startWatcher() {
     // we do a lightweight scan — compare mtime_ms against DB records.
     try {
       const db = getDb();
-      const files = scanVault(_vaultPath, _vaultPath);
+      const vault = getVault();
+      const files = scanVault(vault, vault);
       let updated = 0;
       for (const file of files) {
         const row = db.prepare("SELECT mtime_ms FROM kb_notes WHERE rel_path = ?").get(file.relPath);
@@ -215,81 +220,12 @@ export function stopWatcher() {
   }
 }
 
-/**
- * Validate that `relPath` resolves to a location inside the vault.
- *
- * Defends against:
- *   - ".." path traversal (e.g. "../../etc/passwd")
- *   - Absolute paths and UNC paths (\\server\share)
- *   - Symlinks inside the vault that point outside (e.g. a malicious
- *     Obsidian plugin or user-created symlink to C:\Windows\System32)
- *   - NTFS alternate data streams ("foo.md:hidden")
- *   - Null bytes and other control characters
- *
- * Uses realpathSync on both sides to defeat symlink-based bypasses that
- * a pure string prefix check would miss.
- * @param {string} relPath
- * @returns {boolean}
- */
-export function isSafeVaultPath(relPath) {
-  if (!relPath || typeof relPath !== "string") return false;
-  // Reject obviously dangerous patterns upfront
-  if (relPath.includes("..")) return false;          // traversal segments
-  if (relPath.startsWith("/") || relPath.startsWith("\\")) return false; // absolute / UNC
-  if (/[\x00-\x1f]/.test(relPath)) return false;     // control chars incl. NUL
-  if (/^[A-Za-z]:/.test(relPath)) return false;      // Windows drive-relative
-  if (relPath.includes(":")) return false;           // NTFS ADS (foo.md:hidden)
-  if (!_vaultPath) return false;
-
-  const resolved = join(_vaultPath, relPath);
-  // Compare real paths (resolve symlinks on both sides)
-  let realVault, realTarget;
-  try {
-    realVault = realpathSync(_vaultPath);
-  } catch {
-    return false;
-  }
-  try {
-    if (existsSync(resolved)) {
-      // Existing file/dir — resolve any symlinks
-      realTarget = realpathSync(resolved);
-    } else {
-      // New file (e.g. createNote): resolve the closest EXISTING ancestor
-      // and re-append. This catches symlinks in intermediate directories
-      // while gracefully handling "file doesn't exist yet" + "parent
-      // directory doesn't exist yet" (the latter is allowed for new files).
-      let cursor = resolved;
-      let realCursor = null;
-      while (cursor && cursor !== dirname(cursor)) {
-        if (existsSync(cursor)) {
-          realCursor = realpathSync(cursor);
-          break;
-        }
-        cursor = dirname(cursor);
-      }
-      // If no ancestor exists, the resolved path is new within the vault
-      // root — append basename to the vault's real path. This still rejects
-      // relPath values that escaped the vault, because join() is bounded.
-      const base = basename(resolved);
-      realTarget = join(realCursor || realVault, base);
-    }
-  } catch {
-    return false;
-  }
-  // Normalize Windows path separators before comparison
-  const norm = (p) => p.replace(/\\/g, "/");
-  return norm(realTarget).startsWith(norm(realVault) + "/") || norm(realTarget) === norm(realVault);
-}
+// isSafeVaultPath → moved to kb/vault-scanner.mjs (re-exported at bottom)
 
 // ── Configuration ─────────────────────────────────────────
-
-let _vaultPath = "";
-/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} */
-let _config = { embeddingProvider: "local", ollamaEmbedModel: "nomic-embed-text", maxNotes: 20, maxChars: 20000, maxBodyChars: 0, queryRewriteModel: "qwen3.5:9b", queryRewriteEnabled: true, rerankEnabled: true, rerankModel: "gemma4:e4b", rerankTopN: 15 };
-// maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
-
-// Cached auto-detected limit (computed in getEmbedder when provider is ollama)
-let _autoDetectedMaxBodyChars = 0;
+// _vaultPath, _config, _autoDetectedMaxBodyChars, loadConfig, saveConfig,
+// getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars
+// → moved to kb/config.mjs (re-exported at bottom)
 
 // ── Query Rewriting (LRU cache + Ollama chat model) ───────
 // Turns "本地大模型" into ["本地大模型", "本地运行的大语言模型", "Ollama 本地模型", ...]
@@ -344,98 +280,19 @@ Candidates:
 Most relevant indices (comma-separated):`;
 
 // ── Rerank LRU cache (query+chunk_ids → ordered indices) ────
+// rerankCache / _rerankEverSucceeded / _rerankInFlight stay here in
+// knowledge-store.mjs because they're tightly coupled with search() and
+// rerankResults() which still live in this file (Wave 3 will move them).
 const RERANK_CACHE_MAX = 128;
 const rerankCache = new Map(); // "query|chunk_id1,chunk_id2,..." → indices[]
 let _rerankEverSucceeded = false; // Tracks first-call cold start for adaptive timeout
 /** @type {Map<string, Promise<any[]|null>>} */
 let _rerankInFlight = new Map(); // Map<cacheKey, Promise> for per-key concurrent-call coalescing
 
-function loadConfig() {
-  try {
-    const raw = readFileSync(CONFIG_PATH, "utf-8");
-    const cfg = JSON.parse(raw);
-    _vaultPath = cfg.vaultPath || "";
-    _config = { ..._config, ...cfg };
-  } catch (/** @type {any} */ e) {
-    // Missing/corrupt config file is normal on first run.
-    _logError("fs", e);
-  }
-}
-
-function saveConfig() {
-  try {
-    writeFileSync(CONFIG_PATH, JSON.stringify({ ..._config, vaultPath: _vaultPath }, null, 2), "utf-8");
-  } catch (/** @type {any} */ e) {
-    // Config write failure is non-fatal (settings won't persist this session).
-    _logError("fs", e);
-  }
-}
-
-loadConfig();
-
-export function getVault() { return _vaultPath; }
-export function getConfig() { return { ..._config, vaultPath: _vaultPath }; }
-
-/** @param {string} path @returns {{ok:boolean, vault:string}|{error:string}} */
-export function setVault(path) {
-  if (path !== "" && (typeof path !== "string" || !existsSync(path))) return { error: "path does not exist" };
-  // Stop previous watcher if any
-  stopWatcher();
-  _vaultPath = path || "";
-  saveConfig();
-  // Auto-start watcher if vault is set
-  if (_vaultPath) startWatcher();
-  return { ok: true, vault: _vaultPath };
-}
-
-/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} cfg @returns {{ok:boolean, config:object}} */
-export function setConfig(cfg) {
-  if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
-  if (cfg.ollamaEmbedModel && cfg.ollamaEmbedModel !== _config.ollamaEmbedModel) {
-    _config.ollamaEmbedModel = cfg.ollamaEmbedModel;
-    _embedderReady = false; // re-init with new model name
-  }
-  if (cfg.maxNotes) _config.maxNotes = Math.max(1, Math.min(100, cfg.maxNotes));
-  if (cfg.maxChars) _config.maxChars = Math.max(100, Math.min(50000, cfg.maxChars));
-  if (cfg.maxBodyChars !== undefined) {
-    _config.maxBodyChars = Math.max(0, Math.min(100000, parseInt(String(cfg.maxBodyChars)) || 0));
-    // Setting maxBodyChars=0 means "auto-detect from Ollama model". If we
-    // previously auto-detected a value, that's now stale (e.g. user switched
-    // from a long-context model to a short-context one). Force re-detection.
-    if (_config.maxBodyChars === 0) _autoDetectedMaxBodyChars = 0;
-  }
-  // Clear LLM result caches when the model changes — old outputs are invalid
-  if (cfg.queryRewriteModel && cfg.queryRewriteModel !== _config.queryRewriteModel) {
-    rewriteCache.clear();
-    _rewriteEverSucceeded = false;
-  }
-  if (cfg.rerankModel && cfg.rerankModel !== _config.rerankModel) {
-    rerankCache.clear();
-    _rerankEverSucceeded = false;
-  }
-  if (cfg.queryRewriteEnabled !== undefined) _config.queryRewriteEnabled = Boolean(cfg.queryRewriteEnabled);
-  if (cfg.rerankEnabled !== undefined) _config.rerankEnabled = Boolean(cfg.rerankEnabled);
-  if (cfg.queryRewriteModel) _config.queryRewriteModel = String(cfg.queryRewriteModel);
-  if (cfg.rerankModel) _config.rerankModel = String(cfg.rerankModel);
-  if (cfg.rerankTopN !== undefined) _config.rerankTopN = Math.max(5, Math.min(50, parseInt(String(cfg.rerankTopN)) || 20));
-  saveConfig();
-  return { ok: true, config: _config };
-}
-
-// Effective max body chars: user override > auto-detected > 1500 fallback
-export function getEffectiveMaxBodyChars() {
-  if (_config.maxBodyChars > 0) return _config.maxBodyChars;
-  if (_autoDetectedMaxBodyChars > 0) return _autoDetectedMaxBodyChars;
-  return 1500; // safe fallback before any detection
-}
-
 // Space out CJK characters individually so FTS5 unicode61 tokenizes them as separate tokens.
 // "故宫博物院" → "故 宫 博 物 院"
 /** @param {string} text @returns {string} */
-export function spaceCJK(text) {
-  if (!text) return text;
-  return text.replace(/([一-鿿㐀-䶿⺀-⻿])/g, "$1 ").trim();
-}
+// spaceCJK → moved to kb/text-utils.mjs (re-exported at bottom)
 
 /**
  * Sanitize a single token before it goes into an FTS5 MATCH expression.
@@ -445,51 +302,9 @@ export function spaceCJK(text) {
  * @param {string} term
  * @returns {string} sanitized term safe to wrap in "..." for FTS5
  */
-export function sanitizeFtsTerm(term) {
-  if (!term) return "";
-  // Keep letters, digits, CJK, underscore, dash. Strip everything else.
-  return term.replace(/[^\w一-鿿㐀-䶿\-]/g, "");
-}
+// sanitizeFtsTerm → moved to kb/text-utils.mjs (re-exported at bottom)
 
-/**
- * Strip Markdown formatting for clean embedding text.
- * Removes headings markers, bold/italic, wikilinks, code markers, strikethrough.
- * Collapses multiple newlines.
- * @param {string} text
- * @returns {string}
- */
-export function stripMarkdown(text) {
-  return text
-    .replace(/#{1,6}\s+/g, "")
-    .replace(/\*{1,3}_ {1,3}/g, "")
-    // [[note]] → "note", [[note|display text]] → "display text"
-    // The display text is the user-facing semantic content; the note path
-    // is for link resolution and shouldn't dominate embedding/keyword signals.
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, display) => display || target)
-    .replace(/[*_`~]/g, "")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
-
-/**
- * Strip a full note's raw content to its embeddable body.
- * Handles frontmatter, headings, wikilinks, formatting, and whitespace — the
- * SAME logic for ALL paths (rebuild, watcher, create, update). Previously the
- * watcher path skipped wikilinks/formatting, producing different chunk content
- * from the rebuild path. This is the single source of truth.
- * @param {string} content
- * @returns {string}
- */
-function stripNoteBody(content) {
-  return content
-    .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
-    .replace(/#{1,6}\s+/g, "")
-    // [[note]] → "note", [[note|display text]] → "display text"
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, display) => display || target)
-    .replace(/[*_`~]/g, "")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-}
+// stripMarkdown → moved to kb/markdown.mjs (re-exported at bottom)
 
 /**
  * Split note body into semantic chunks.
@@ -498,263 +313,13 @@ function stripNoteBody(content) {
  *   1. Heading-based — split on `##` (or higher) headings.
  *      Each section becomes a chunk tagged with its heading for context.
  *   2. Single-heading — if the note has only one `#` (title) or no headings,
- *      or all sections have very short content, fall through to fixed-size.
- *   3. Fixed-size — CHUNK_SIZE chars with CHUNK_OVERLAP.
- *
- * @param {string} rawBody - Full note body with frontmatter already stripped
- * @param {string} [fallbackTitle] - Note title used when no heading is found
- * @returns {Array<{heading:string, content:string}>}
- */
-export function splitIntoChunks(rawBody, fallbackTitle = "") {
-  /** @type {Array<{heading:string, content:string}>} */
-  const chunks = [];
-  const body = (rawBody || "").trim();
-  if (!body) return chunks;
-
-  // ── Attempt 1: heading-based split ──────────────────────────
-  // Match ## or higher (level 2-6). We skip # (level 1) because
-  // that's usually the document title, not a section divider.
-  // Note: capture group 1 is the hashes (## or ###...), group 2 is the
-  // heading text. With {2,6} the hash group IS captured.
-  const headingMatches = [...body.matchAll(/^(#{2,6})\s+(.+)$/gm)];
-
-  if (headingMatches.length >= 2) {
-    // Capture content BEFORE the first heading as a lead chunk. Previously
-    // this was silently dropped — intro/lead content was invisible to
-    // search. Now it gets indexed under the note title (≥20 chars guard
-    // skips trivial frontmatter leftovers).
-    const firstHeadingStart = headingMatches[0].index;
-    const lead = body.slice(0, firstHeadingStart).trim();
-    if (lead && lead.length >= 20) {
-      chunks.push({ heading: fallbackTitle || "", content: stripMarkdown(lead) });
-    }
-
-    for (let i = 0; i < headingMatches.length; i++) {
-      const start = headingMatches[i].index;
-      const end = i + 1 < headingMatches.length ? headingMatches[i + 1].index : body.length;
-      const rawSection = body.slice(start, end).trim();
-      if (rawSection) {
-        chunks.push({
-          heading: headingMatches[i][2].trim(),
-          content: stripMarkdown(rawSection),
-        });
-      }
-    }
-  }
-
-  // ── Attempt 2: single # heading ────────────────────────────
-  if (chunks.length === 0) {
-    // BUGFIX: with #{1}, V8 may optimize away the capture group for the
-    // single-hash, leaving only group 1 = heading text. Using [1] works
-    // for both cases (the {1}-quantified hash is not captured, and the
-    // text is the first group).
-    const h1Matches = [...body.matchAll(/^#\s+(.+)$/gm)];
-    if (h1Matches.length >= 2) {
-      // Same lead-capture fix as Attempt 1
-      const firstH1Start = h1Matches[0].index;
-      const lead = body.slice(0, firstH1Start).trim();
-      if (lead && lead.length >= 20) {
-        chunks.push({ heading: fallbackTitle || "", content: stripMarkdown(lead) });
-      }
-
-      for (let i = 0; i < h1Matches.length; i++) {
-        const start = h1Matches[i].index;
-        const end = i + 1 < h1Matches.length ? h1Matches[i + 1].index : body.length;
-        const rawSection = body.slice(start, end).trim();
-        if (rawSection) {
-          chunks.push({
-            heading: h1Matches[i][1].trim(),
-            content: stripMarkdown(rawSection),
-          });
-        }
-      }
-    }
-  }
-
-  // ── Fallback: fixed-size with overlap ──────────────────────
-  if (chunks.length === 0) {
-    const clean = stripMarkdown(body);
-    let start = 0;
-    while (start < clean.length) {
-      const end = Math.min(start + CHUNK_SIZE, clean.length);
-      const piece = clean.slice(start, end).trim();
-      if (piece) {
-        chunks.push({ heading: start === 0 ? fallbackTitle : "", content: piece });
-      }
-      if (end >= clean.length) break;
-      start = end - CHUNK_OVERLAP;
-    }
-  }
-
-  return chunks;
-}
+// splitIntoChunks → moved to kb/markdown.mjs (re-exported at bottom)
 
 // ── Frontmatter Parser ────────────────────────────────────
-
-/** @param {string} text @returns {{title:string, tags:string[], aliases:string[]}} */
-export function parseFrontMatter(text) {
-  /** @type {{title:string, tags:string[], aliases:string[]}} */
-  const meta = { title: "", tags: [], aliases: [] };
-  const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return meta;
-  for (const line of match[1].split("\n")) {
-    const kv = line.match(/^\s*(\w[\w-]*)\s*:\s*(.+)/);
-    if (kv) {
-      const key = kv[1];
-      let val = kv[2].trim().replace(/^["']|["']$/g, "");
-      if (key === "title" || key === "name") meta.title = val;
-      else if (key === "tags") {
-        // Handle both [tag1, tag2] and "tag1, tag2" formats
-        if (val.startsWith("[")) {
-          meta.tags = val.slice(1, -1).split(",").map(t => t.trim().replace(/^["']|["']$/g, ""));
-        } else {
-          meta.tags = val.split(",").map(t => t.trim());
-        }
-      }
-      else if (key === "aliases") {
-        if (val.startsWith("[")) {
-          meta.aliases = val.slice(1, -1).split(",").map(t => t.trim().replace(/^["']|["']$/g, ""));
-        } else {
-          meta.aliases = [val];
-        }
-      }
-    }
-  }
-  return meta;
-}
-
-/** @param {string} text @param {string} filename @returns {string} */
-export function extractTitle(text, filename) {
-  // Try frontmatter title first
-  const fm = parseFrontMatter(text);
-  if (fm.title) return fm.title;
-  // Try first H1 heading
-  const h1 = text.match(/^#\s+(.+)$/m);
-  if (h1) return h1[1].trim();
-  // Fallback to filename
-  return basename(filename, ".md");
-}
-
-/** @param {string} text @returns {string[]} */
-export function extractTags(text) {
-  const fm = parseFrontMatter(text);
-  /** @type {Set<string>} */
-  const tags = new Set(fm.tags);
-  // Also extract inline #tags
-  const inlineTags = text.matchAll(/(?<=^|\s)#([a-zA-Z一-鿿][\w一-鿿-]*)/gm);
-  for (const m of inlineTags) tags.add(m[1]);
-  return [...tags];
-}
+// parseFrontMatter, extractTitle, extractTags → moved to kb/markdown.mjs (re-exported at bottom)
 
 // ── Database ──────────────────────────────────────────────
-
-/** @type {import("node:sqlite").DatabaseSync | null} */
-let _db = null;
-let _hasFts5 = false;
-
-function getDb() {
-  if (_db) return _db;
-  _db = new DatabaseSync(DB_PATH);
-  _db.exec("PRAGMA journal_mode=WAL");
-  _db.exec("PRAGMA foreign_keys=ON");
-  // Wait up to 5s for write locks held by other processes (e.g. second
-  // AideAgent instance) instead of failing immediately with SQLITE_BUSY.
-  _db.exec("PRAGMA busy_timeout=5000");
-
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rel_path TEXT UNIQUE NOT NULL,
-      filename TEXT NOT NULL,
-      title TEXT DEFAULT '',
-      tags TEXT DEFAULT '[]',
-      word_count INTEGER DEFAULT 0,
-      mtime_ms INTEGER,
-      created_at TEXT,
-      updated_at TEXT
-    )
-  `);
-
-  // ── Chunk-level tables ─────────────────────────────────
-  // kb_chunks: stores individual chunks per note
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_chunks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      note_id INTEGER NOT NULL,
-      chunk_index INTEGER DEFAULT 0,
-      heading TEXT DEFAULT '',
-      content TEXT NOT NULL,
-      FOREIGN KEY(note_id) REFERENCES kb_notes(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Chunk-level FTS
-  try {
-    _db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
-        chunk_id UNINDEXED,
-        heading,
-        content,
-        tokenize='unicode61'
-      )
-    `);
-    // Verify the table actually has chunk_id column (schema migration check)
-    const cols = _db.prepare("PRAGMA table_info(kb_fts)").all();
-    const hasChunkId = cols.some(/** @param {any} c */ c => String(c.name) === "chunk_id");
-    if (!hasChunkId) {
-      // Old note-level schema — drop and recreate
-      _db.exec("DROP TABLE IF EXISTS kb_fts");
-      _db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
-          chunk_id UNINDEXED,
-          heading,
-          content,
-          tokenize='unicode61'
-        )
-      `);
-    }
-    _hasFts5 = true;
-    console.log("[kb] FTS5 available (chunk-level)");
-  } catch (/** @type {any} */ e) {
-    console.log("[kb] FTS5 not available, using LIKE search:", e.message);
-    _hasFts5 = false;
-    try {
-      _db.exec(`
-        CREATE TABLE IF NOT EXISTS kb_fts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          chunk_id INTEGER,
-          heading TEXT,
-          content TEXT
-        )
-      `);
-    } catch (/** @type {any} */ e) {
-      // Fallback table creation is best-effort; if it already exists
-      // (or the DB is read-only), we proceed with whatever worked.
-      _logError("db", e);
-    }
-  }
-
-  // Chunk-level embeddings
-  // Check column structure first to avoid dropping data on each startup
-  {
-    const embCols = _db.prepare("PRAGMA table_info(kb_embeddings)").all();
-    const hasChunkId = embCols.some(/** @param {any} c */ c => String(c.name) === "chunk_id");
-    if (!hasChunkId) {
-      // Old note-level schema — drop and recreate
-      _db.exec("DROP TABLE IF EXISTS kb_embeddings");
-    }
-  }
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_embeddings (
-      chunk_id INTEGER PRIMARY KEY,
-      embedding BLOB NOT NULL,
-      dim INTEGER NOT NULL,
-      FOREIGN KEY(chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
-    )
-  `);
-
-  return _db;
-}
+// getDb(), _db, _hasFts5, schema + FTS5 init → moved to kb/db.mjs (re-exported at bottom)
 
 // ── FTS Operations ────────────────────────────────────────
 
@@ -798,7 +363,7 @@ function ftsInsertChunk(chunkId, heading, content) {
 /** @param {string} query @param {number} limit @returns {any[]} */
 function ftsSearch(query, limit) {
   const db = getDb();
-  if (_hasFts5) {
+  if (hasFts5()) {
     try {
       const terms = query.split(/\s+/).filter(Boolean);
       // Sanitize each term: strip FTS5 metacharacters that could change
@@ -862,7 +427,7 @@ async function importWithTimeout(moduleSpecifier, timeoutMs = 15000) {
 async function getEmbedder() {
   if (_embedderReady) return _embedder;
 
-  const provider = _config.embeddingProvider || "local";
+  const provider = getConfig().embeddingProvider || "local";
 
   // Build provider try-order: configured provider first, then fallbacks
   // IMPORTANT: If user explicitly chose "ollama", do NOT fall back to "local"
@@ -907,7 +472,7 @@ async function getEmbedder() {
 
     if (p === "ollama") {
       try {
-        const ollamaModel = _config.ollamaEmbedModel || "nomic-embed-text";
+        const ollamaModel = getConfig().ollamaEmbedModel || "nomic-embed-text";
 
         // Probe 1: detect native dimension (no dimensions param)
         const probe1 = await fetch("http://localhost:11434/api/embed", {
@@ -950,11 +515,12 @@ async function getEmbedder() {
         _embedderReady = true;
         console.log("[kb] Using Ollama embedder:", ollamaModel);
         // Auto-detect model context length (only if user hasn't overridden)
-        if (_config.maxBodyChars === 0) {
+        if (getConfig().maxBodyChars === 0) {
           const ctx = await detectModelContext(ollamaModel);
           // 85% of context to leave tokenization headroom; assumes ~1.2 tok/char
-          _autoDetectedMaxBodyChars = Math.floor(ctx * 0.85);
-          console.log(`[kb] Auto-detected max body chars: ${_autoDetectedMaxBodyChars} (model context: ${ctx})`);
+          const auto = Math.floor(ctx * 0.85);
+          _markAutoDetectedMaxBodyChars(auto);
+          console.log(`[kb] Auto-detected max body chars: ${auto} (model context: ${ctx})`);
         }
         return _embedder;
       } catch (/** @type {any} */ e) {
@@ -1034,117 +600,20 @@ export async function embedText(text) {
 }
 
 // ── Vector Operations ─────────────────────────────────────
-
-/** @param {Float32Array} vec @returns {Buffer} */
-export function vectorToBuffer(vec) {
-  return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
-}
-
-/** @param {Buffer} buf @returns {Float32Array} */
-export function bufferToVector(buf) {
-  return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-}
-
-/** @param {Float32Array|number[]} a @param {Float32Array|number[]} b @returns {number} */
-export function cosineSimilarity(a, b) {
-  if (a.length !== b.length) {
-    console.warn(`[kb] Dimension mismatch in similarity: ${a.length} vs ${b.length}. Rebuild index.`);
-    return 0;
-  }
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
+// vectorToBuffer, bufferToVector, cosineSimilarity → moved to kb/vector-math.mjs (re-exported at bottom)
 
 // ── Reciprocal Rank Fusion ────────────────────────────────
-
-/** @param {Array<Array<{id:number, rank?:number}>>} resultLists @param {number} [k] @returns {Array<{id:number, score:number}>} */
-export function reciprocalRankFusion(resultLists, k = 60) {
-  const scores = new Map();
-  for (const results of resultLists) {
-    results.forEach((doc, index) => {
-      const rank = index + 1;
-      const rrfScore = 1 / (k + rank);
-      const id = typeof doc === "object" ? doc.id : doc;
-      scores.set(id, (scores.get(id) || 0) + rrfScore);
-    });
-  }
-  return [...scores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, score]) => ({ id, score }));
-}
+// reciprocalRankFusion → moved to kb/rank-fusion.mjs (re-exported at bottom)
 
 // ── File Scanning ─────────────────────────────────────────
-
-// Directories that should NEVER be indexed. These pollute search results
-// with unrelated content (e.g. .opencode/node_modules/zod/README.md
-// drowning out actual user notes). Configurable via setVaultExcludes.
-const DEFAULT_SKIP_DIRS = new Set([
-  ".obsidian",    // Obsidian config + plugins
-  "node_modules", // npm/pnpm package internals (huge, noisy)
-  ".git",         // git internals (binary)
-  ".trash",       // Obsidian trash
-  ".vscode",      // IDE config
-  ".idea",        // JetBrains config
-]);
-let _customSkipDirs = new Set();
-
-/**
- * Add custom directory names to skip during scanning.
- * @param {string[]} names
- */
-export function setVaultExcludes(names) {
-  _customSkipDirs = new Set((names || []).map(String));
-}
-
-/** @param {string} dir @param {string} baseDir @returns {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
-function scanVault(dir, baseDir) {
-  /** @type {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
-  const results = [];
-  if (!existsSync(dir)) return results;
-  const entries = readdirSync(dir, { withFileTypes: true });
-  const skipDirs = new Set([...DEFAULT_SKIP_DIRS, ..._customSkipDirs]);
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (skipDirs.has(entry.name)) continue;
-      results.push(...scanVault(fullPath, baseDir));
-    } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
-      try {
-        const stat = statSync(fullPath);
-        const content = readFileSync(fullPath, "utf-8");
-        const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
-        const title = extractTitle(content, entry.name);
-        /** @type {string[]} */
-        const tags = extractTags(content);
-        // Strip frontmatter and markdown for body (single source of truth)
-        const body = stripNoteBody(content);
-        results.push({
-          relPath,
-          filename: entry.name,
-          title,
-          tags,
-          body,
-          wordCount: body.length,
-          mtimeMs: stat.mtimeMs,
-        });
-      } catch (/** @type {any} */ e) {
-        console.warn(`[kb] Skipping ${fullPath}: ${e.message}`);
-      }
-    }
-  }
-  return results;
-}
+// DEFAULT_SKIP_DIRS, _customSkipDirs, setVaultExcludes, scanVault
+// → moved to kb/vault-scanner.mjs (re-exported at bottom)
 
 // ── Rebuild Index ─────────────────────────────────────────
 
 /** @param {Function} [progressCb] @returns {Promise<{ok:boolean, indexed:number, embedded:number, chunked:number, failed:number, total:number}|{error:string}>} */
 export async function rebuildIndex(progressCb) {
+  const _vaultPath = getVault();
   if (!_vaultPath || !existsSync(_vaultPath)) return { error: "vault not set or not found" };
 
   // Pause watcher during rebuild to avoid double-processing
@@ -1251,7 +720,8 @@ const MIN_TOP_RRF_SCORE = 0.012;
  * @returns {Promise<string[]>}
  */
 async function rewriteQuery(query) {
-  if (_config.queryRewriteEnabled === false) return [query];
+  const cfg = getConfig();
+  if (cfg.queryRewriteEnabled === false) return [query];
   const cacheKey = query.toLowerCase().trim();
   if (rewriteCache.has(cacheKey)) return rewriteCache.get(cacheKey);
   // Coalesce concurrent calls PER KEY — if a rewrite for the same query is
@@ -1261,7 +731,7 @@ async function rewriteQuery(query) {
   if (existing) return existing;
 
   const promise = (async () => {
-    const model = _config.queryRewriteModel || "qwen3.5:9b";
+    const model = cfg.queryRewriteModel || "qwen3.5:9b";
     // First call may need to load the model into RAM (cold start). Adaptive timeout.
     const isFirstCall = rewriteCache.size === 0 && !_rewriteEverSucceeded;
     const timeoutMs = isFirstCall ? 30000 : 3000;
@@ -1306,7 +776,7 @@ async function rewriteQuery(query) {
 
 /** @param {string} query @param {number} [limit] @returns {Promise<Array<{id:number, rel_path:string, title:string, tags:string[], snippet:string, heading:string, rrfScore:number}>>} */
 export async function search(query, limit = 5) {
-  if (!_vaultPath) return [];
+  if (!getVault()) return [];
   if (!query || !query.trim()) return [];
 
   const db = getDb();
@@ -1459,7 +929,7 @@ export async function search(query, limit = 5) {
   // 5. Aggregate chunks by parent note (best per note) — hydrate full results.
   // Take top `rerankTopN` (independent of `limit`) so LLM rerank has a buffer
   // to swap in better candidates. e.g. limit=5 + rerankTopN=30 → fetch 30, rerank, return 5.
-  const rerankTopN = _config.rerankTopN || 30;
+  const rerankTopN = getConfig().rerankTopN || 30;
   const sortedNotes = [...bestPerNote.entries()]
     .sort((a, b) => b[1].score - a[1].score)
     .slice(0, rerankTopN);
@@ -1505,7 +975,8 @@ export async function search(query, limit = 5) {
  * @returns {Promise<Array<any>|null>} Reranked top-`limit`, or null on failure
  */
 async function rerankResults(query, candidates, limit) {
-  if (_config.rerankEnabled === false) return null;
+  const cfg = getConfig();
+  if (cfg.rerankEnabled === false) return null;
 
   // Cache: identical query + identical candidate set → reuse previous order
   const cacheKey = query.toLowerCase().trim() + "|" + candidates.map((c) => c.id).join(",");
@@ -1520,7 +991,7 @@ async function rerankResults(query, candidates, limit) {
   if (existing) return existing;
 
   const promise = (async () => {
-    const model = _config.rerankModel || "gemma4:e4b";
+    const model = cfg.rerankModel || "gemma4:e4b";
     // Build the candidates block: title + truncated snippet. Keep snippets small
     // (150 chars) so 15 candidates fit comfortably in a 4K-token context.
     const items = candidates
@@ -1617,7 +1088,7 @@ export function getNote(relPath) {
     const note = db.prepare("SELECT * FROM kb_notes WHERE rel_path = ?").get(relPath);
     if (!note) return null;
     // Read actual file content
-    const fullPath = join(_vaultPath, relPath);
+    const fullPath = join(getVault(), relPath);
     const content = readFileSync(fullPath, "utf-8");
     return {
       ...note,
@@ -1633,9 +1104,9 @@ export function getNote(relPath) {
 
 /** @param {string} relPath @param {string} content @param {string[]} [tags] @returns {Promise<{ok:boolean, relPath:string, title:string}|{error:string}>} */
 export async function createNote(relPath, content, tags = []) {
-  if (!_vaultPath) return { error: "vault not set" };
+  if (!getVault()) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
-  const fullPath = join(_vaultPath, relPath);
+  const fullPath = join(getVault(), relPath);
 
   try {
     // Ensure directory exists
@@ -1688,9 +1159,9 @@ export async function createNote(relPath, content, tags = []) {
 
 /** @param {string} relPath @param {string} content @returns {Promise<{ok:boolean, relPath:string, title:string}|{error:string}>} */
 export async function updateNote(relPath, content) {
-  if (!_vaultPath) return { error: "vault not set" };
+  if (!getVault()) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
-  const fullPath = join(_vaultPath, relPath);
+  const fullPath = join(getVault(), relPath);
 
   try {
     writeFileSync(fullPath, content, "utf-8");
@@ -1745,9 +1216,9 @@ export async function updateNote(relPath, content) {
 
 /** @param {string} relPath @returns {{ok:boolean, relPath:string}|{error:string}} */
 export function deleteNote(relPath) {
-  if (!_vaultPath) return { error: "vault not set" };
+  if (!getVault()) return { error: "vault not set" };
   if (!isSafeVaultPath(relPath)) return { error: "invalid path" };
-  const fullPath = join(_vaultPath, relPath);
+  const fullPath = join(getVault(), relPath);
 
   try {
     // Delete file
@@ -1793,15 +1264,16 @@ export function getStatus() {
     const chunkCount = Number(db.prepare("SELECT COUNT(*) as count FROM kb_chunks").get()?.count ?? 0);
     const embeddedCount = Number(db.prepare("SELECT COUNT(*) as count FROM kb_embeddings").get()?.count ?? 0);
     const watcherActive = !!_watcher;
+    const cfg = getConfig();
     return {
-      vault: _vaultPath,
+      vault: getVault(),
       noteCount,
       chunkCount,
       embeddedCount,
       watcherActive,
-      embeddingProvider: _config.embeddingProvider,
-      maxBodyChars: _config.maxBodyChars,
-      autoDetectedMaxBodyChars: _autoDetectedMaxBodyChars,
+      embeddingProvider: cfg.embeddingProvider,
+      maxBodyChars: cfg.maxBodyChars,
+      autoDetectedMaxBodyChars: getAutoDetectedMaxBodyChars(),
       effectiveMaxBodyChars: getEffectiveMaxBodyChars(),
       // Expose error counters so operators can detect degraded operation
       // (silent FTS drift, embed failures, etc.) without grepping logs.
@@ -1809,6 +1281,22 @@ export function getStatus() {
     };
   } catch (/** @type {any} */ e) {
     _logError("db", e);
-    return { vault: _vaultPath, noteCount: 0, chunkCount: 0, embeddedCount: 0, errorCounts: { ..._errCounts } };
+    return { vault: getVault(), noteCount: 0, chunkCount: 0, embeddedCount: 0, errorCounts: { ..._errCounts } };
   }
 }
+
+// ── Re-exports for backward compatibility (Wave 1 + Wave 2) ─
+// These functions live in dedicated modules under kb/ for testability and
+// separation of concerns, but the public API of knowledge-store.mjs is
+// unchanged — external imports keep working.
+
+// Wave 1 — pure functions
+export { spaceCJK, sanitizeFtsTerm } from "./kb/text-utils.mjs";
+export { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.mjs";
+export { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.mjs";
+export { reciprocalRankFusion } from "./kb/rank-fusion.mjs";
+
+// Wave 2 — infrastructure
+export { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, DATA_DIR, DB_PATH, CONFIG_PATH } from "./kb/config.mjs";
+export { getDb, hasFts5 } from "./kb/db.mjs";
+export { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.mjs";
