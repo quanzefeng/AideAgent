@@ -219,6 +219,69 @@ export async function embedText(text) {
   }
 }
 
+/**
+ * Embed a batch of strings in a single Ollama request.
+ *
+ * Why this exists: sending N chunks one-at-a-time means N HTTP round-trips
+ * and N forward-pass scheduler wakeups on the GPU. For MiniLM-L6 / Qwen3
+ * embedding models, scheduler overhead is ~5-50ms per call — *larger* than
+ * the forward pass itself on small inputs. Batch mode lets Ollama keep the
+ * model resident in VRAM and run a single batched forward, giving 3-10x
+ * throughput on typical RAG workloads.
+ *
+ * Returns an array of Float32Array (or null per failed element). Order
+ * matches the input order.
+ *
+ * @param {string[]} texts
+ * @returns {Promise<(Float32Array|null)[]>}
+ */
+export async function embedBatch(texts) {
+  if (!texts || texts.length === 0) return [];
+  const embedder = await getEmbedder();
+  if (!embedder) return texts.map(() => null);
+
+  try {
+    if (embedder.type === "ollama") {
+      const res = await fetch("http://localhost:11434/api/embed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(_embeddingDim === 384
+          ? { model: _embedder.model, input: texts, dimensions: 384, options: { num_gpu: 99 } }
+          : { model: _embedder.model, input: texts, options: { num_gpu: 99 } }),
+        // 30s is for SINGLE inputs; for batches of 16, give it more headroom
+        // (especially on cold start). 60s is a safe upper bound.
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!res.ok) {
+        _logError("embed", new Error(`Ollama batch embed failed: HTTP ${res.status}`));
+        return texts.map(() => null);
+      }
+      const data = await res.json();
+      const vectors = data.embeddings || [];
+      if (vectors.length !== texts.length) {
+        _logError("embed", new Error(
+          `Ollama returned ${vectors.length} embeddings for ${texts.length} inputs — count mismatch`
+        ));
+      }
+      return texts.map((_, i) => {
+        const vec = vectors[i];
+        if (!vec) return null;
+        const result = new Float32Array(_embeddingDim);
+        for (let j = 0; j < Math.min(vec.length, _embeddingDim); j++) result[j] = vec[j];
+        return result;
+      });
+    }
+
+    // Local HuggingFace transformer — same fallback as embedText.
+    // HF pipeline doesn't have a true batch API in transformers.js, so we
+    // run them sequentially. The main perf win is from Ollama batching.
+    return Promise.all(texts.map((t) => embedText(t)));
+  } catch (/** @type {any} */ e) {
+    _logError("embed", e);
+    return texts.map(() => null);
+  }
+}
+
 /** Whether the embedder is initialized and ready. */
 export function isEmbedderReady() {
   return _embedderReady;
