@@ -61,6 +61,22 @@ export function ftsInsertChunk(chunkId, heading, content) {
   }
 }
 
+/**
+ * Insert a chunk into the shadow FTS table (kb_fts_new).
+ * Used exclusively by rebuildIndex's Phase 1 (shadow table writes).
+ * The shadow table has the same schema as kb_fts but is renamed during
+ * the atomic swap; until then it coexists with kb_fts.
+ */
+export function ftsInsertChunkNew(chunkId, heading, content) {
+  try {
+    const spacedHeading = spaceCJK(heading || "");
+    getDb().prepare("INSERT INTO kb_fts_new(chunk_id, heading, content) VALUES (?,?,?)")
+      .run(chunkId, spacedHeading, spaceCJK(content || ""));
+  } catch (/** @type {any} */ e) {
+    console.error("[kb] ftsInsertChunkNew error:", e.message);
+  }
+}
+
 /** @param {string} query @param {number} limit @returns {any[]} */
 export function ftsSearch(query, limit) {
   const db = getDb();
