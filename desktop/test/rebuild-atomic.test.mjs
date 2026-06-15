@@ -77,4 +77,51 @@ describe("Atomic rebuildIndex", () => {
     });
     expect(hitPaths.filter(Boolean).sort()).toEqual(["alpha.md", "beta.md"]);
   });
+
+  it("interrupted rebuild: startup recovery restores old state", async () => {
+    // ── Setup: pre-populate the index with a known note ──
+    const r1 = await rebuildIndex();
+    expect(r1.ok).toBe(true);
+    if (!r1.ok) return;
+    const db = getDb();
+    const notesBefore = db.prepare("SELECT COUNT(*) AS c FROM kb_notes").get();
+    expect(notesBefore.c).toBe(3);
+
+    // ── Simulate interruption: manually write a stale lock + a partial
+    //    kb_notes_new shadow table + a non-empty kb_chunks_new ──
+    db.prepare("INSERT INTO kb_meta(key, value) VALUES ('rebuild_lock', ?)").run("stale");
+    db.exec(`
+      CREATE TABLE kb_notes_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rel_path TEXT UNIQUE NOT NULL,
+        filename TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]',
+        word_count INTEGER DEFAULT 0,
+        mtime_ms INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `);
+    db.prepare(
+      "INSERT INTO kb_notes_new(rel_path, filename, title, tags, word_count, mtime_ms, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)"
+    ).run("stale.md", "stale.md", "Stale", "[]", 0, Date.now(), new Date().toISOString(), new Date().toISOString());
+
+    // ── Act: close & reopen the DB to trigger startup recovery ──
+    _setDbPath(null);  // closes the singleton
+    _setDbPath(iso.dbPath); // reopens; recovery should run on next getDb()
+
+    // ── Assert: shadow tables dropped, lock cleared ──
+    const db2 = getDb();
+    const staleShadow = db2.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='kb_notes_new'"
+    ).get();
+    expect(staleShadow).toBeUndefined();
+    const lockAfter = db2.prepare("SELECT value FROM kb_meta WHERE key = 'rebuild_lock'").get();
+    expect(lockAfter).toBeUndefined();
+
+    // ── Assert: original kb_notes is intact ──
+    const notesAfter = db2.prepare("SELECT COUNT(*) AS c FROM kb_notes").get();
+    expect(notesAfter.c).toBe(3);
+  });
 });
