@@ -102,10 +102,28 @@ export function getDb() {
   // AideAgent instance) instead of failing immediately with SQLITE_BUSY.
   _db.exec("PRAGMA busy_timeout=5000");
 
+  // ── Startup recovery: drop stale shadow tables if a previous
+  //    rebuild was interrupted. Safe to run on every getDb() call.
+  //    Must run AFTER kb_meta exists (so we can query the lock row).
+  _db.exec(META_DDL);
+  try {
+    const lock = _db.prepare("SELECT value FROM kb_meta WHERE key = 'rebuild_lock'").get();
+    if (lock) {
+      _db.exec("DROP TABLE IF EXISTS kb_fts_new");
+      _db.exec("DROP TABLE IF EXISTS kb_embeddings_new");
+      _db.exec("DROP TABLE IF EXISTS kb_chunks_new");
+      _db.exec("DROP TABLE IF EXISTS kb_notes_new");
+      _db.prepare("DELETE FROM kb_meta WHERE key = 'rebuild_lock'").run();
+      console.warn("[kb] cleaned up stale shadow tables from interrupted rebuild");
+    }
+  } catch (e) {
+    // Defensive: in case kb_meta doesn't exist yet on first run.
+    console.warn("[kb] startup recovery check skipped:", e.message);
+  }
+
   // ── User tables (notes, chunks, embeddings) ─────────────
   _db.exec(SCHEMA_DDL.notes);
   _db.exec(SCHEMA_DDL.chunks);
-  _db.exec(META_DDL);
 
   // ── FTS5 with LIKE fallback ─────────────────────────────
   try {
