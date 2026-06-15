@@ -150,4 +150,59 @@ describe("Atomic rebuildIndex", () => {
     const lock = db.prepare("SELECT value FROM kb_meta WHERE key = 'rebuild_lock'").get();
     expect(lock?.value).toBe("fake-lock");
   });
+
+  it("FTS swap verification: search hits match new notes", async () => {
+    // Use a vault with content that exercises CJK + multi-word FTS
+    _setDbPath(null);
+    iso.cleanup();
+    iso = makeIsoKb({
+      noteFiles: {
+        "x.md": "# X\n\nThe quick brown fox jumps over the lazy dog.\n",
+        "y.md": "# Y\n\nA lazy fox naps in the afternoon sun.\n",
+        "z.md": "# Z\n\nTotally unrelated content here.\n",
+      },
+    });
+    _setDbPath(iso.dbPath);
+    setVault(iso.vaultDir);
+
+    const result = await rebuildIndex();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // After atomic swap, the renamed kb_fts should contain entries
+    // for all chunks of x/y/z.
+    const { ftsSearch, hasFts5 } = await import("../kb/search.mjs");
+    const hits = ftsSearch("fox", 10);
+    const hitPaths = new Set();
+    const db = getDb();
+    for (const h of hits) {
+      const row = db.prepare(
+        "SELECT n.rel_path FROM kb_chunks c JOIN kb_notes n ON c.note_id = n.id WHERE c.id = ?"
+      ).get(h.chunk_id);
+      if (row) hitPaths.add(row.rel_path);
+    }
+    // Both x.md and y.md mention "fox"
+    expect([...hitPaths].sort()).toEqual(["x.md", "y.md"]);
+  });
+
+  it("embedding dim tracking: dim column preserved through RENAME", async () => {
+    const { getEmbeddingDim } = await import("../kb/embedder.mjs");
+    const expectedDim = getEmbeddingDim();
+
+    const result = await rebuildIndex();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // All kb_embeddings rows (post-swap) should have the current dim.
+    // Note: it's normal for some chunks to have no embedding (embedder
+    // returned null); the rows that DO exist must have the correct dim.
+    const db = getDb();
+    const sample = db.prepare("SELECT dim, COUNT(*) AS c FROM kb_embeddings GROUP BY dim").all();
+    // Either: 0 embeddings (embedder offline) OR every dim equals expectedDim
+    if (sample.length > 0) {
+      for (const row of sample) {
+        expect(row.dim).toBe(expectedDim);
+      }
+    }
+  });
 });
