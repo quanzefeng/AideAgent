@@ -103,6 +103,7 @@ export const CONTEXT_WINDOW = 262144;
 export const CONTEXT_WARN_PCT = 0.80;
 export const CONTEXT_COMPRESS_PCT = 0.90;
 export const TOOL_RESULT_KEEP_CHARS = 500;
+export const LLM_CALL_TIMEOUT = 300_000; // 5 min per LLM API call — prevents infinite hang
 
 export let abortCtrl = null;
 export function setAbortCtrl(ctrl) { abortCtrl = ctrl; }
@@ -201,9 +202,37 @@ export function genId() {
   return `ses_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// ── Renderer message ring buffer ─────────────────────────────
+// When the window is destroyed or the renderer is reconnecting, stream
+// events (chunks, tool results, metrics) are silently dropped. This
+// buffer keeps the last MAX entries so a reconnecting renderer can
+// replay missed events instead of showing a blank conversation.
+const RENDERER_BUFFER_MAX = 200;
+/** @type {Array<{channel:string,data:any,timestamp:number}>} */
+const _rendererBuffer = [];
+/** @param {string} channel @param {any} data */
+function _pushBuffer(channel, data) {
+  _rendererBuffer.push({ channel, data, timestamp: Date.now() });
+  if (_rendererBuffer.length > RENDERER_BUFFER_MAX) _rendererBuffer.shift();
+}
+
 export function sendToRenderer(channel, data) {
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
+    _pushBuffer(channel, data);
     win.webContents.send(channel, data);
+  } else {
+    // Window unavailable — still buffer so it can be replayed later.
+    _pushBuffer(channel, data);
   }
+}
+
+/** Return the full buffer for replay (renderer calls this on reconnect). */
+export function getRendererBuffer() {
+  return _rendererBuffer.slice();
+}
+
+/** Clear buffer after successful replay. */
+export function clearRendererBuffer() {
+  _rendererBuffer.length = 0;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateTokens, trimToBudget, estimateMessageTokens } from "../core/token-budget.mjs";
+import { estimateTokens, trimToBudget, estimateMessageTokens, compressContext, summarizeForContinuation } from "../core/token-budget.mjs";
 
 describe("Token Budget", () => {
   describe("estimateTokens", () => {
@@ -107,6 +107,85 @@ describe("Token Budget", () => {
       expect(result.systemTokens).toBe(0);
       expect(result.historyTokens).toBe(0);
       expect(result.toolResultTokens).toBe(0);
+    });
+  });
+
+  // Regression for P0 BUG #1: long tasks that hit MAX_TURNS or context
+  // overflow used to get their tool_call ↔ tool_result pairs sliced in
+  // half by compressContext. The next LLM call would 400 with
+  // "tool_use_ids were not found" and the whole agent loop would crash.
+  // After the fix, paired tool exchanges in the prunable middle zone
+  // must be rescued into the suffix.
+  describe("compressContext tool_call pair protection", () => {
+    it("preserves assistant(tool_calls) and its paired tool result across pruning", () => {
+      // Build a long enough history that the ANCHOR (6) + middle + RECENT (8)
+      // window forces middle pruning. Each call id is unique so the regex
+      // grouping cannot accidentally re-pair the wrong tool result.
+      const msgs = [
+        { role: "system", content: "sys" },
+        // prefix (first 6 non-system)
+        { role: "user", content: "u0" },
+        { role: "assistant", content: "a0" },
+        { role: "user", content: "u1" },
+        { role: "assistant", content: "a1" },
+        { role: "user", content: "u2" },
+        { role: "assistant", content: "a2" },
+      ];
+      // Middle: 8 paired tool exchanges — total 16 messages.
+      for (let i = 0; i < 8; i++) {
+        msgs.push({ role: "assistant", content: null, tool_calls: [{ id: `call_${i}_abc`, type: "function", function: { name: "bash", arguments: "{\"command\":\"echo " + i + "\"}" } }] });
+        msgs.push({ role: "tool", tool_call_id: `call_${i}_abc`, content: "result-" + i });
+      }
+      // Suffix (last 8): must be preserved verbatim.
+      for (let i = 0; i < 8; i++) {
+        msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `tail-${i}` });
+      }
+
+      const result = compressContext(msgs, 50); // tiny budget forces pruning
+      expect(result.compressed).toBe(true);
+
+      // For every assistant(tool_calls) that survived, its paired tool
+      // result must be adjacent (no orphan tool_use_id, no orphan result).
+      const survivingCallIds = new Set();
+      for (const m of msgs) {
+        if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
+          for (const tc of m.tool_calls) survivingCallIds.add(tc.id);
+        }
+      }
+      expect(survivingCallIds.size).toBeGreaterThan(0); // some pair was rescued
+      for (const m of msgs) {
+        if (m.role === "tool" && m.tool_call_id) {
+          expect(survivingCallIds.has(m.tool_call_id)).toBe(true);
+        }
+      }
+    });
+  });
+
+  // Regression for P1 BUG #2: when the LLM summarization call fails or
+  // the model doesn't recognize the prompt, the fallback must still
+  // surface the file paths, function names, and error messages that
+  // future turns need — not just a 250-char slice of the last message.
+  describe("summarizeForContinuation fallback fact extraction", () => {
+    it("extracts file paths, function names, and error messages from msgs", async () => {
+      const msgs = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "请把 src/auth/login.ts 里的 validateToken 函数修一下" },
+        { role: "assistant", content: "好，我先读一下文件" },
+        { role: "tool", tool_call_id: "x1", content: "function validateToken(token: string) { ... }" },
+        { role: "assistant", content: "看到 bug 了，是 TypeError: Cannot read property 'exp' of undefined" },
+        { role: "user", content: "改完之后跑测试" },
+        { role: "tool", tool_call_id: "x2", content: "PASS" },
+        { role: "assistant", content: "完成" },
+      ];
+      // Pass empty api key so the LLM call fails immediately and we
+      // exercise the fallback path.
+      const summary = await summarizeForContinuation(
+        msgs, "", "http://127.0.0.1:1", "deepseek-chat", "openai",
+        AbortSignal.timeout(1000),
+      );
+      expect(summary).toMatch(/src\/auth\/login\.ts|login\.ts/);
+      expect(summary).toMatch(/validateToken/);
+      expect(summary).toMatch(/TypeError|exp|Cannot read/);
     });
   });
 });

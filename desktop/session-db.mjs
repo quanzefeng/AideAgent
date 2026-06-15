@@ -106,6 +106,25 @@ class SessionDB {
       )
     `);
 
+    // P2/P3: long-task resume — survive process restarts mid-conversation.
+    // A long agent loop can be killed by the OS, by the user, or by a crash
+    // in the middle of turn 40. We persist the current turn/continuation
+    // counter and the latest summary so a future session can pick up where
+    // it left off instead of restarting the task from scratch.
+    this.#ensureOpen().exec(`
+      CREATE TABLE IF NOT EXISTS session_turn_progress (
+        session_id TEXT PRIMARY KEY,
+        current_turn INTEGER NOT NULL DEFAULT 0,
+        max_turns INTEGER NOT NULL DEFAULT 0,
+        current_continuation INTEGER NOT NULL DEFAULT 0,
+        max_continuations INTEGER NOT NULL DEFAULT 0,
+        last_summary TEXT,
+        last_checkpoint_at TEXT,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
     this.#ready = true;
     return this;
   }
@@ -138,7 +157,7 @@ class SessionDB {
     return { id, title, createdAt: now, updatedAt: now, messageCount: 0 };
   }
 
-  /** @param {string} id @param {Array<{role:string,content:string,reasoning_content?:string,timestamp?:string}>} history @param {string} [title] */
+  /** @param {string} id @param {Array<{role:string,content:string,reasoning_content?:string,tool_calls?:Array<{id:string,type:string,function:{name:string,arguments:string}}>,timestamp?:string}>} history @param {string} [title] */
   saveSession(id, history, title) {
     this.#ensureOpen();
     const now = new Date().toISOString();
@@ -161,14 +180,17 @@ class SessionDB {
 
     // Re-insert all history messages
     const insertMsg = this.#ensureOpen().prepare(
-      "INSERT INTO messages(session_id, role, content, reasoning_content, timestamp) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO messages(session_id, role, content, reasoning_content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
     );
     const insertFts = this.#ensureOpen().prepare(
       "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
     );
     for (const m of history) {
       const ts = m.timestamp || now;
-      insertMsg.run(id, m.role, m.content || "", m.reasoning_content || null, ts);
+      const toolCallsJson = Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+        ? JSON.stringify(m.tool_calls)
+        : null;
+      insertMsg.run(id, m.role, m.content || "", m.reasoning_content || null, toolCallsJson, ts);
       if (m.content) insertFts.run(id, fts5Normalize(m.content));
     }
 
@@ -189,7 +211,7 @@ class SessionDB {
     if (!s) return null;
 
     const msgs = this.#ensureOpen().prepare(
-      "SELECT id, role, content, reasoning_content, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
+      "SELECT id, role, content, reasoning_content, tool_calls, timestamp FROM messages WHERE session_id = ? ORDER BY id ASC"
     ).all(id);
 
     return {
@@ -202,6 +224,7 @@ class SessionDB {
         role: m.role,
         content: m.content,
         reasoning_content: m.reasoning_content || undefined,
+        tool_calls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
         timestamp: m.timestamp,
       })),
     };
@@ -309,6 +332,71 @@ class SessionDB {
     if (!sessionId) return;
     this.#ensureOpen().prepare("DELETE FROM session_tasks WHERE session_id = ?").run(sessionId);
     this.#ensureOpen().prepare("DELETE FROM session_todos WHERE session_id = ?").run(sessionId);
+  }
+
+  // ── Turn progress (long-task resume) ────────────────────────
+  /**
+   * @param {string} sessionId
+   * @param {{ currentTurn: number, maxTurns: number, currentContinuation: number, maxContinuations: number, lastSummary?: string }} progress
+   */
+  saveTurnProgress(sessionId, progress) {
+    if (!sessionId) return;
+    this.#ensureOpen();
+    const now = new Date().toISOString();
+    const existing = this.#ensureOpen().prepare("SELECT session_id FROM session_turn_progress WHERE session_id = ?").get(sessionId);
+    if (existing) {
+      this.#ensureOpen().prepare(
+        "UPDATE session_turn_progress SET current_turn = ?, max_turns = ?, current_continuation = ?, max_continuations = ?, last_summary = ?, last_checkpoint_at = ?, updated_at = ? WHERE session_id = ?"
+      ).run(
+        progress.currentTurn | 0,
+        progress.maxTurns | 0,
+        progress.currentContinuation | 0,
+        progress.maxContinuations | 0,
+        progress.lastSummary || null,
+        now,
+        now,
+        sessionId,
+      );
+    } else {
+      this.#ensureOpen().prepare(
+        "INSERT INTO session_turn_progress(session_id, current_turn, max_turns, current_continuation, max_continuations, last_summary, last_checkpoint_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        sessionId,
+        progress.currentTurn | 0,
+        progress.maxTurns | 0,
+        progress.currentContinuation | 0,
+        progress.maxContinuations | 0,
+        progress.lastSummary || null,
+        now,
+        now,
+      );
+    }
+  }
+
+  /** @param {string} sessionId */
+  loadTurnProgress(sessionId) {
+    if (!sessionId) return null;
+    this.#ensureOpen();
+    const row = this.#ensureOpen().prepare(
+      "SELECT current_turn, max_turns, current_continuation, max_continuations, last_summary, last_checkpoint_at, updated_at FROM session_turn_progress WHERE session_id = ?"
+    ).get(sessionId);
+    if (!row) return null;
+    return {
+      currentTurn: row.current_turn,
+      maxTurns: row.max_turns,
+      currentContinuation: row.current_continuation,
+      maxContinuations: row.max_continuations,
+      lastSummary: row.last_summary || "",
+      lastCheckpointAt: row.last_checkpoint_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  /** @param {string} sessionId */
+  clearTurnProgress(sessionId) {
+    if (!sessionId) return;
+    this.#ensureOpen();
+    this.#ensureOpen().prepare("DELETE FROM session_turn_progress WHERE session_id = ?").run(sessionId);
   }
 
   /** @param {number} [limit] */

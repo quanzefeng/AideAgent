@@ -9,7 +9,7 @@ import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
-import { agentLoop } from "./agent-loop.mjs";
+import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
@@ -21,7 +21,7 @@ import {
   getPlanMode, setPlanMode,
   pendingPerms, _askResolvers,
   setLastApiConfig,
-  sendToRenderer,
+  sendToRenderer, getRendererBuffer, clearRendererBuffer,
 } from "./state.mjs";
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
 import { hasPersistedWorkspace } from "./workspace-config.mjs";
@@ -61,6 +61,11 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("session:reset", async () => {
+    // P1: abort the main agent loop before clearing state — otherwise a
+    // ghost agent keeps running in the background consuming tokens.
+    const mainAbortCtrl = getAbortCtrl();
+    if (mainAbortCtrl) { mainAbortCtrl.abort(); setAbortCtrl(null); }
+
     const sessionId = getSessionId();
     const history = getHistory();
     if (sessionId && history.length > 0) {
@@ -79,6 +84,9 @@ export function registerIpcHandlers() {
     _surfacedMemories.clear();
     for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
     _subAgentCtrls.clear();
+    resetPromptCache(); // P0: invalidate stale system prompt cache from previous session
+    // P3: drop any pending long-task resume marker for the old session.
+    if (sessionId) { try { sessionDb.clearTurnProgress(sessionId); } catch { /* ignored */ } }
     sendToRenderer("task:clear", {});
   });
 
@@ -90,6 +98,11 @@ export function registerIpcHandlers() {
     const data = await sessionDb.loadSession(id);
     if (data) {
       if (!opts?.readOnly) {
+        resetPromptCache(); // P0: invalidate stale cached system prompt before loading a different session
+        // P1: clear stale turn_progress marker from a previous crash — this
+        // session is being actively loaded, so any old "interrupted at turn N"
+        // record is no longer relevant.
+        try { sessionDb.clearTurnProgress(id); } catch { /* ignored */ }
         setSessionId(/** @type {string} */ (data.id));
         setHistory(/** @type {Array<{role: string, content: string}>} */ (data.history || []));
         // P2: restore task/todo state from DB
@@ -153,6 +166,20 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("session:last", async (_event, limit) => {
     try { return sessionDb.getLastSession(limit); } catch { return null; }
+  });
+
+  // P1: surface long-task resume state so the renderer can show a banner
+  // ("上一轮任务在第 23 轮中断，已自动续接") instead of starting blind.
+  ipcMain.handle("session:turn-progress", async (_event, id) => {
+    try { return sessionDb.loadTurnProgress(id); } catch { return null; }
+  });
+  ipcMain.handle("session:clear-turn-progress", async (_event, id) => {
+    try { sessionDb.clearTurnProgress(id); return { ok: true }; } catch { return { error: "failed" }; }
+  });
+
+  // P1: renderer message buffer — replay stream events after reconnect
+  ipcMain.handle("renderer:replay-buffer", async () => {
+    try { const buf = getRendererBuffer(); clearRendererBuffer(); return buf; } catch { return []; }
   });
 
   ipcMain.handle("session:status", async () => {

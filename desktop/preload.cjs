@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld("aideagent", {
   searchSessions: (/** @type {any} */ query, /** @type {any} */ limit) => ipcRenderer.invoke("session:search", query, limit),
   getLastSession: (/** @type {any} */ limit) => ipcRenderer.invoke("session:last", limit),
   getSessionStatus: () => ipcRenderer.invoke("session:status"),
+  getTurnProgress: (/** @type {any} */ id) => ipcRenderer.invoke("session:turn-progress", id),
+  clearTurnProgress: (/** @type {any} */ id) => ipcRenderer.invoke("session:clear-turn-progress", id),
+  replayRendererBuffer: () => ipcRenderer.invoke("renderer:replay-buffer"),
   // Memory Store
   memoryReadUser: () => ipcRenderer.invoke("memory:read-user"),
   memoryWriteUser: (/** @type {any} */ content) => ipcRenderer.invoke("memory:write-user", content),

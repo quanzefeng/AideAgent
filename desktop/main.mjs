@@ -8,7 +8,7 @@ import mcpManager from "./mcp-manager.mjs";
 import sessionDb from "./session-db.mjs";
 import * as skills from "./skills-store.mjs";
 
-import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig } from "./core/state.mjs";
+import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.mjs";
 import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.mjs";
 import { initUpdateManager } from "./update-manager.mjs";
@@ -16,6 +16,26 @@ import { initUpdateManager } from "./update-manager.mjs";
 const isDev = process.argv.includes("--dev");
 
 app.commandLine.appendSwitch("no-sandbox");
+
+// ── Global error handlers ──────────────────────────────────
+// Without these, any uncaught throw or unhandled promise rejection in the
+// main process kills the Electron app, taking the long-running agent loop
+// (and its in-flight turn state) with it. The user has to force-quit and
+// restart — losing the working session mid-task. Log, notify the renderer,
+// and stay alive.
+process.on("uncaughtException", (err) => {
+  console.error("[main] uncaughtException:", err?.stack || err);
+  try {
+    sendToRenderer("stream:error", { message: `[main] 未捕获异常: ${err?.message || err}` });
+  } catch { /* renderer may be gone */ }
+});
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error("[main] unhandledRejection:", err.stack || err);
+  try {
+    sendToRenderer("stream:error", { message: `[main] 后台任务异常: ${err.message}` });
+  } catch { /* renderer may be gone */ }
+});
 
 // ── Window Management ──────────────────────────────────────
 

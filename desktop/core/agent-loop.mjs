@@ -15,7 +15,7 @@ import {
   getWorkspace,
   taskStore, getTodoList,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
-  CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT,
+  CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
@@ -51,8 +51,12 @@ async function saveSession(id, history, title) {
  * @param {string} apiUrl
  * @param {string} model
  * @param {string} apiFormat
+ * @param {AbortSignal} [signal] forwarded from the agent loop. If the
+ *   user hit Stop, the parent abort fires and this fetch is cancelled
+ *   instead of leaking the in-flight request and writing a memory
+ *   derived from a half-finished session.
  */
-async function autoReview(msgs, apiKey, apiUrl, model, apiFormat) {
+async function autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal) {
   try {
     // Take last 8 exchanges (16 messages) for review
     const recent = msgs.slice(-16).filter(/** @param {{role:string,content:any}} m */ m => m.role === "user" || m.role === "assistant");
@@ -102,10 +106,11 @@ KNOWLEDGE: <内容>
       body.temperature = undefined;
     }
 
+    const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
     const res = await fetch(endpoint, {
       method: "POST", headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
+      signal: composed,
     });
     if (!res.ok) return;
     const data = await res.json();
@@ -385,7 +390,12 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       let content, reasoningContent, tcs;
       try {
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-        const result = await callFn(msgs, apiUrl, apiKey, model, signal, reasoning, kbEnabled, webSearchEnabled);
+        // P1: compose user abort + per-call timeout so a hung API request
+        // doesn't block the agent loop indefinitely. Timeout is 5 min.
+        const callSignal = signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
+          : AbortSignal.timeout(LLM_CALL_TIMEOUT);
+        const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled);
         content = result.content;
         reasoningContent = /** @type {any} */ (result).reasoningContent || "";
         allText += result.content;
@@ -492,6 +502,28 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         sdr("tool:result", { name: tc.function.name, result });
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
         hookManager.fire("PostToolUse", { tool: tc.function.name, result }).catch(() => {});
+
+        // P3: turn-level checkpoint — every 5 turns persist the current
+        // history snapshot so a crash mid-task can be resumed. Cap the
+        // snapshot at 200 messages to keep the DB write fast.
+        if (turns % 5 === 0 && sessionId) {
+          try {
+            const histSnapshot = msgs
+              .filter(m => m.role === "user" || m.role === "assistant")
+              .slice(-200)
+              .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "", reasoning_content: m.reasoning_content, tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0 ? m.tool_calls : undefined }));
+            await sessionDb.saveSession(sessionId, histSnapshot, getHistoryTitle(histSnapshot));
+            sessionDb.saveTurnProgress(sessionId, {
+              currentTurn: turns,
+              maxTurns: MAX_TURNS,
+              currentContinuation: continuation,
+              maxContinuations: MAX_CONTINUATIONS,
+              lastSummary: "",
+            });
+          } catch (/** @type {any} */ e) {
+            console.error("[checkpoint] save failed:", e.message);
+          }
+        }
       }
     }
 
@@ -501,7 +533,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     if (continuation < MAX_CONTINUATIONS) {
       sdr("context:continuation-start", { continuation, max: MAX_CONTINUATIONS });
 
-      const summary = await summarizeForContinuation(msgs, apiKey, apiUrl, model, apiFormat);
+      const summary = await summarizeForContinuation(msgs, apiKey, apiUrl, model, apiFormat, signal);
 
       const sysMsg = msgs[0];
       const recentMsgs = msgs.slice(-6);
@@ -519,7 +551,27 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         contextAfterTokens: estimateMessageTokens(msgs).totalTokens,
       });
       sendContextUsage(msgs);
+
+      // P1: persist turn progress + summary so a process restart can resume
+      if (sessionId) {
+        try {
+          sessionDb.saveTurnProgress(sessionId, {
+            currentTurn: turns,
+            maxTurns: MAX_TURNS,
+            currentContinuation: continuation,
+            maxContinuations: MAX_CONTINUATIONS,
+            lastSummary: summary.slice(0, 2000),
+          });
+        } catch (/** @type {any} */ e) {
+          console.error("[turn-progress] save failed:", e.message);
+        }
+      }
     }
+  }
+
+  // Conversation completed — clear the long-task resume marker.
+  if (sessionId) {
+    try { sessionDb.clearTurnProgress(sessionId); } catch { /* ignored */ }
   }
 
   // Save conversation
@@ -584,17 +636,39 @@ ${convText}
     }
 
     if (!summary || summary.trim().length < 20) {
-      const summaryLines = ["## 早期对话摘要\n"];
-      let lastRole = "";
+      // Structured fact extraction — same logic as summarizeForContinuation's fallback.
+      const FACT_PATTERNS = [
+        { label: "文件", rx: /(?:\s|^|[`(\[])([A-Za-z]:[\\/][^\s`"'>|?]+|\.{0,2}\/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)/g },
+        { label: "函数", rx: /\b(?:function|class|const|let|var|export)\s+([A-Za-z_$][\w$]*)/g },
+        { label: "错误", rx: /(?:Error|Exception|TypeError|ENOENT|EACCES|404|500|超时|失败)[^。\n]{0,120}/gi },
+        { label: "用户", rx: /(?:记住|下次|以后|总是|永远|不要|必须|prefer|always|never)[^。\n]{0,120}/gi },
+      ];
+      const seen = new Set();
+      const facts = [];
       for (const m of oldHistory.slice(-30)) {
-        const role = m.role === "user" ? "用户" : "助手";
-        const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 180);
-        if (!text) continue;
-        if (role === lastRole) summaryLines.push(`  ...${text}`);
-        else summaryLines.push(`- **${role}：** ${text}`);
-        lastRole = role;
+        const text = (typeof m.content === "string" ? m.content : "").slice(0, 3000);
+        for (const { label, rx } of FACT_PATTERNS) {
+          rx.lastIndex = 0;
+          let m1; let n = 0;
+          while ((m1 = rx.exec(text)) !== null && n < 4) {
+            const f = m1[0].replace(/\s+/g, " ").trim().slice(0, 160);
+            if (f.length < 5) continue;
+            const k = `${label}::${f}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            facts.push(`- **${label}：** ${f}`);
+            n++;
+            if (facts.length >= 40) break;
+          }
+          if (facts.length >= 40) break;
+        }
+        if (facts.length >= 40) break;
       }
-      summary = summaryLines.join("\n");
+      if (facts.length > 0) {
+        summary = ["## 早期对话关键事实\n", "（LLM 摘要失败，正则提取）\n", ...facts].join("\n");
+      } else {
+        summary = "## 早期对话摘要\n（无可用信息）";
+      }
     }
 
     if (sessionId) {
@@ -622,7 +696,8 @@ ${convText}
   }
 
   hookManager.fire("SessionEnd", { sessionId: finalSessionId, aborted: false }).catch(() => {});
-  autoReview(msgs, apiKey, apiUrl, model, apiFormat).catch(() => {});
+  // P2: forward the abort signal so autoReview can be cancelled by Stop.
+  autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal).catch(() => {});
 
   // Phase 2 trigger: detect repeated-task patterns from the last 30 sessions.
   // If a phrase appears in 3+ sessions and isn't covered by an existing skill,

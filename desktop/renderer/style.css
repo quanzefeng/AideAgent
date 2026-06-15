@@ -2925,3 +2925,26 @@ html, body {
   border-top:1px solid var(--border-color,#333);
 }
 
+/* ── Resume banner (long-task interruption notice) ─────────── */
+.resume-banner {
+  margin:8px 12px; padding:10px 14px;
+  background:var(--bg-warning, #2a1f0e); color:var(--text-warning, #e8c547);
+  border:1px solid var(--border-warning, #5a4a1e); border-radius:8px;
+  font-size:13px; line-height:1.5;
+  display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px;
+}
+.resume-banner details { width:100%; margin-top:4px; }
+.resume-banner summary { cursor:pointer; font-size:12px; opacity:.8; }
+.resume-banner pre {
+  margin:4px 0 0; padding:6px 8px;
+  background:rgba(0,0,0,.3); border-radius:4px;
+  font-size:11px; max-height:120px; overflow:auto;
+  white-space:pre-wrap; word-break:break-all;
+}
+.resume-banner-close {
+  margin-left:auto; background:none; border:none;
+  color:inherit; cursor:pointer; font-size:14px;
+  padding:0 2px; line-height:1; opacity:.6;
+}
+.resume-banner-close:hover { opacity:1; }
+

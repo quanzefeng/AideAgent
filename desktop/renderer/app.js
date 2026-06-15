@@ -1102,6 +1102,31 @@ function loadChat(sessionId) {
     rebuildMessages(data);
     if (sessionDisplay) sessionDisplay.textContent = data.sessionId || "—";
     refreshSessionList();
+
+    // P1: check if this session has a turn_progress marker (was interrupted mid-task).
+    window.aideagent.getTurnProgress(sessionId).then(tp => {
+      if (tp && (tp.currentContinuation > 0 || tp.currentTurn > 0)) {
+        const banner = document.createElement("div");
+        banner.className = "resume-banner";
+        banner.textContent = `⚠ 此对话在第 ${tp.currentTurn} 轮（第 ${tp.currentContinuation + 1} 次续写）中断。可发消息让 agent 继续。`;
+        if (tp.lastSummary) {
+          const detail = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "查看上次摘要";
+          detail.appendChild(summary);
+          const pre = document.createElement("pre");
+          pre.textContent = tp.lastSummary;
+          detail.appendChild(pre);
+          banner.appendChild(detail);
+        }
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "✕";
+        closeBtn.className = "resume-banner-close";
+        closeBtn.onclick = () => { try { window.aideagent.clearTurnProgress(sessionId); } catch {} banner.remove(); };
+        banner.appendChild(closeBtn);
+        messageList.insertBefore(banner, messageList.firstChild);
+      }
+    }).catch(() => {});
   }).catch(() => {});
 }
 
@@ -1418,19 +1443,13 @@ function setupIPC() {
         }, 50);
       }
     }
-
-    if (data.done) {
-      if (state._renderTimer) {
-        clearTimeout(state._renderTimer);
-        state._renderTimer = null;
-      }
-      if (data.is_result && data.text) {
-        state.currentText = data.text;
-      }
-      updateAssistantContent(state.currentAssistantMsg, state.currentText);
-      finishAssistantMessage(state.currentAssistantMsg);
-      stopQuery();
-    }
+    // P3: a chunk may carry `done: true` in older code paths, but the
+    // canonical stream-end signal is the separate `stream:done` IPC
+    // (sent by ipc-handlers.mjs after agentLoop returns). The old
+    // dual-trigger path called stopQuery() here AND in onStreamDone,
+    // which could race with the queued-query processor and lose the
+    // final text. Treat chunk.done as a no-op and let stream:done
+    // own the close.
   });
 
   onIpc("onStreamReasoning", (data) => {
