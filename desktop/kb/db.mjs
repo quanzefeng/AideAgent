@@ -24,6 +24,8 @@ import { DB_PATH } from "./config.mjs";
 /** @type {DatabaseSync | null} */
 let _db = null;
 let _hasFts5 = false;
+/** @type {string | null} Override DB path for tests. Null = use default. */
+let _dbPathOverride = null;
 
 /**
  * Schema DDL for the four user tables. Exported so indexer.mjs can build
@@ -95,7 +97,7 @@ export const META_DDL = `
  */
 export function getDb() {
   if (_db) return _db;
-  _db = new DatabaseSync(DB_PATH);
+  _db = new DatabaseSync(_dbPathOverride || DB_PATH);
   _db.exec("PRAGMA journal_mode=WAL");
   _db.exec("PRAGMA foreign_keys=ON");
   // Wait up to 5s for write locks held by other processes (e.g. second
@@ -176,4 +178,17 @@ let _logError = (bucket, err) => {
 
 export function _registerLogger(fn) {
   _logError = fn;
+}
+
+/**
+ * Test-only: override the DB path. Pass null to reset to default.
+ * Resets the singleton so the next getDb() call uses the new path.
+ */
+export function _setDbPath(path) {
+  _dbPathOverride = path;
+  if (_db) {
+    try { _db.close(); } catch (e) { /* ignore */ }
+    _db = null;
+  }
+  _hasFts5 = false;
 }
