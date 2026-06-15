@@ -211,7 +211,16 @@ export async function rebuildIndex(progressCb) {
     db.exec("COMMIT");
   } catch (/** @type {any} */ e) {
     try { db.exec("ROLLBACK"); } catch { /* ignore */ }
-    if (String(e.code || "").includes("CONSTRAINT") || String(e.message).includes("PRIMARY KEY")) {
+    // node:sqlite surfaces PK violations as "UNIQUE constraint failed" with
+    // code ERR_SQLITE_ERROR; better-sqlite3 used SQLITE_CONSTRAINT_PRIMARYKEY.
+    // Match both shapes (and the legacy message "PRIMARY KEY" text) so the
+    // lock-held path is detected on either driver.
+    const msg = String(e.message || "");
+    if (
+      String(e.code || "").includes("CONSTRAINT") ||
+      /UNIQUE constraint failed/i.test(msg) ||
+      msg.includes("PRIMARY KEY")
+    ) {
       return { error: "rebuild already in progress" };
     }
     throw e;

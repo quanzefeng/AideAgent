@@ -124,4 +124,30 @@ describe("Atomic rebuildIndex", () => {
     const notesAfter = db2.prepare("SELECT COUNT(*) AS c FROM kb_notes").get();
     expect(notesAfter.c).toBe(3);
   });
+
+  it("concurrent rebuild: second call returns error, no corruption", async () => {
+    // ── Setup: pre-populate so we have something to swap ──
+    const r0 = await rebuildIndex();
+    expect(r0.ok).toBe(true);
+
+    // ── Manually set the lock to simulate an in-progress rebuild ──
+    const db = getDb();
+    db.prepare("INSERT INTO kb_meta(key, value) VALUES ('rebuild_lock', ?)").run("fake-lock");
+
+    // ── Act: attempt a rebuild while lock is held ──
+    const result = await rebuildIndex();
+
+    // ── Assert: returned error, didn't write anything new ──
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toMatch(/in progress/i);
+    }
+
+    // Lock row is still present (the second call did NOT clear it,
+    // because it bailed before the finally block ran — verify that
+    // by checking: the lock that the first rebuild set should still
+    // exist, untouched).
+    const lock = db.prepare("SELECT value FROM kb_meta WHERE key = 'rebuild_lock'").get();
+    expect(lock?.value).toBe("fake-lock");
+  });
 });
