@@ -26,6 +26,69 @@ let _db = null;
 let _hasFts5 = false;
 
 /**
+ * Schema DDL for the four user tables. Exported so indexer.mjs can build
+ * shadow tables (kb_*_new) with the exact same shape.
+ *
+ * Note: kb_fts uses FTS5 when available; the LIKE fallback is handled
+ * separately in getDb().
+ */
+export const SCHEMA_DDL = {
+  notes: `
+    CREATE TABLE IF NOT EXISTS kb_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rel_path TEXT UNIQUE NOT NULL,
+      filename TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      tags TEXT DEFAULT '[]',
+      word_count INTEGER DEFAULT 0,
+      mtime_ms INTEGER,
+      created_at TEXT,
+      updated_at TEXT
+    )`,
+  chunks: `
+    CREATE TABLE IF NOT EXISTS kb_chunks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id INTEGER NOT NULL,
+      chunk_index INTEGER DEFAULT 0,
+      heading TEXT DEFAULT '',
+      content TEXT NOT NULL,
+      FOREIGN KEY(note_id) REFERENCES kb_notes(id) ON DELETE CASCADE
+    )`,
+  embeddings: `
+    CREATE TABLE IF NOT EXISTS kb_embeddings (
+      chunk_id INTEGER PRIMARY KEY,
+      embedding BLOB NOT NULL,
+      dim INTEGER NOT NULL,
+      FOREIGN KEY(chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
+    )`,
+  fts5: `
+    CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
+      chunk_id UNINDEXED,
+      heading,
+      content,
+      tokenize='unicode61'
+    )`,
+  ftsFallback: `
+    CREATE TABLE IF NOT EXISTS kb_fts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chunk_id INTEGER,
+      heading TEXT,
+      content TEXT
+    )`,
+};
+
+/**
+ * Internal-state lookup table. Currently used for rebuild_lock; designed
+ * to be extensible (last_rebuild_at, embedding_model_version, etc.).
+ */
+export const META_DDL = `
+  CREATE TABLE IF NOT EXISTS kb_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`;
+
+/**
  * Get (or create) the singleton DB connection.
  * Lazy-initialized so first-time users don't pay the cost until they
  * actually need the DB.
@@ -39,97 +102,44 @@ export function getDb() {
   // AideAgent instance) instead of failing immediately with SQLITE_BUSY.
   _db.exec("PRAGMA busy_timeout=5000");
 
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rel_path TEXT UNIQUE NOT NULL,
-      filename TEXT NOT NULL,
-      title TEXT DEFAULT '',
-      tags TEXT DEFAULT '[]',
-      word_count INTEGER DEFAULT 0,
-      mtime_ms INTEGER,
-      created_at TEXT,
-      updated_at TEXT
-    )
-  `);
+  // ── User tables (notes, chunks, embeddings) ─────────────
+  _db.exec(SCHEMA_DDL.notes);
+  _db.exec(SCHEMA_DDL.chunks);
+  _db.exec(META_DDL);
 
-  // ── Chunk-level tables ─────────────────────────────────
-  // kb_chunks: stores individual chunks per note
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_chunks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      note_id INTEGER NOT NULL,
-      chunk_index INTEGER DEFAULT 0,
-      heading TEXT DEFAULT '',
-      content TEXT NOT NULL,
-      FOREIGN KEY(note_id) REFERENCES kb_notes(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Chunk-level FTS
+  // ── FTS5 with LIKE fallback ─────────────────────────────
   try {
-    _db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
-        chunk_id UNINDEXED,
-        heading,
-        content,
-        tokenize='unicode61'
-      )
-    `);
+    _db.exec(SCHEMA_DDL.fts5);
     // Verify the table actually has chunk_id column (schema migration check)
     const cols = _db.prepare("PRAGMA table_info(kb_fts)").all();
-    const hasChunkId = cols.some(/** @param {any} c */ c => String(c.name) === "chunk_id");
+    const hasChunkId = cols.some(c => String(c.name) === "chunk_id");
     if (!hasChunkId) {
-      // Old note-level schema — drop and recreate
       _db.exec("DROP TABLE IF EXISTS kb_fts");
-      _db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
-          chunk_id UNINDEXED,
-          heading,
-          content,
-          tokenize='unicode61'
-        )
-      `);
+      _db.exec(SCHEMA_DDL.fts5);
     }
     _hasFts5 = true;
     console.log("[kb] FTS5 available (chunk-level)");
-  } catch (/** @type {any} */ e) {
+  } catch (e) {
     console.log("[kb] FTS5 not available, using LIKE search:", e.message);
     _hasFts5 = false;
     try {
-      _db.exec(`
-        CREATE TABLE IF NOT EXISTS kb_fts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          chunk_id INTEGER,
-          heading TEXT,
-          content TEXT
-        )
-      `);
-    } catch (/** @type {any} */ e2) {
-      // Fallback table creation is best-effort; if it already exists
-      // (or the DB is read-only), we proceed with whatever worked.
+      _db.exec(SCHEMA_DDL.ftsFallback);
+    } catch (e2) {
       _logError("db", e2);
     }
   }
 
-  // Chunk-level embeddings
-  // Check column structure first to avoid dropping data on each startup
+  // Chunk-level embeddings: check column structure first to avoid dropping
+  // data on each startup
   {
     const embCols = _db.prepare("PRAGMA table_info(kb_embeddings)").all();
-    const hasChunkId = embCols.some(/** @param {any} c */ c => String(c.name) === "chunk_id");
+    const hasChunkId = embCols.some(c => String(c.name) === "chunk_id");
     if (!hasChunkId) {
       // Old note-level schema — drop and recreate
       _db.exec("DROP TABLE IF EXISTS kb_embeddings");
     }
   }
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS kb_embeddings (
-      chunk_id INTEGER PRIMARY KEY,
-      embedding BLOB NOT NULL,
-      dim INTEGER NOT NULL,
-      FOREIGN KEY(chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
-    )
-  `);
+  _db.exec(SCHEMA_DDL.embeddings);
 
   return _db;
 }
