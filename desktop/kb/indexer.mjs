@@ -27,7 +27,7 @@ import { _logError } from "./log.mjs";
 import { embedText, embedBatch, getEmbeddingDim } from "./embedder.mjs";
 import { vectorToBuffer } from "./vector-math.mjs";
 import { stripNoteBody, stripMarkdown, splitIntoChunks, extractTitle, extractTags } from "./markdown.mjs";
-import { ftsInsertChunk } from "./search.mjs";
+import { ftsInsertChunk, ftsInsertChunkNew } from "./search.mjs";
 
 /**
  * Re-index a single file from the vault (called by watcher on change).
@@ -146,119 +146,205 @@ export async function rebuildIndex(progressCb) {
   if (!_vaultPath || !existsSync(_vaultPath)) return { error: "vault not set or not found" };
 
   const db = getDb();
-  const notes = scanVaultInline(_vaultPath, _vaultPath);
 
-  // Clear existing data. These are outside any transaction so they take
-  // effect immediately; rebuild will start fresh.
-  try { db.exec("DELETE FROM kb_fts"); } catch (/** @type {any} */ e) { _logError("fts", e); }
-  try { db.exec("DELETE FROM kb_embeddings"); } catch (/** @type {any} */ e) { _logError("db", e); }
-  db.exec("DELETE FROM kb_chunks");
-  db.exec("DELETE FROM kb_notes");
+  // ── Phase 0+1: Acquire lock + create shadow tables (single transaction) ──
+  // If the INSERT raises SQLITE_CONSTRAINT_PRIMARYKEY, a rebuild is already
+  // in progress — ROLLBACK the entire transaction and return.
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    db.prepare("INSERT INTO kb_meta(key, value) VALUES ('rebuild_lock', ?)")
+      .run(new Date().toISOString());
 
-  // ── Pass 1: scan all notes + insert kb_notes rows + chunk them ─────
-  // We don't write chunks/embeddings yet — we need the full chunk list
-  // first so we can send EMBED_BATCH_SIZE chunks at a time to Ollama.
-  /**
-   * @type {Array<{noteId:number, noteTitle:string, relPath:string, chunkIndex:number, heading:string, content:string}>}
-   */
-  const allChunks = [];
-  for (const note of notes) {
+    // Create shadow tables with same schema as the originals.
+    db.exec(`
+      CREATE TABLE kb_notes_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rel_path TEXT UNIQUE NOT NULL,
+        filename TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]',
+        word_count INTEGER DEFAULT 0,
+        mtime_ms INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `);
+    db.exec(`
+      CREATE TABLE kb_chunks_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL,
+        chunk_index INTEGER DEFAULT 0,
+        heading TEXT DEFAULT '',
+        content TEXT NOT NULL,
+        FOREIGN KEY(note_id) REFERENCES kb_notes_new(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec(`
+      CREATE TABLE kb_embeddings_new (
+        chunk_id INTEGER PRIMARY KEY,
+        embedding BLOB NOT NULL,
+        dim INTEGER NOT NULL,
+        FOREIGN KEY(chunk_id) REFERENCES kb_chunks_new(id) ON DELETE CASCADE
+      )
+    `);
+    // FTS5 virtual table (or LIKE fallback if FTS5 unavailable)
     try {
-      const result = db.prepare(
-        "INSERT INTO kb_notes(rel_path, filename, title, tags, word_count, mtime_ms, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)"
-      ).run(note.relPath, note.filename, note.title, JSON.stringify(note.tags), note.wordCount, note.mtimeMs, new Date().toISOString(), new Date().toISOString());
-      const noteId = Number(result.lastInsertRowid);
-
-      const chunks = splitIntoChunks(note.body, note.title);
-      if (chunks.length === 0) {
-        chunks.push({ heading: note.title, content: stripMarkdown(note.body) || "" });
-      }
-
-      for (let ci = 0; ci < chunks.length; ci++) {
-        allChunks.push({
-          noteId,
-          noteTitle: note.title,
-          relPath: note.relPath,
-          chunkIndex: ci,
-          heading: chunks[ci].heading,
-          content: chunks[ci].content,
-        });
-      }
-    } catch (/** @type {any} */ e) {
-      console.error(`[kb] Failed to insert note ${note.relPath}:`, e.message);
+      db.exec(`
+        CREATE VIRTUAL TABLE kb_fts_new USING fts5(
+          chunk_id UNINDEXED,
+          heading,
+          content,
+          tokenize='unicode61'
+        )
+      `);
+    } catch (e) {
+      // FTS5 unavailable — use LIKE fallback schema
+      db.exec(`
+        CREATE TABLE kb_fts_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chunk_id INTEGER,
+          heading TEXT,
+          content TEXT
+        )
+      `);
     }
+    db.exec("COMMIT");
+  } catch (/** @type {any} */ e) {
+    try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+    if (String(e.code || "").includes("CONSTRAINT") || String(e.message).includes("PRIMARY KEY")) {
+      return { error: "rebuild already in progress" };
+    }
+    throw e;
   }
 
-  // ── Pass 2: batch-embed + write chunks in transactions ───────────
-  const max = getEffectiveMaxBodyChars();
-  const insertChunk = db.prepare(
-    "INSERT INTO kb_chunks(note_id, chunk_index, heading, content) VALUES (?,?,?,?)"
-  );
-  const insertEmbedding = db.prepare(
-    "INSERT INTO kb_embeddings(chunk_id, embedding, dim) VALUES (?,?,?)"
-  );
+  // From here on, we MUST release the lock. try/finally ensures it.
+  try {
+    const notes = scanVaultInline(_vaultPath, _vaultPath);
 
-  let indexed = 0;
-  let embedded = 0;
-  let chunked = 0;
-  let failed = 0;
-  const noteIndexedSet = new Set();
-  const total = notes.length;
+    // ── Phase 2: Pass 1 — fill shadow tables ──────────────────────────
+    /**
+     * @type {Array<{noteId:number, noteTitle:string, relPath:string, chunkIndex:number, heading:string, content:string}>}
+     */
+    const allChunks = [];
+    for (const note of notes) {
+      try {
+        const result = db.prepare(
+          "INSERT INTO kb_notes_new(rel_path, filename, title, tags, word_count, mtime_ms, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)"
+        ).run(note.relPath, note.filename, note.title, JSON.stringify(note.tags), note.wordCount, note.mtimeMs, new Date().toISOString(), new Date().toISOString());
+        const noteId = Number(result.lastInsertRowid);
 
-  const t0 = Date.now();
+        const chunks = splitIntoChunks(note.body, note.title);
+        if (chunks.length === 0) {
+          chunks.push({ heading: note.title, content: stripMarkdown(note.body) || "" });
+        }
 
-  for (let i = 0; i < allChunks.length; i += EMBED_BATCH_SIZE) {
-    const batch = allChunks.slice(i, i + EMBED_BATCH_SIZE);
+        for (let ci = 0; ci < chunks.length; ci++) {
+          allChunks.push({
+            noteId,
+            noteTitle: note.title,
+            relPath: note.relPath,
+            chunkIndex: ci,
+            heading: chunks[ci].heading,
+            content: chunks[ci].content,
+          });
+        }
+      } catch (/** @type {any} */ e) {
+        console.error(`[kb] Failed to insert note ${note.relPath}:`, e.message);
+      }
+    }
 
-    // Build embed input: title + heading + content (truncated to max).
-    const embedInputs = batch.map((c) =>
-      (c.noteTitle + "\n" + c.heading + "\n" + c.content).slice(0, max)
+    const max = getEffectiveMaxBodyChars();
+    const insertChunk = db.prepare(
+      "INSERT INTO kb_chunks_new(note_id, chunk_index, heading, content) VALUES (?,?,?,?)"
+    );
+    const insertEmbedding = db.prepare(
+      "INSERT INTO kb_embeddings_new(chunk_id, embedding, dim) VALUES (?,?,?)"
     );
 
-    // Send batch to Ollama. embedBatch() returns parallel array; null
-    // entries are failures (which we count but continue past).
-    let vectors;
-    try {
-      vectors = await embedBatch(embedInputs);
-    } catch (/** @type {any} */ e) {
-      _logError("embed", e);
-      failed += batch.length;
-      continue;
+    let indexed = 0;
+    let embedded = 0;
+    let chunked = 0;
+    let failed = 0;
+    const noteIndexedSet = new Set();
+    const total = notes.length;
+
+    const t0 = Date.now();
+
+    for (let i = 0; i < allChunks.length; i += EMBED_BATCH_SIZE) {
+      const batch = allChunks.slice(i, i + EMBED_BATCH_SIZE);
+
+      const embedInputs = batch.map((c) =>
+        (c.noteTitle + "\n" + c.heading + "\n" + c.content).slice(0, max)
+      );
+
+      let vectors;
+      try {
+        vectors = await embedBatch(embedInputs);
+      } catch (/** @type {any} */ e) {
+        _logError("embed", e);
+        failed += batch.length;
+        continue;
+      }
+
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        for (let j = 0; j < batch.length; j++) {
+          const c = batch[j];
+          const vec = vectors[j];
+          const chunkResult = insertChunk.run(c.noteId, c.chunkIndex, c.heading, c.content);
+          const chunkId = Number(chunkResult.lastInsertRowid);
+          ftsInsertChunkNew(chunkId, c.heading, c.content);
+          if (vec) {
+            insertEmbedding.run(chunkId, vectorToBuffer(vec), getEmbeddingDim());
+            embedded++;
+          } else {
+            failed++;
+          }
+          chunked++;
+          noteIndexedSet.add(c.noteId);
+        }
+        db.exec("COMMIT");
+      } catch (/** @type {any} */ e) {
+        try { db.exec("ROLLBACK"); } catch { /* ignored */ }
+        _logError("db", e);
+        failed += batch.length;
+      }
+
+      indexed = noteIndexedSet.size;
+      if (progressCb) progressCb({ indexed, embedded, chunked, failed, total });
     }
 
-    // Write chunks + embeddings in a transaction. This batches ~64
-    // INSERTs into one fsync instead of one-per-INSERT.
+    // ── Phase 3: atomic swap (single transaction) ─────────────────────
+    // Drop originals, RENAME shadows into place. If any step fails,
+    // ROLLBACK restores the originals intact.
     try {
       db.exec("BEGIN IMMEDIATE");
-      for (let j = 0; j < batch.length; j++) {
-        const c = batch[j];
-        const vec = vectors[j];
-        const chunkResult = insertChunk.run(c.noteId, c.chunkIndex, c.heading, c.content);
-        const chunkId = Number(chunkResult.lastInsertRowid);
-        ftsInsertChunk(chunkId, c.heading, c.content);
-        if (vec) {
-          insertEmbedding.run(chunkId, vectorToBuffer(vec), getEmbeddingDim());
-          embedded++;
-        } else {
-          failed++;
-        }
-        chunked++;
-        noteIndexedSet.add(c.noteId);
-      }
+      db.exec("DROP TABLE kb_fts");
+      db.exec("ALTER TABLE kb_fts_new RENAME TO kb_fts");
+      db.exec("DROP TABLE kb_embeddings");
+      db.exec("ALTER TABLE kb_embeddings_new RENAME TO kb_embeddings");
+      db.exec("DROP TABLE kb_chunks");
+      db.exec("ALTER TABLE kb_chunks_new RENAME TO kb_chunks");
+      db.exec("DROP TABLE kb_notes");
+      db.exec("ALTER TABLE kb_notes_new RENAME TO kb_notes");
       db.exec("COMMIT");
     } catch (/** @type {any} */ e) {
-      try { db.exec("ROLLBACK"); } catch { /* ignored */ }
+      try { db.exec("ROLLBACK"); } catch { /* ignore */ }
       _logError("db", e);
-      failed += batch.length;
+      throw e; // re-raise so caller knows; lock will still be cleared by finally
     }
 
-    indexed = noteIndexedSet.size;
-    if (progressCb) progressCb({ indexed, embedded, chunked, failed, total });
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    console.log(`[kb] rebuild done: ${chunked} chunks, ${embedded} embedded, ${failed} failed in ${elapsed}s`);
+    return { ok: true, indexed, embedded, chunked, failed, total };
+  } finally {
+    // ── Phase 4: always release the lock ──────────────────────────────
+    try {
+      db.prepare("DELETE FROM kb_meta WHERE key = 'rebuild_lock'").run();
+    } catch (/** @type {any} */ e) {
+      console.warn("[kb] failed to release rebuild_lock:", e.message);
+    }
   }
-
-  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`[kb] rebuild done: ${chunked} chunks, ${embedded} embedded, ${failed} failed in ${elapsed}s`);
-  return { ok: true, indexed, embedded, chunked, failed, total };
 }
 
 // Local inline copy of scanVault logic. We can't import from kb/vault-scanner
