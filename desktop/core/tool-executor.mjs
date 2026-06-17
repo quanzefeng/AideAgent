@@ -1,7 +1,7 @@
 // ── Tool Executor — runTool dispatch ────────────────────────
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -572,14 +572,14 @@ export async function runTool(tc) {
           byType[t] = (byType[t] || 0) + 1;
         }
         // Also count USER.md and MEMORY.md size for total context awareness
-        const home = require("node:os").homedir();
-        const userPath = require("node:path").join(home, ".aideagent", "memories", "USER.md");
-        const memoryPath = require("node:path").join(home, ".aideagent", "memories", "MEMORY.md");
+        const oldHome = homedir();
+        const oldUserPath = join(oldHome, ".aideagent", "memories", "USER.md");
+        const oldMemoryPath = join(oldHome, ".aideagent", "memories", "MEMORY.md");
         const fileMeta = {};
-        for (const [label, p] of [["USER.md", userPath], ["MEMORY.md", memoryPath]]) {
+        for (const [label, p] of [["USER.md", oldUserPath], ["MEMORY.md", oldMemoryPath]]) {
           try {
-            const stat = require("node:fs").statSync(p);
-            fileMeta[label] = { path: p, size: stat.size, mtime: stat.mtime.toISOString() };
+            const st = statSync(p);
+            fileMeta[label] = { path: p, size: st.size, mtime: st.mtime.toISOString() };
           } catch { /* not present */ }
         }
         return {
