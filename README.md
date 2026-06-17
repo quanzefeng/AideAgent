@@ -4,8 +4,6 @@
 
 ### The open-source Claude Desktop alternative — 28 tools, local RAG, Prompt Caching, all in one cross-platform desktop app.
 
-[![GitHub stars](https://img.shields.io/github/stars/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/network)
 [![GitHub release](https://img.shields.io/github/v/release/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
 [![Electron](https://img.shields.io/badge/Electron-40-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -253,7 +251,7 @@ desktop/
 
 ## 🔬 Who's Using AideAgent?
 
-> _Be the first! Star ⭐ the repo and open an issue to get featured here._
+> _Be the first to star ⭐ the repo and open an issue to get featured here._
 
 ---
 
@@ -304,16 +302,6 @@ npm run lint
 
 ---
 
-## ⭐ Star History
-
-<a href="https://star-history.com/#quanzefeng/AideAgent&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" />
-  </picture>
-</a>
-
 ---
 
 ## 💖 Sponsorship
@@ -338,7 +326,7 @@ If AideAgent saved you time or money, consider buying the author a coffee ☕
 
 <div align="center">
 
-**If this project helps you, please ⭐ star it — it helps more developers find it.**
+**If this project helps you, please consider starring it — it helps more developers find it.**
 
 Made with ❤️ by one developer in 24 days.
 
