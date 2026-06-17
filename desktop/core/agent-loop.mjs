@@ -16,6 +16,7 @@ import {
   taskStore, getTodoList,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
+  _surfacedMemories,
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
@@ -417,7 +418,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
       sendContextUsage(msgs);
 
-      let content, reasoningContent, tcs;
+      let content, reasoningContent, tcs, finishReason;
       try {
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
         // P1: compose user abort + per-call timeout so a hung API request
@@ -431,6 +432,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         allText += result.content;
         if (reasoningContent) allReasoning += reasoningContent;
         tcs = result.tcs;
+        // B1: capture finishReason so we can detect length-truncated responses
+        // and recover by asking the model to continue instead of accepting
+        // the truncated tail as a final answer.
+        finishReason = /** @type {any} */ (result).finishReason || null;
+        if (finishReason === "length") {
+          console.warn(`[agent-loop] response truncated by finish_reason=length (content=${content.length} chars, tcs=${tcs.length}). Will request continuation.`);
+        }
         // ── Log cache metrics & forward to UI ──
         if (result.usage) {
           /** @type {{ prompt_cache_hit_tokens?: number; prompt_tokens?: number; prompt_cache_miss_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; input_tokens?: number }} */
@@ -472,6 +480,19 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       // calls but also doesn't look like a final answer (i.e. still has unverified
       // tasks), push back a reminder instead of accepting the reply as done.
       if (tcs.length === 0) {
+        // B1: finish_reason="length" means the API hit max_tokens mid-stream
+        // before the model could finish (or call tools). The truncated tail
+        // is NOT a final answer — push a "please continue" reminder so the
+        // model resumes from where it was cut off instead of us accepting
+        // a half-finished reply as the agent's final output.
+        if (finishReason === "length") {
+          const continueReminder = `⚠️ 你上一次的回复因输出长度限制被截断了（最后的内容是：「${content.slice(-200)}」）。请从断点处继续——不要重复已经写完的内容，不要从头开始。`;
+          msgs.push({ role: "user", content: continueReminder });
+          // Also keep the truncated assistant message in history so the model
+          // can see what was already produced; do NOT set agentFinished.
+          turns++;
+          if (turns < MAX_TURNS) continue;
+        }
         const unverified = Array.from(taskStore.values()).filter(t => t.unverified === true);
         const activeTasks = Array.from(taskStore.values()).filter(t => t.status === "in_progress" || t.status === "pending");
         if (unverified.length > 0 || activeTasks.length > 0) {
@@ -587,6 +608,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
       // P0: rebuild context block from LIVE state instead of using stale snapshot
       _contextMsg = buildContextMsg();
+      // B6: continuation should re-surface previously-surfaced memories —
+      // otherwise after 5 turns the surfaced set contains all memories and
+      // memory-selection returns nothing. The summary already references
+      // the important facts, but giving the model fresh memory access lets
+      // it recall file paths / decisions / preferences that may not be in
+      // the summary's limited budget.
+      _surfacedMemories.clear();
       msgs = [sysMsg, continuationMsg, ...recentMsgs];
       if (_contextMsg) msgs.push(_contextMsg);
 

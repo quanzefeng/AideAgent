@@ -264,11 +264,17 @@ export function createPromptStore({ t, onConfirm }) {
     const id = "profile_" + Date.now();
     if (!promptStore) return;
     /** @type {PromptProfile} */
+    // FIX: was content: "" — that silently replaces DEFAULT_PROMPT with empty
+    // string, then falls back to DEFAULT_PROMPT only because content is empty.
+    // As soon as the user types ANY custom text, the entire DEFAULT_PROMPT is
+    // overwritten (system-prompt.mjs:261-264). Now we pre-fill with the
+    // {{INHERIT_DEFAULT}} token so user additions inherit the default rules
+    // (plan-then-act, KB rule, anti-hallucination, attention priority, etc.).
     const newProfile = {
       id,
       name,
       enabled: true,
-      content: "",
+      content: "{{INHERIT_DEFAULT}}\n\n",
     };
     promptStore.profiles[id] = newProfile;
     currentProfileId = id;

@@ -24,6 +24,19 @@ export function bumpVersion(ver) {
 
 const DEFAULT_PROMPT = `You are AideAgent, an expert coding assistant running on Windows with direct access to the user's computer. Your name is AideAgent, NOT Claude and NOT DeepSeek — you are a desktop AI coding agent called AideAgent.
 
+**🔒 反幻觉铁律（Anti-Hallucination Iron Rules — 优先级高于其他所有规则）：**
+1. **不要编造**。如果你不确定或不知道答案，**直说"我不知道"或"信息不足"**，绝对禁止虚构事实、文件路径、函数名、API、版本号或命令输出。
+2. **事实性问题必须先验证再回答**：
+   - 当前事件、最新版本、最近动态、新闻、API 变化 → **先用 \`web_search\`**（联网搜索已开启时），不要凭训练数据回答
+   - 用户私有知识（项目、文件、配置、笔记）→ **先用 \`kb_search\` 或 \`file_read\`**，不要凭印象回答
+   - 代码问题（文件存在、函数签名、命令输出）→ **必须用 \`file_read\`/\`bash\`/\`grep\` 实测**，不要凭记忆回答
+3. **引用来源**：事实性陈述必须说明"我已通过 X 验证"或"根据 web_search/kb_search 结果"。
+4. **时间敏感信息**：你训练数据有截止日期。**任何日期、版本、价格、状态等可能变化的事实，如果与你的训练截止日期相距超过 6 个月，必须先用 web_search 重新确认**。
+5. **未知 ≠ 默认**："我不知道"永远好过"可能是 X"（猜错）。
+
+**当前日期（Current Date）：** \${CURRENT_DATE}
+**训练数据截止参考：** DeepSeek V4 ≈ 2025-05，Claude Sonnet 4 ≈ 2025-03，MiniMax M3 ≈ 2025-04。此日期之后的事件必须用 web_search 验证。
+
 **Plan-then-act protocol (read carefully):**
 When the user asks you to DO something (write code, run commands, edit files, create or invoke a skill), your FIRST visible response must include a \`<plan>\` block BEFORE any tool call. This is non-negotiable for any task that will take more than one tool call to complete, or that touches the filesystem, runs commands, or makes changes the user cannot easily undo.
 
@@ -244,6 +257,12 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
       }).join("\n")
     : "  (no skills enabled)";
 
+  // FIX: inject current date into DEFAULT_PROMPT so the LLM has temporal
+  // awareness (was missing entirely — see hallucination investigation).
+  // Computed once per session, not per token, so caching stays safe.
+  const CURRENT_DATE = new Date().toISOString().split("T")[0];
+  const PROMPT_WITH_DATE = DEFAULT_PROMPT.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE);
+
   let content = "";
   try {
     const store = loadPromptProfiles();
@@ -259,10 +278,12 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
         // (full replacement), preserving backward compatibility.
         const profileContent = profile.content.trim();
         if (profileContent.includes("{{INHERIT_DEFAULT}}")) {
-          content = profileContent.replace(/\{\{INHERIT_DEFAULT\}\}/g, DEFAULT_PROMPT);
+          content = profileContent.replace(/\{\{INHERIT_DEFAULT\}\}/g, PROMPT_WITH_DATE);
         } else {
           content = profileContent;
         }
+        // Substitute CURRENT_DATE in user custom prompts too (they may reference it).
+        content = content.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE);
         content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
       }
     }
@@ -271,7 +292,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   }
 
   if (!content) {
-    content = DEFAULT_PROMPT;
+    content = PROMPT_WITH_DATE;
   }
 
   const mcpServers = mcpManager.listServers().filter(s => s.status === "running");

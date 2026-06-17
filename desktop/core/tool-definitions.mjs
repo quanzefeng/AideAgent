@@ -99,7 +99,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "web_fetch",
-      description: "Fetch a URL and extract readable text content.\n\nUSE for: reading documentation pages, articles, GitHub READMEs, API references, single-page fetches where you know the URL.\n\nDO NOT use for: searching across multiple sources (use `web_search`); reading local files (use `file_read`); bulk operations (do multiple `web_fetch` in parallel via sub-agents).",
+      description: "Fetch a URL and extract readable text content.\n\nMUST USE when: the user provides a specific URL and asks you to read/summarize/extract content from it; or after `web_search` returns a result whose content you need to read in full.\n\nDO NOT use for: searching across multiple sources (use `web_search`); reading local files (use `file_read`); bulk operations (do multiple `web_fetch` in parallel via sub-agents).",
       parameters: {
         type: "object", properties: {
           url: { type: "string", description: "The URL to fetch (must start with http:// or https://)" },
@@ -112,7 +112,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search the internet for current information.\n\nUSE for: up-to-date news, recent documentation, current API changes, current best practices, anything post-training-cutoff.\n\nDO NOT use for: searching the user's local files (use `grep` / `glob`); searching their knowledge base (use `kb_search`); questions about the current project (read the files instead — they are authoritative).",
+      description: "Search the internet for current information.\n\nMUST USE when answering ANY question that involves:\n  - Current events, news, recent developments (anything that may have changed after your training cutoff)\n  - Latest versions of libraries/frameworks/tools (Node.js, Python, packages, APIs)\n  - Time-sensitive data (prices, status, availability, statistics)\n  - Current best practices or recent documentation that may differ from your training data\n  - Anything where being wrong by a few months would mislead the user\n\nDO NOT use for: searching the user's local files (use `grep` / `glob`); searching their knowledge base (use `kb_search`); questions about the current project (read the files instead — they are authoritative).\n\nIf you would otherwise answer from memory and the answer involves dates, versions, or recent changes, you MUST call this tool first. Hallucinating a version number or API change is worse than saying 'let me check'.",
       parameters: {
         type: "object", properties: {
           query: { type: "string", description: "The search query" },
@@ -371,7 +371,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "kb_search",
-      description: "Search the user's knowledge base (Obsidian vault) for notes matching a query. Returns relevant snippets.\n\nUSE for: when the system prompt's <knowledge-base> section doesn't have enough detail; when you need to find specific information from the user's personal notes; questions about the user's projects/notes/research.\n\nDO NOT use for: searching the current project (use `grep` / `glob`); reading a known note (use `kb_get_note`); general web search (use `web_search`).",
+      description: "Search the user's knowledge base (Obsidian vault) for notes matching a query. Returns relevant snippets.\n\nMUST USE when: the question is about the user's personal notes, projects, research, or anything in their Obsidian vault; the <knowledge-base> section in this prompt doesn't have enough detail; or before claiming 'I don't have that information' about user-specific topics.\n\nDO NOT use for: searching the current project (use `grep` / `glob`); reading a known note (use `kb_get_note`); general web search (use `web_search`).\n\nIf the user's question concerns their own knowledge, plans, or past work, you MUST check here before answering from memory.",
       parameters: {
         type: "object",
         properties: {

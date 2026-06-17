@@ -102,7 +102,7 @@ export const MAX_CONTINUATIONS = 5;
 export const CONTEXT_WINDOW = 262144;
 export const CONTEXT_WARN_PCT = 0.80;
 export const CONTEXT_COMPRESS_PCT = 0.90;
-export const TOOL_RESULT_KEEP_CHARS = 500;
+export const TOOL_RESULT_KEEP_CHARS = 2500;  // B3: was 500 — too aggressive, destroyed most tool output (file_read/grep/web_fetch results were 90%+ truncated)
 export const LLM_CALL_TIMEOUT = 300_000; // 5 min per LLM API call — prevents infinite hang
 
 export let abortCtrl = null;

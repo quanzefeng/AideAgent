@@ -136,8 +136,11 @@ export function compressContext(msgs, budget) {
   // Step 2: prune middle messages while preserving tool_call/result pairs.
   const systemEnd = msgs.findIndex(m => m.role !== "system");
   if (systemEnd === -1) return { estimatedTokens: afterTruncation.totalTokens, compressed: true, removedMessages };
-  const ANCHOR = 6;  // first 6 non-system messages preserved as cache prefix
-  const RECENT = 8;  // last 8 messages preserved as current context (includes user question)
+  // B3: was 6/8 = 14 messages kept, ~72% of conversation dropped. Relax to
+  // 10/12 = 22 messages to keep more early decisions / file refs alive
+  // through compression. Still bounded so the prompt stays cache-friendly.
+  const ANCHOR = 10;  // first 10 non-system messages preserved as cache prefix
+  const RECENT = 12;  // last 12 messages preserved as current context (includes user question)
   if (msgs.length <= systemEnd + ANCHOR + RECENT) {
     return { estimatedTokens: afterTruncation.totalTokens, compressed: true, removedMessages: 0 };
   }
