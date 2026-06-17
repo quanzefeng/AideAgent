@@ -132,6 +132,13 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   const tcAccum = {};
   let finishReason = null;
   let usage = null;
+  // DEBUG_REASONING=1 dumps the first non-empty delta keys so we can see
+  // what fields the API actually returns (e.g. for MiniMax M3, which uses
+  // a different field name than DeepSeek's `delta.reasoning_content`).
+  // Set the env var, restart the app, run a conversation, then check the
+  // Electron main-process console for the [reasoning-debug] lines.
+  const debugReasoning = process.env.DEBUG_REASONING === "1";
+  if (debugReasoning) console.log(`[reasoning-debug] openaiCall model=${model} url=${apiUrl}`);
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -148,6 +155,16 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
         if (j.usage) usage = j.usage; // last chunk carries cache metrics
         if (delta.content) { content += delta.content; sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
         if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
+        if (debugReasoning) {
+          // Log every field the delta exposes (once per unique shape) so we
+          // can spot the field name MiniMax M3 / similar providers actually
+          // use for chain-of-thought.
+          const k = Object.keys(delta).sort().join(",");
+          if (!(/** @type {any} */ (globalThis.__reasoningDebugSeen || (globalThis.__reasoningDebugSeen = new Set()))).has(k)) {
+            globalThis.__reasoningDebugSeen.add(k);
+            console.log(`[reasoning-debug] delta keys: ${k}`);
+          }
+        }
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             if (!tcAccum[tc.index]) tcAccum[tc.index] = { id: "", type: "function", function: { name: "", arguments: "" } };
@@ -159,6 +176,13 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
       } catch { /* ignored */ }
     }
     buf = buf.split("\n").pop() || "";
+  }
+  if (debugReasoning) {
+    console.log(`[reasoning-debug] final reasoningContent.length=${reasoningContent.length} content.length=${content.length}`);
+    if (!reasoningContent && content.length > 0) {
+      console.log(`[reasoning-debug] ⚠️ reasoningContent is empty but content has ${content.length} chars.`);
+      console.log(`[reasoning-debug] content first 500: ${content.slice(0, 500).replace(/\n/g, "\\n")}`);
+    }
   }
   return { content, reasoningContent, finishReason, tcs: Object.values(tcAccum), usage };
 }
@@ -172,7 +196,7 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
  * @param {boolean} [reasoning]
  * @param {boolean} [kbEnabled]
  * @param {boolean} [webSearchEnabled]
- * @returns {Promise<{content: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
+ * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
 export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
   const { messages, system } = toAnthropicMessages(msgs);
@@ -229,11 +253,16 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   }
   const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
-  let buf = "", content = "";
+  let buf = "", content = "", reasoningContent = "";
   /** @type {Record<number, {id: string, name: string, input: string}>} */
   const tcAccum = {};
   let finishReason = null;
   let usage = null;
+  // DEBUG_REASONING=1 dumps the first event type so we can see what the
+  // API actually streams (e.g. does it emit `thinking_delta` or a custom
+  // event for chain-of-thought?).
+  const debugReasoning = process.env.DEBUG_REASONING === "1";
+  if (debugReasoning) console.log(`[reasoning-debug] anthropicCall model=${model} endpoint=${apiUrl}`);
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -256,6 +285,14 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
             content += j.delta.text;
             sendToRenderer("stream:chunk", { text: j.delta.text, done: false });
           } else if (j.type === "content_block_delta" && j.delta?.type === "thinking_delta") {
+            // BUGFIX: anthropicCall used to only forward `stream:reasoning` to
+            // the renderer (so live chat could show thinking) but never
+            // accumulated it locally. That meant `result.reasoningContent`
+            // was always `undefined` for Anthropic-format APIs → the DB
+            // `reasoning_content` column stayed NULL → reasoning vanished
+            // when reloading historical conversations. Now we accumulate
+            // alongside the live event so save path can persist it.
+            reasoningContent += j.delta.thinking;
             sendToRenderer("stream:reasoning", { text: j.delta.thinking });
           } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
             tcAccum[j.index] = { id: j.content_block.id, name: j.content_block.name, input: "" };
@@ -274,5 +311,11 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     id: tc.id, type: "function",
     function: { name: tc.name, arguments: tc.input },
   }));
-  return { content, finishReason, tcs, usage };
+  if (debugReasoning) {
+    console.log(`[reasoning-debug] anthropicCall end: reasoningContent.length=${reasoningContent.length} content.length=${content.length}`);
+    if (!reasoningContent && content.length > 0) {
+      console.log(`[reasoning-debug] anthropicCall ⚠️ reasoningContent empty but content has ${content.length} chars.`);
+    }
+  }
+  return { content, reasoningContent, finishReason, tcs, usage };
 }

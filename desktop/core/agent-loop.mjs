@@ -29,10 +29,40 @@ let _contextBlockBaseCache = null;
  * @returns {string}
  */
 function getHistoryTitle(history) {
-  const firstUser = history.find(/** @param {{role:string,content:any}} m */ m => m.role === "user");
+  const firstUser = history.find(/** @param {{role:string,content:any}} m */ (/** @type {any} */ m) => m.role === "user");
   if (!firstUser) return "新对话";
   const text = typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content || "");
   return text.replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
+}
+
+/**
+ * Extract `<think>…</think>` blocks from a content string. Mirrors the
+ * renderer's `extractThinkingBlocks` (renderer/app.js) so that what we save
+ * in `content` matches what the live chat renders after extraction.
+ *
+ * Why: models like MiniMax M3 sometimes stream their chain-of-thought
+ * inside the `content` field (as `<think>…</think>` tags) rather than as a
+ * separate `reasoning_content` field. The live chat shows it via the
+ * renderer's regex, but on reload the DB still has the tags inside `content`
+ * AND a NULL `reasoning_content` column. Stripping at save time fixes both
+ * problems: the reasoning ends up in the `reasoning_content` column where it
+ * belongs, and the saved `content` is clean text that renders identically
+ * to the live chat.
+ *
+ * @param {string} text
+ * @returns {{ cleanText: string, thinkText: string }}
+ */
+export function extractThinkBlocks(text) {
+  if (!text) return { cleanText: "", thinkText: "" };
+  const re = /<think>([\s\S]*?)<\/think>/gi;
+  const blocks = [];
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const t = match[1].trim();
+    if (t) blocks.push(t);
+  }
+  const cleanText = text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { cleanText, thinkText: blocks.join("\n\n") };
 }
 
 /**
@@ -511,7 +541,23 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             const histSnapshot = msgs
               .filter(m => m.role === "user" || m.role === "assistant")
               .slice(-200)
-              .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "", reasoning_content: m.reasoning_content, tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0 ? m.tool_calls : undefined }));
+              .map(m => {
+                // Strip embedded <think> blocks so the saved `content` is
+                // the user-visible text only, and (re-)derive `reasoning_content`
+                // from those blocks when the API didn't stream a separate
+                // field. Models like MiniMax M3 rely on this fallback.
+                const rawContent = typeof m.content === "string" ? m.content : "";
+                const { cleanText, thinkText } = extractThinkBlocks(rawContent);
+                const reasoning = m.reasoning_content
+                  ? (thinkText ? `${m.reasoning_content}\n\n${thinkText}` : m.reasoning_content)
+                  : thinkText;
+                return {
+                  role: m.role,
+                  content: cleanText || rawContent,
+                  reasoning_content: reasoning || undefined,
+                  tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0 ? m.tool_calls : undefined,
+                };
+              });
             await sessionDb.saveSession(sessionId, histSnapshot, getHistoryTitle(histSnapshot));
             sessionDb.saveTurnProgress(sessionId, {
               currentTurn: turns,
@@ -574,9 +620,31 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     try { sessionDb.clearTurnProgress(sessionId); } catch { /* ignored */ }
   }
 
-  // Save conversation
-  const historyAsst = /** @type {{ role: string, content: string, reasoning_content?: string }} */ ({ role: "assistant", content: allText || "" });
-  if (allReasoning) historyAsst.reasoning_content = allReasoning;
+  // Save conversation.
+  //
+  // Why we also strip <think> blocks: models like MiniMax M3 / DeepSeek R1
+  // sometimes embed the chain-of-thought inside `content` (as `<think>…</think>`
+  // tags) instead of streaming it via the separate `reasoning_content` field.
+  // The renderer's `extractThinkingBlocks` handles this on display, but the
+  // DB ends up with the think tags still baked into `content` and the
+  // `reasoning_content` column stays NULL — so the reasoning is visible during
+  // the live chat and then vanishes on reload. To make the save robust to
+  // both APIs, we:
+  //   1. pull <think>…</think> blocks out of `allText` and merge them into
+  //      `allReasoning` (preferring the API field if both are present)
+  //   2. write the cleaned `content` so reload and live chat render identically
+  const { cleanText, thinkText } = extractThinkBlocks(allText);
+  const combinedReasoning = allReasoning
+    ? (thinkText ? `${allReasoning}\n\n${thinkText}` : allReasoning)
+    : thinkText;
+  const historyAsst = /** @type {{ role: string, content: string, reasoning_content?: string }} */ ({ role: "assistant", content: cleanText || allText || "" });
+  if (combinedReasoning) historyAsst.reasoning_content = combinedReasoning;
+  if (process.env.DEBUG_REASONING === "1") {
+    console.log(`[reasoning-debug] agent-loop end: allReasoning.length=${allReasoning.length}, allText.length=${allText.length}, thinkText.length=${thinkText.length}, combinedReasoning.length=${combinedReasoning.length}`);
+    if (!combinedReasoning) {
+      console.log(`[reasoning-debug] ⚠️ combined reasoning is EMPTY. Provider is not returning reasoning_content AND content has no <think> tags.`);
+    }
+  }
   const historyUser = { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") };
   const hist = getHistory();
   hist.push(historyUser, historyAsst);
