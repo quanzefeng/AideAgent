@@ -179,7 +179,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.6;
   color: var(--text);
   background: var(--bg);
@@ -1745,7 +1745,7 @@ html, body {
   padding: 10px 14px;
   border-radius: var(--radius-bubble);
   line-height: 1.65;
-  font-size: 16px;
+  font-size: 15px;
   font-family: var(--chat-font, var(--font-sans));
   overflow-wrap: break-word;
   display: inline-block;
@@ -1776,7 +1776,7 @@ html, body {
 
 .message.assistant .message-text {
   line-height: 1.8;
-  font-size: 16px;
+  font-size: 15px;
   font-family: var(--chat-font, var(--font-sans));
   color: var(--text);
 }
@@ -1869,7 +1869,7 @@ html, body {
 
 /* 推理文字（thinking / reasoning_content） */
 .thinking-reasoning {
-  color: var(--text-muted);
+  color: var(--text-light);
   font-size: 13px;
   font-family: var(--chat-font, var(--font-sans));
   line-height: 1.6;
@@ -2016,9 +2016,9 @@ html, body {
 }
 
 .message-bubble h1,
-.message-text h1 { font-size: 20px; }
+.message-text h1 { font-size: 19px; }
 .message-bubble h2,
-.message-text h2 { font-size: 18px; }
+.message-text h2 { font-size: 17px; }
 .message-bubble h3,
 .message-text h3 { font-size: 16px; }
 .message-bubble h4,
@@ -2151,7 +2151,7 @@ html, body {
   resize: none;
   outline: none;
   max-height: 200px;
-  min-height: 22px;
+  min-height: 48px;
 }
 
 #prompt-input::placeholder {

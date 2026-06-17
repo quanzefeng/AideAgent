@@ -75,12 +75,17 @@ export function renderLatexInElement(el) {
 }
 
 /**
- * Auto-resize a textarea to fit its content (capped at 200px).
+ * Auto-resize a textarea to fit its content. Always honors the CSS
+ * min-height (set on #prompt-input, currently 30px) so an empty input
+ * never collapses below the comfortable single-line height, then grows
+ * up to the CSS max-height (200px) for longer prompts.
  * @param {HTMLTextAreaElement} textarea
  */
 export function autoResize(textarea) {
   textarea.style.height = "auto";
-  textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+  const minH = parseFloat(getComputedStyle(textarea).minHeight) || 0;
+  const maxH = parseFloat(getComputedStyle(textarea).maxHeight) || Infinity;
+  textarea.style.height = Math.max(minH, Math.min(textarea.scrollHeight, maxH)) + "px";
 }
 
 /**
