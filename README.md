@@ -1,490 +1,345 @@
-# AideAgent
-
-> 一个功能强大的桌面 AI 助手，拥有 28 个内置工具、知识库 RAG、多模型支持、Hook 扩展、自动压缩继续、自进化记忆等能力。  
-> A powerful desktop AI assistant with 28 built-in tools, RAG knowledge base, multi-model support, Hook extensions, automatic context continuation, and self-evolving memory.
-
----
-
-## 产品预览 / Preview
-
-![主对话界面 / Main Chat Interface](docs/screenshots/01-main-chat.png)
-
-*主对话界面：左侧会话列表 + 工作目录，中间流式对话区，底部输入框配 4 个智能开关（计划模式 / 知识库 / 联网搜索 / 深度推理）*  
-*Main chat interface: session list + workspace on the left, streaming conversation in the middle, input box with 4 smart toggles (Plan Mode / Knowledge Base / Web Search / Deep Reasoning) at the bottom*
-
----
-
-## 项目简介 / Introduction
-
-**中文**：AideAgent 是一款桌面 AI 助手，支持多种大语言模型（DeepSeek、Claude、GLM、Qwen、MiniMax 等），内置丰富的工具集，可以帮你编程、搜索、管理文件、操作 Git、查阅知识库，让 AI 真正成为一个能干的助手。
-
-![功能概览 / Features Overview](docs/screenshots/03-features-overview.png)
-
-*Agent 自主介绍：28 个内置工具 / 混合 RAG / 持久记忆 / 自进化 / Hook 系统 / 微信机器人 / 计划模式 一应俱全*  
-*Self-introduction by the Agent: 28 built-in tools / hybrid RAG / persistent memory / self-evolution / Hook system / WeChat bot / plan mode — all in one*
-
-**English**: AideAgent is a desktop AI assistant supporting multiple LLMs (DeepSeek, Claude, GLM, Qwen, MiniMax, etc.) with a rich built-in toolset. It helps you code, search, manage files, operate Git, and query knowledge bases — making AI a truly capable assistant.
-
----
-
-## 功能特性 / Features
-
-### 多模型支持 / Multi-Model Support
-
-内置 8 个模型供应商预设，一键切换。支持 OpenAI 兼容和 Anthropic 两种 API 格式，也可以自定义任何兼容的 API 地址。  
-Built-in 8 provider presets with one-click switching. Supports both OpenAI-compatible and Anthropic API formats. Custom API endpoints are also supported.
-
-| 供应商 / Provider | 说明 / Description |
-|--------|------|
-| DeepSeek | V4-Flash / V4-Pro |
-| GLM（智谱） | GLM-4.7-Flash / GLM-4-Plus |
-| Qwen（通义千问） | Qwen3.7-Max / Qwen-Plus |
-| Claude（Anthropic） | Sonnet 4.6 / Opus 4.7 / Haiku 4.5 |
-| MiniMax | M2.7 / M2.7-Highspeed |
-| llama.cpp | 本地部署 / Local |
-| LM Studio | 本地部署 / Local |
-| Ollama | 本地部署 / Local |
-
----
-
-### 28 个内置工具 / 28 Built-in Tools
-
-#### 文件与代码 / Files & Code
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `file_read` | 读取文件内容 / Read file content |
-| `file_write` | 创建或覆盖文件 / Create or overwrite files |
-| `file_edit` | 精确替换文本（支持多行匹配）/ Surgical text replacement |
-| `grep` | 正则搜索代码内容 / Regex search in code |
-| `glob` | 按文件名模式查找文件 / Find files by glob pattern |
-| `lsp` | 代码智能：跳转定义、查找引用、悬停信息 / Language server: go-to-def, references, hover |
-
-#### 命令执行 / Shell
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `bash` | 跨平台命令执行（Windows=pwsh, Linux/macOS=bash），含危险操作检测与 Hook 拦截 / Cross-platform shell with dangerous command detection and Hook interception |
-
-#### 网络搜索 / Web
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `web_search` | 🌟 **推荐**：Tavily API — 稳定、高速、适合生产环境。配置 API Key 后使用 / **Recommended**: Tavily API — stable, fast, production-ready. Requires API Key |
-| `web_search` | 🆓 **免费内置**：元搜索引擎（自动 Bing 回退）— 零配置，开箱即用，适合个人低频使用 / **Built-in Fallback**: Meta-search engine (auto Bing fallback) — zero config, works out of the box, for personal low-frequency use |
-| `web_fetch` | 抓取并提取网页内容（含 SSRF 防护）/ Fetch and extract web content (with SSRF protection) |
-
-**搜索优先级**：
-
-1. **Tavily API（推荐）**：在设置中填入有效的 Tavily Key 后自动启用，搜索质量最高、响应最快
-2. **内置元搜索（免配置）**：未配置 Tavily 时自动降级，通过多引擎并行抓取（Bing + 备用源）返回结果
-3. **Tavily API (Recommended)**: Auto-enabled when a valid Tavily Key is configured in Settings — best quality and fastest response
-4. **Built-in Meta-Search (Zero Config)**: Auto-fallback when Tavily is not configured — parallel scraping across multiple engines (Bing + fallback sources)
-
-#### 版本控制 / Version Control
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `git_diff` | 查看 Git 差异 / View git diff |
-| `git_commit` | 创建 Git 提交（使用安全 spawn，防命令注入）/ Create commit (safe spawn, injection-proof) |
-| `git_branch` | 管理 Git 分支 / Manage git branches |
-| `gh_pr` | 管理 GitHub Pull Request / GitHub PR management |
-| `gh_issue` | 管理 GitHub Issue / GitHub Issue management |
-| `gh_repo` | 查看 GitHub 仓库信息 / View GitHub repo info |
-
-#### 知识管理 / Knowledge Management
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `kb_search` | 搜索知识库（FTS5 全文 + 向量语义 + RRF 融合）/ Hybrid RAG search |
-| `kb_write` | 写入笔记到知识库 / Write notes to knowledge base |
-| `kb_get_note` | 读取知识库单条笔记 / Read a single knowledge base note |
-| `write_memory` | 保存跨会话的永久记忆 / Save persistent cross-session memories |
-
-#### 任务与协作 / Tasks & Collaboration
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `TaskCreate` | 创建任务追踪复杂工作 / Create tasks for tracking complex work |
-| `TaskUpdate` | 更新任务状态 / Update task status |
-| `TaskList` | 查看所有任务进度 / View all tasks |
-| `TodoWrite` | 写临时待办清单 / Write session todo checklist |
-| `AskUserQuestion` | 多选问题询问用户 / Ask user multiple-choice questions |
-
-#### 技能系统 / Skill System
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `skill` | 加载 L3 安装技能 / Load installed skills |
-| `invoke_skill` | 调用 Agent 自创技能（L2），自动回退到 L3 / Invoke agent-created skills with L3 fallback |
-| `create_skill` | 创建或更新技能工作流（LLM 自动生成内容）/ Create or update skills (LLM auto-generates) |
-
-#### 子代理 / Sub-Agent
-| 工具 / Tool | 说明 / Description |
-|------|------|
-| `Agent` | 启动只读子代理，并行执行研究任务 / Launch read-only sub-agents for parallel research |
-
----
-
-### MCP 扩展 / MCP Extensions
-
-**中文**：支持 Model Context Protocol，可接入外部工具服务器。支持本地进程（stdio）和远程服务（HTTP）两种方式，自动检测 Claude Code、Claude Desktop、OpenCode 的本地 MCP 配置。接入后，MCP 工具与内置工具统一调用。
-
-**English**: Supports Model Context Protocol for external tool servers via stdio and HTTP. Auto-detects local MCP configurations from Claude Code, Claude Desktop, and OpenCode. MCP tools are seamlessly integrated alongside built-in tools.
-
----
-
-### 知识库 / Knowledge Base (RAG)
-
-**中文**：对接 Obsidian vault，实现本地知识检索。
-
-- **混合搜索**：FTS5 关键词全文搜索 + 向量语义搜索
-- **RRF 融合**：自动合并两种搜索结果，取最相关的内容
-- **向量模型**：内置 MiniLM-L6（384维，离线可用），支持 Ollama 自定义模型
-- **MRL 无损压缩**：自动检测模型是否支持 Matryoshka 嵌入（如 qwen3-embedding），原生 1024 维无损压缩到 384 维
-- **智能截断**：自动检测 Ollama 模型上下文长度，按模型能力截断嵌入文本
-- **即时注入**：相关笔记自动注入到对话 system prompt 中
-
-
-![知识库搜索结果 / Knowledge Base Search Results](docs/screenshots/02-knowledge-base-search.png)
-
-*混合 RAG 检索：FTS5 关键词 + 向量语义搜索，RRF 融合后取最相关内容注入上下文*  
-*Hybrid RAG search: FTS5 keyword + vector semantic, fused via RRF for optimal relevance*
-
-**English**: Connects to Obsidian vault for local knowledge retrieval.
-
-- **Hybrid Search**: FTS5 keyword search + vector semantic search
-- **RRF Fusion**: Automatically merges both search results for optimal relevance
-- **Vector Models**: Bundled MiniLM-L6 (offline-ready, shipped with the app), Ollama with model selection
-- **Smart Truncation**: Auto-detects Ollama model context length for optimal embedding
-- **Context Injection**: Relevant notes are automatically injected into the system prompt
-
----
-
-### 持久记忆 / Persistent Memory
-
-**中文**：跨会话的记忆系统，让 Agent 越用越了解你。
-
-- 多文件 Markdown 存储，支持类型标签（用户偏好、项目背景、反馈纠错、参考资源）
-- **语义选择**：每次对话自动挑选最相关的记忆注入上下文
-- **去重检测**：防止重复保存相似内容
-
-**English**: Cross-session memory system that helps the agent learn about you over time.
-
-- Multi-file Markdown storage with type tags (user, project, feedback, reference)
-- **Semantic Selection**: Auto-selects the most relevant memories for each conversation
-- **Deduplication**: Prevents saving duplicate content
-
----
-
-### 自进化 / Self-Evolution
-
-**中文**：对话结束后自动反思，提取长期记忆。
-
-- **自动审查**：每次对话结束后，Agent 在后台分析最近的交流
-- **提取三类记忆**：用户偏好（PREFERENCE）、技术决策（DECISION）、新知识（KNOWLEDGE）
-- **自动写入**：提取到的信息自动保存到 USER.md / MEMORY.md
-- **零感知**：后台静默完成，不影响对话体验
-
-**English**: Automatic post-session reflection and memory extraction.
-
-- **Auto-Review**: After each session, the agent analyzes recent exchanges in the background
-- **Three Memory Types**: User preferences, technical decisions, and new knowledge
-- **Auto-Save**: Extracted insights are automatically saved to USER.md / MEMORY.md
-- **Zero Friction**: Runs silently in the background without affecting the conversation
-
----
-
-### 自动压缩继续 / Auto-Compress & Continue
-
-**中文**：处理超长复杂任务时，Agent 不会中断。
-
-- **上下文感知**：当 token 使用量达到 90%（256K 窗口）时自动触发
-- **摘要压缩**：调用 LLM 对历史对话做智能摘要，保留关键决策和文件信息
-- **无缝继续**：重建上下文后自动继续工作，对话中显示"第 N 次自动继续"
-- **最多 5 次**：每轮 50 个工具调用 × 5 次继续 = 最多 250 轮有效工作
-
-**English**: Handles ultra-long complex tasks without interruption.
-
-- **Context-Aware**: Automatically triggers at 90% token usage (256K window)
-- **AI Summarization**: Uses LLM to intelligently summarize conversation history, preserving key decisions
-- **Seamless Continuation**: Automatically resumes work after rebuilding context
-- **Up to 5x**: 50 tool calls per turn × 5 continuations = up to 250 effective rounds
-
----
-
-### Project Context 自动加载 / AGENTS.md Auto-Loading
-
-**中文**：Agent 启动时自动读取项目规范文件。
-
-- **多标准兼容**：优先读 `AGENTS.md`，兼容 `CLAUDE.md`
-- **两级加载**：项目级（workspace 根目录）+ 全局级（`~/.aideagent/CLAUDE.md`）
-- **零配置**：文件存在就自动加载，不存在就静默跳过
-
-**English**: Automatically loads project context files at session start.
-
-- **Multi-Standard**: Reads `AGENTS.md` first, `CLAUDE.md` as fallback
-- **Two Levels**: Project-level (workspace root) + global-level (`~/.aideagent/CLAUDE.md`)
-- **Zero Config**: Files are loaded automatically if they exist, silently skipped otherwise
-
----
-
-### Hook 系统 / Hook System
-
-**中文**：Agent 行为可编程——在关键动作前后自动执行你的脚本。
-
-- **3 个核心事件**：PreToolUse（工具执行前拦截）、PostToolUse（工具执行后处理）、SessionEnd（对话结束时通知）
-- **JSON 协议**：stdin/stdout JSON 通信，Node.js 脚本，跨平台统一
-- **安全护栏**：enabled 开关、tools 过滤、路径穿越防护、超时兜底
-- **示例脚本**：项目内置危险命令拦截、自动格式化、对话通知等示例
-
-**English**: Programmable agent behavior — run your scripts before and after key actions.
-
-- **3 Core Events**: PreToolUse (intercept before tool), PostToolUse (process after tool), SessionEnd (on session end)
-- **JSON Protocol**: stdin/stdout JSON communication, Node.js scripts, cross-platform
-- **Safety Guards**: enabled toggle, tools filter, path traversal protection, timeout fallback
-- **Example Scripts**: Built-in examples for dangerous command interception, auto-formatting, and notifications
-
----
-
-### 会话管理 / Session Management
-
-**中文**：
-- 对话自动保存到 SQLite 数据库（含 FTS5 全文搜索）
-- **多开对话**：Agent 在后台继续运行时，可以查看其他对话或开启新对话
-- 全文搜索历史对话
-- 导出为 Markdown 文件
-- 支持编辑和删除单条消息
-
-**English**:
-- Auto-save to SQLite database with FTS5 full-text search
-- **Multi-Session**: Browse other conversations or start new ones while agent runs in background
-- Full-text search across conversation history
-- Export to Markdown
-- Edit and delete individual messages
-
----
-
-### 安全特性 / Security
-
-**中文**：
-- **计划模式**：只读模式，Agent 只能读取和规划，不能执行写操作
-- **API 密钥加密**：使用操作系统级加密存储（Electron safeStorage），非明文
-- **路径防护**：知识库写入时验证路径，防止越权；Hook 脚本路径穿越防护
-- **命令注入防护**：git/gh 命令使用数组参数 spawn，不经 shell 拼接
-- **SSRF 防护**：web_fetch 拦截内网地址（localhost/192.168/169.254）
-- **XSS 防护**：知识库面板全部使用 textContent，无 innerHTML
-- **危险命令检测**：执行前检测 rm -rf / format 等并请求确认
-
-**English**:
-- **Plan Mode**: Read-only mode — agent can only read and plan, no write operations
-- **Encrypted API Keys**: OS-level encryption via Electron safeStorage
-- **Path Protection**: Knowledge base path validation; Hook script path traversal prevention
-- **Command Injection Prevention**: git/gh commands use array-based spawn, never shell string interpolation
-- **SSRF Protection**: web_fetch blocks internal network addresses
-- **XSS Prevention**: Knowledge base panel uses textContent, zero innerHTML
-- **Dangerous Command Detection**: Detects rm -rf, format, etc. and requests user confirmation
-
----
-
-### 界面特性 / UI Features
-
-**中文**：
-- 暗色主题，长时间使用不伤眼
-- 流式渲染，推理过程可展开查看
-- LaTeX 数学公式渲染
-- 代码块语法高亮（highlight.js）
-- 中英文界面一键切换
-- 12 个设置面板（API/头像/技能/提示词/MCP/社交/记忆/知识库/Agent 技能/字体/语言/关于）
-- 工作区间路径在侧边栏持续可见，点击可快捷切换目录
-- 自定义头像和名称
-
-**English**:
-- Dark theme with streaming response rendering
-- Expandable reasoning/thinking section
-- LaTeX math formula rendering
-- Code syntax highlighting (highlight.js)
-- One-click Chinese/English UI switch
-- 12 settings panels (API/Avatar/Skills/Prompt/MCP/Social/Memory/Knowledge Base/Agent Skills/Font/Language/About)
-- Workspace path persistent in sidebar with quick-switch on click
-- Custom avatar and agent name
-
----
-
-### Prompt Caching / 提示缓存
-
-**中文**：自动利用 LLM 前缀缓存机制，显著降低 API 费用和延迟。
-
-- **系统提示词稳定化**：动态内容（记忆、知识库、任务列表）从系统提示词移至用户消息，系统提示词全程不变 → 缓存命中
-- **懒加载知识库**：仅在首轮对话时注入知识库结果，后续轮次不再重复搜索（Agent 可用 `kb_search` 工具主动查询）
-- **Anthropic 显式缓存**：system prompt + tools + 历史消息打 `cache_control` 标记，TTL 1 小时
-- **DeepSeek 自动缓存**：消息顺序优化（历史在前，动态上下文在后），前缀全部可缓存
-- **实时命中率显示**：每次回复末尾显示 `💾 90% 命中缓存`，三色编码（绿≥80% / 黄≥50% / 红<50%）
-
-**English**: Automatically leverages LLM prefix caching to reduce API costs and latency.
-
-- **Stable System Prompt**: Dynamic content (memory, KB, tasks) moved to user messages; system prompt never changes → always cached
-- **Lazy KB Loading**: KB results injected only on first turn; subsequent turns skip injection (agent can call `kb_search` manually)
-- **Anthropic Explicit Cache**: `cache_control` markers on system, tools, and history; 1-hour TTL
-- **DeepSeek Auto-Cache**: Message ordering optimized (history first, dynamic context last) for maximum prefix match
-- **Live Cache Display**: `💾 90% cached` shown after each reply with color coding (green≥80% / yellow≥50% / red<50%)
-
----
-
-### 微信机器人 / WeChat Bot
-
-**中文**：扫码登录微信，通过微信给 Agent 发消息，Agent 自动回复（使用完整对话能力）。
-
-**English**: QR code login to WeChat. Send messages to the agent via WeChat, and the agent auto-replies using its full conversational capabilities.
-
----
-
-### 自动更新 / Auto-Update
-
-**中文**：支持版本检测和一键更新，可开启启动时自动检查，显示更新日志和下载进度。
-
-**English**: Version detection and one-click update via electron-updater. Optional auto-check on startup with changelog and progress display.
-
----
-
-### Agent 技能系统 / Agent Skill System
-
-**中文**：
-- **自主提炼**：Agent 检测到重复任务模式后，可自动创建技能
-- **模式检测**：分析最近 30 个对话，发现高频话题，提示提炼为技能
-- **Curator 自动管理**：30 天未使用的技能自动归档，检测重复技能建议合并
-- **L2/L3 双系统**：Agent 自创技能（L2）+ 社区安装技能（L3），双通道调用，自动回退
-
-**English**:
-- **Autonomous Creation**: Agent detects repeated task patterns and auto-creates skills
-- **Pattern Detection**: Analyzes last 30 sessions, surfaces high-frequency topics for skill creation
-- **Curator Auto-Management**: Auto-archives skills unused for 30 days, detects duplicates
-- **L2/L3 Dual System**: Agent-created skills (L2) + community-installed skills (L3), dual-channel with automatic fallback
-
----
-
-## 下载 / Download
-
-预编译安装包，无需安装 Node.js 即可使用。  
-Pre-built binaries — no Node.js required.
-
-| 平台 / Platform | 下载 / Download |
-|------|------|
-| Windows (.exe) | [GitHub Releases](https://github.com/quanzefeng/AideAgent/releases) |
-| macOS (.dmg) | [GitHub Releases](https://github.com/quanzefeng/AideAgent/releases) |
-| Linux (.deb / .AppImage) | [GitHub Releases](https://github.com/quanzefeng/AideAgent/releases) |
-
----
-
-## 快速开始 / Quick Start
-
-### 源码运行 / Run from Source
-
-```bash
-git clone https://github.com/quanzefeng/AideAgent.git
-cd AideAgent/desktop
-npm install        # postinstall 自动下载 MiniLM-L6 模型（~23MB）
-npm start
-```
-
-### 开发构建 / Development Build
-
-```bash
-npm run dist:win     # 打包 Windows .exe
-npm run dist:mac     # 打包 macOS .dmg
-npm run dist:linux   # 打包 Linux .deb + .AppImage
-```
-
-CI 构建通过 GitHub Actions 手动触发，产物自动发布到 [Releases](https://github.com/quanzefeng/AideAgent/releases)。  
-CI builds are triggered manually via GitHub Actions and auto-published to [Releases](https://github.com/quanzefeng/AideAgent/releases).
-
-### 配置 API / Configure API
-
-**中文**：打开 **设置 → API 配置**，选择模型供应商，填入 API 密钥和地址，选择模型后保存即可。
-
-**English**: Open **Settings → API Config**, select a provider, enter your API key and URL, choose a model, and save.
-
----
-
-## 快捷键 / Keyboard Shortcuts
-
-| 快捷键 / Shortcut | 功能 / Function |
-|--------|------|
-| Enter | 发送消息 / Send |
-| Ctrl+I | 打开设置 / Settings |
-
----
-
-## 开发者 / Development
-
-```bash
-npm run dev          # 开发模式 / Dev mode
-npm run download-model  # 下载嵌入模型 / Download embedding model
-npm test             # 运行测试 / Run tests
-npm run lint         # 代码检查 / Lint
-npm run typecheck    # 类型检查 / Type check
-npm run dist:win     # 打包 Windows / Build Windows
-npm run dist:mac     # 打包 macOS / Build macOS
-npm run dist:linux   # 打包 Linux / Build Linux
-```
-
-### 项目结构 / Project Structure
-
-![技术栈与本地优先架构 / Tech Stack & Local-First Architecture](docs/screenshots/04-tech-stack.png)
-
-*核心技术细节：本地优先架构（MiniLM-L6 离线嵌入 / 已索引 198 篇 / 4 类记忆 / 0 远程依赖）*  
-*Core technical details: local-first architecture (MiniLM-L6 offline embedding / 198 indexed notes / 4 memory types / zero remote dependencies)*
-
-### 项目结构 / Project Structure
-
-```
-desktop/
-  main.mjs                 # 应用入口 / App entry
-  preload.cjs              # IPC 通道桥接 / IPC bridge (~60 channels)
-  core/                    # 主进程核心模块 / Main process core
-    agent-loop.mjs         # 对话主线 + 自动压缩继续 + 自进化 / Conversation loop + auto-continue + auto-review
-    tool-executor.mjs      # 28 工具调度 + 跨平台 Shell / Tool dispatch + cross-platform shell
-    tool-definitions.mjs   # 工具定义 / Tool definitions
-    system-prompt.mjs      # 系统提示词构建 + AGENTS.md 加载 / Prompt builder + AGENTS.md loading
-    format-adapters.mjs    # OpenAI / Anthropic API 适配器 + Prompt Caching / API format adapters
-    token-budget.mjs       # Token 估算 + 上下文压缩 + 摘要继续 / Token estimation + context compression
-    hook-manager.mjs       # Hook 系统 / Hook system
-    sub-agent.mjs          # 子代理 / Sub-agent
-    state.mjs              # 共享状态 + 平台检测 / Shared state + platform detection
-    ipc-handlers.mjs       # IPC 处理器（~80 handlers）/ IPC handlers
-    memory-selection.mjs   # 记忆语义选择 / Semantic memory selection
-    skill-scanner.mjs      # L3 技能扫描 / L3 skill scanner
-    workspace-config.mjs   # 工作区间持久化 / Workspace persistence
-  session-db.mjs           # 会话数据库 / Session database (SQLite+FTS5)
-  memory-store.mjs         # 记忆存储 / Memory store
-  skills-store.mjs         # L2 技能存储 / L2 skill store
-  knowledge-store.mjs      # 知识库 RAG / Knowledge base RAG (SQLite+FTS5+vectors)
-  mcp-manager.mjs          # MCP 协议管理 / MCP manager (JSON-RPC 2.0)
-  lsp-manager.mjs          # LSP 客户端 / LSP client
-  update-manager.mjs       # 自动更新 / Auto-updater
-  renderer/                # 渲染进程 / Renderer
-    index.html             # 主界面 / Main UI
-    app.js                 # 主逻辑 / Main logic
-    style.css              # 样式 / Styles
-    translations.js        # 中/英文翻译 / i18n (zh-CN + en)
-    modules/               # UI 模块 / UI modules
-  test/                    # Vitest 测试 / Tests
-  models/                  # 内嵌模型 / Bundled models (MiniLM-L6)
-  scripts/                 # 构建脚本 / Build scripts
-.github/workflows/         # CI 构建 / CI build (Windows/macOS/Linux)
-```
-
----
-
-## 赞赏支持 / Sponsor
-
-如果 AideAgent 帮到了你，欢迎请作者喝杯咖啡 ☕  
-If AideAgent helps you, consider buying the author a coffee ☕
-
 <div align="center">
-  <img src="assets/alipay-qr.jpg" width="200" alt="支付宝" />
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="assets/wechat-qr.jpg" width="200" alt="微信" />
+
+# 🤖 AideAgent
+
+### The open-source Claude Desktop alternative — 28 tools, local RAG, Prompt Caching, in 50MB.
+
+[![GitHub stars](https://img.shields.io/github/stars/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/network)
+[![GitHub release](https://img.shields.io/github/v/release/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/releases)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+[![Electron](https://img.shields.io/badge/Electron-40-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Node](https://img.shields.io/badge/Node-22-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#-download)
+
 </div>
 
 ---
 
-## 联系方式 / Contact
+## 👀 What is AideAgent?
 
-- 微信 / WeChat: q2993919594
-- 谷歌邮箱 / Email: zefengquan5@gmail.com
-- GitHub: https://github.com/quanzefeng/AideAgent
+AideAgent is a **local-first desktop AI assistant** that does everything Claude Desktop does — and more — but **free, open-source, and 5× smaller**.
 
+- 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
+- ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display
+- 🧰 **28 built-in tools** — file/shell/git/GitHub/MCP/LSP/skill/kb, all in one binary
+- 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, one-click install of 200+ skills
+- 💬 **WeChat bot** — talk to your agent from your phone
+
+> Built by one developer in 24 days. **17 releases. 180 commits. 25 test files. 50MB install.**
+
+---
+
+## 📸 Preview
+
+<table>
+<tr>
+<td width="50%">
+
+**Main Chat Interface**  
+左侧会话列表 + 工作目录，中间流式对话区，底部 4 个智能开关（计划模式 / 知识库 / 联网搜索 / 深度推理）
+
+![Main Chat](docs/screenshots/01-main-chat.png)
+
+</td>
+<td width="50%">
+
+**Knowledge Base Search (Hybrid RAG)**  
+FTS5 关键词 + 向量语义 + RRF 融合，3 亿字 Obsidian vault 也能秒级定位
+
+![KB Search](docs/screenshots/02-knowledge-base-search.png)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**28 Tools Overview**  
+Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅知识库，一应俱全
+
+![Features](docs/screenshots/03-features-overview.png)
+
+</td>
+<td width="50%">
+
+**Local-First Tech Stack**  
+内嵌 MiniLM-L6 离线嵌入 / 198 篇已索引笔记 / 4 类持久记忆 / 0 远程依赖
+
+![Tech Stack](docs/screenshots/04-tech-stack.png)
+
+</td>
+</tr>
+</table>
+
+---
+
+## ⚖️ AideAgent vs The Alternatives
+
+> Tired of paying $20/mo for tools that don't have RAG, hooks, or WeChat integration?
+
+| Feature | **AideAgent** | Claude Desktop | Cursor | Cline | Continue |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Price** | Free + OSS | $20/mo | $20/mo | Free + OSS | Free + OSS |
+| **Open Source** | ✅ Apache-2.0 | ❌ | ❌ | ✅ Apache-2.0 | ✅ Apache-2.0 |
+| **Local RAG / Knowledge Base** | ✅ Built-in hybrid | ❌ | ⚠️ Paid add-on | ❌ | ⚠️ Basic |
+| **Prompt Caching** | ✅ Explicit + visible | ✅ Built-in (hidden) | ⚠️ Black box | ❌ | ❌ |
+| **Hook System** | ✅ 3 events | ❌ | ❌ | ❌ | ❌ |
+| **MCP Support** | ✅ Auto-detect | ✅ | ⚠️ Limited | ✅ | ⚠️ Limited |
+| **LSP Integration** | ✅ Built-in | ❌ | ✅ | ❌ | ⚠️ Basic |
+| **WeChat Bot** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Self-Evolving Memory** | ✅ Auto | ❌ | ❌ | ❌ | ❌ |
+| **Auto-Compress & Continue** | ✅ Up to 5× | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ❌ |
+| **Skill Ecosystem** | ✅ 200+ | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
+| **Offline Embedding Model** | ✅ Bundled | ❌ | ❌ | ❌ | ❌ |
+| **API Key Encryption** | ✅ OS-level | ✅ | ✅ | ✅ | ⚠️ Local file |
+| **Install Size** | **~50MB** | ~200MB | ~400MB | ~80MB | ~60MB |
+| **Platforms** | Win/Mac/Linux | Win/Mac | Win/Mac | VSCode | VSCode/JetBrains |
+
+**Verdict:** If you want Claude Desktop's polish **plus** RAG **plus** Hooks **plus** WeChat — without the $20/mo tax — AideAgent is for you.
+
+---
+
+## 🚀 Quick Start (30 seconds)
+
+### Option 1: Download Pre-built Binary (Recommended)
+
+👉 **[Download for Windows / macOS / Linux →](https://github.com/quanzefeng/AideAgent/releases)**
+
+No Node.js required. Double-click and go.
+
+### Option 2: Run from Source
+
+```bash
+git clone https://github.com/quanzefeng/AideAgent.git
+cd AideAgent/desktop
+npm install        # postinstall auto-downloads MiniLM-L6 (~23MB)
+npm start
+```
+
+### 3-Step Setup
+
+1. **Open Settings → API Config** → choose a provider (DeepSeek / Claude / GLM / Qwen / Ollama / ...)
+2. **Paste your API key** → saved with OS-level encryption (Windows DPAPI / macOS Keychain / Linux libsecret)
+3. **Start chatting** → Agent has 28 tools ready to go
+
+> 💡 **No API key?** Use Ollama / LM Studio / llama.cpp for fully local inference. Zero data leaves your machine.
+
+---
+
+## 🌟 Core Features
+
+### 🛡️ Local-First Privacy
+- **Offline MiniLM-L6** embedding model bundled (384-dim, ~23MB)
+- **OS-level encryption** for all API keys (Electron `safeStorage`)
+- **SSRF protection** — `web_fetch` blocks 127.0.0.1 / 192.168.* / 169.254.*
+- **Path traversal prevention** in KB writes and Hook scripts
+- **Command injection proof** — git/gh use array-based `spawn`, never shell strings
+- **XSS proof** — KB panel uses `textContent`, zero `innerHTML`
+- **Dangerous command detection** — `rm -rf /`, `format`, etc. require explicit confirmation
+
+### ⚡ Prompt Caching (Save 90% on API bills)
+- **Stable system prompt** — dynamic content (memory, KB, tasks) moved to user messages, system prompt never changes → always cacheable
+- **Lazy KB loading** — KB results injected only on first turn
+- **Anthropic explicit cache** — `cache_control` markers on system + tools + history, 1-hour TTL
+- **DeepSeek auto-cache** — message ordering optimized for maximum prefix match
+- **Live hit-rate display** — `💾 90% cached` shown after each reply with color coding (🟢≥80% / 🟡≥50% / 🔴<50%)
+
+### 🧰 28 Built-in Tools
+
+| Category | Tools |
+|---|---|
+| **Files & Code** | `file_read`, `file_write`, `file_edit`, `grep`, `glob`, `lsp` (go-to-def, references, hover) |
+| **Shell** | `bash` (cross-platform pwsh/bash, dangerous command detection, Hook interception) |
+| **Web** | `web_search` (Tavily + meta-search fallback), `web_fetch` (SSRF-protected) |
+| **Version Control** | `git_diff`, `git_commit`, `git_branch`, `gh_pr`, `gh_issue`, `gh_repo` |
+| **Knowledge** | `kb_search` (FTS5 + vector + RRF), `kb_write`, `kb_get_note`, `write_memory` |
+| **Tasks** | `TaskCreate`, `TaskUpdate`, `TaskList`, `TodoWrite`, `AskUserQuestion` |
+| **Skills** | `skill`, `invoke_skill`, `create_skill` (L2/L3 dual system) |
+| **Sub-Agent** | `Agent` (read-only parallel research) |
+
+### 🔌 MCP + Skill Ecosystem
+- **MCP** — stdio + HTTP transports, **auto-detects** Claude Code/Desktop/OpenCode configs
+- **200+ skills** installable via `npx skills add` (L3 system)
+- **L2 agent-created skills** — agent learns your workflow and creates reusable skills automatically
+- **Curator** auto-archives skills unused for 30+ days, detects duplicates
+
+### 🧠 Hybrid RAG (Obsidian-Native)
+- **FTS5** keyword search + **vector semantic** search (MiniLM-L6 or Ollama)
+- **RRF fusion** — merges both result sets for optimal relevance
+- **MRL compression** — auto-detects Matryoshka-capable models (e.g. qwen3-embedding), compresses 1024→384 dim losslessly
+- **Smart truncation** — auto-detects Ollama model context length
+- **Instant injection** — relevant notes auto-injected into system prompt
+
+### 🪝 Hook System (Programmable Agent Behavior)
+- **3 events** — `PreToolUse` / `PostToolUse` / `SessionEnd`
+- **JSON protocol** over stdin/stdout, cross-platform
+- **Safety guards** — `enabled` toggle, `tools` filter, path traversal protection, timeout fallback
+- **Built-in examples** — dangerous command interception, auto-formatting, session notifications
+
+### 💾 Self-Evolving Memory
+- **Post-session reflection** — agent analyzes recent exchanges, extracts PREFERENCE / DECISION / KNOWLEDGE
+- **Auto-save** to `USER.md` / `MEMORY.md` — zero user friction
+- **Semantic selection** — auto-picks most relevant memories per conversation
+- **Deduplication** — prevents saving redundant content
+
+### 🔄 Auto-Compress & Continue
+- **Context-aware trigger** at 90% token usage (256K window)
+- **LLM summarization** — preserves key decisions and file references
+- **Seamless resume** — "Auto-continued (N/5)" shown inline
+- **Up to 5× continuations** = 50 tool calls × 5 = 250 effective rounds
+
+### 📁 Project Context (AGENTS.md)
+- **Multi-standard** — reads `AGENTS.md` first, `CLAUDE.md` as fallback
+- **Two-level loading** — project root + `~/.aideagent/CLAUDE.md`
+- **Zero config** — auto-loaded if present
+
+### 💬 WeChat Bot
+- QR-code login to WeChat
+- Send messages to your agent from your phone
+- Full conversational capabilities, end-to-end
+
+### 🎨 UI / UX
+- Dark theme, streaming responses, expandable reasoning
+- LaTeX math + code syntax highlighting (highlight.js)
+- One-click Chinese/English UI switch
+- 12 settings panels (API / Avatar / Skills / Prompt / MCP / Social / Memory / KB / Skills / Font / Language / About)
+- Custom avatar and agent name
+
+---
+
+## 🏗️ Architecture
+
+```
+desktop/
+├── main.mjs                 # App entry
+├── preload.cjs              # IPC bridge (~60 channels)
+├── core/
+│   ├── agent-loop.mjs       # Conversation loop + auto-continue + auto-review
+│   ├── tool-executor.mjs    # 28 tools + cross-platform shell
+│   ├── tool-definitions.mjs # Tool schemas
+│   ├── system-prompt.mjs    # Prompt builder + AGENTS.md loading
+│   ├── format-adapters.mjs  # OpenAI/Anthropic adapters + Prompt Caching
+│   ├── token-budget.mjs     # Token estimation + context compression
+│   ├── hook-manager.mjs     # Hook system
+│   ├── sub-agent.mjs        # Read-only sub-agents
+│   ├── state.mjs            # Shared state + platform detection
+│   ├── ipc-handlers.mjs     # IPC handlers (~80)
+│   ├── memory-selection.mjs # Semantic memory selection
+│   ├── skill-scanner.mjs    # L3 skill scanner
+│   └── workspace-config.mjs # Workspace persistence
+├── session-db.mjs           # Session DB (SQLite + FTS5)
+├── memory-store.mjs         # Memory store
+├── skills-store.mjs         # L2 skill store
+├── knowledge-store.mjs      # KB RAG (SQLite + FTS5 + vectors)
+├── mcp-manager.mjs          # MCP protocol (JSON-RPC 2.0)
+├── lsp-manager.mjs          # LSP client
+├── update-manager.mjs       # Auto-updater
+├── renderer/                # UI (vanilla JS, no framework bloat)
+│   ├── index.html
+│   ├── app.js
+│   ├── style.css
+│   ├── translations.js      # i18n (zh-CN + en)
+│   └── modules/
+├── test/                    # 25 Vitest test files
+├── models/                  # Bundled MiniLM-L6
+└── scripts/                 # Build scripts
+```
+
+**Stack:** Electron 40 · Node.js 22 · SQLite (FTS5 + vectors) · Vitest · Playwright · electron-builder
+
+**No TypeScript build step** — vanilla JS keeps startup fast and bundle small.
+
+---
+
+## 🔬 Who's Using AideAgent?
+
+> _Be the first! Star ⭐ the repo and open an issue to get featured here._
+
+---
+
+## 📚 Documentation
+
+- 📖 **[User Guide](docs/user-guide.md)** — Detailed walkthrough of every feature
+- 🛠️ **[Developer Guide](docs/developer-guide.md)** — Architecture deep-dive, contributing
+- 🔌 **[MCP Setup](docs/mcp-setup.md)** — Connect external tool servers
+- 🪝 **[Hook Examples](docs/hook-examples.md)** — Pre/Post/SessionEnd recipes
+- 🎯 **[Prompt Caching](docs/prompt-caching.md)** — How the cache works + cost benchmarks
+- 🤖 **[Multi-Model Setup](docs/multi-model.md)** — DeepSeek, Claude, GLM, Qwen, Ollama, ...
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **Agent Marketplace** — share and install community-created skills
+- [ ] **VSCode Extension** — same agent, in your editor
+- [ ] **Multi-Agent Collaboration** — orchestrate multiple agents on one task
+- [ ] **Voice Mode** — push-to-talk with Whisper integration
+- [ ] **Cloud Sync (optional, E2E-encrypted)** — for users who want it
+
+See [open issues](https://github.com/quanzefeng/AideAgent/issues) for the full list.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+
+**Quick start:**
+```bash
+git clone https://github.com/quanzefeng/AideAgent.git
+cd AideAgent/desktop
+npm install
+npm run dev      # development mode with hot reload
+npm test         # run Vitest suite
+npm run lint
+```
+
+**Good first issues:** [good-first-issue label](https://github.com/quanzefeng/AideAgent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+
+---
+
+## 📜 License
+
+[Apache License 2.0](LICENSE) — free for commercial and personal use.
+
+---
+
+## ⭐ Star History
+
+<a href="https://star-history.com/#quanzefeng/AideAgent&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" />
+  </picture>
+</a>
+
+---
+
+## 💖 Sponsorship
+
+If AideAgent saved you time or money, consider buying the author a coffee ☕
+
+<div align="center">
+  <img src="assets/alipay-qr.jpg" width="200" alt="Alipay" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/wechat-qr.jpg" width="200" alt="WeChat" />
+</div>
+
+---
+
+## 📬 Contact
+
+- 💬 WeChat: `q2993919594`
+- 📧 Email: `zefengquan5@gmail.com`
+- 🐙 GitHub: [@quanzefeng](https://github.com/quanzefeng)
+
+---
+
+<div align="center">
+
+**If this project helps you, please ⭐ star it — it helps more developers find it.**
+
+Made with ❤️ by one developer in 24 days.
+
+</div>
