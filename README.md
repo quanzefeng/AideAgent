@@ -2,7 +2,7 @@
 
 # 🤖 AideAgent
 
-### The open-source Claude Desktop alternative — 28 tools, local RAG, Prompt Caching, in 50MB.
+### The open-source Claude Desktop alternative — 28 tools, local RAG, Prompt Caching, all in one cross-platform desktop app.
 
 [![GitHub stars](https://img.shields.io/github/stars/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/network)
@@ -18,7 +18,7 @@
 
 ## 👀 What is AideAgent?
 
-AideAgent is a **local-first desktop AI assistant** that does everything Claude Desktop does — and more — but **free, open-source, and 5× smaller**.
+AideAgent is a **local-first desktop AI assistant** that does everything Claude Desktop does — and more — but **free and open-source (Apache-2.0)**.
 
 - 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
 - ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display
@@ -26,7 +26,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 - 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, one-click install of 200+ skills
 - 💬 **WeChat bot** — talk to your agent from your phone
 
-> Built by one developer in 24 days. **17 releases. 180 commits. 25 test files. 50MB install.**
+> Built by one developer in 24 days. **17 releases. 180 commits. 25 test files. ~200MB desktop app.**
 
 ---
 
@@ -92,7 +92,7 @@ Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅�
 | **Skill Ecosystem** | ✅ 200+ | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
 | **Offline Embedding Model** | ✅ Bundled | ❌ | ❌ | ❌ | ❌ |
 | **API Key Encryption** | ✅ OS-level | ✅ | ✅ | ✅ | ⚠️ Local file |
-| **Install Size** | **~50MB** | ~200MB | ~400MB | ~80MB | ~60MB |
+| **Install Size** | **~200MB** | ~200MB | ~400MB | ~80MB | ~60MB |
 | **Platforms** | Win/Mac/Linux | Win/Mac | Win/Mac | VSCode | VSCode/JetBrains |
 
 **Verdict:** If you want Claude Desktop's polish **plus** RAG **plus** Hooks **plus** WeChat — without the $20/mo tax — AideAgent is for you.
