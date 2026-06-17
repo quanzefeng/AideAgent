@@ -5,7 +5,22 @@ describe("Skill Scanner", () => {
   describe("parseFrontMatter", () => {
     it("returns empty meta for text without front matter", () => {
       const result = parseFrontMatter("Just some content");
-      expect(result).toEqual({ name: "", description: "", triggers: [], allowed_tools: [] });
+      // name_zh is the author-declared Chinese name field (added for the
+      // 3-tier translation fallback). It defaults to empty when missing.
+      expect(result).toEqual({ name: "", name_zh: "", description: "", triggers: [], allowed_tools: [] });
+    });
+
+    it("parses name_zh when present in front matter", () => {
+      const text = `---
+name: my-skill
+name_zh: 我的技能
+description: A test skill
+---
+Content here`;
+      const result = parseFrontMatter(text);
+      expect(result.name).toBe("my-skill");
+      expect(result.name_zh).toBe("我的技能");
+      expect(result.description).toBe("A test skill");
     });
 
     it("parses name and description", () => {

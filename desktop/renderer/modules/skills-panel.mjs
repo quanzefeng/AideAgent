@@ -19,6 +19,53 @@ function loadApiConfig() {
 const SKILLS_KEY = "AideAgent_enabled_skills";
 let _skillsPanelLoaded = false;
 
+// ── Display name resolution (3-tier fallback) ──────────────────────────
+//
+// Why this lives in the renderer too (not just skills-store.mjs): the main
+// process IPC bridge would add a round-trip on every render. The heuristic
+// is a pure function with no I/O, so duplicating it here is cheap and lets
+// the UI keep working even if the main process IPC is briefly unavailable.
+// The main-process copy in skills-store.mjs is the source of truth for any
+// non-renderer caller (e.g. curator, future CLI).
+
+/**
+ * Resolve a skill's Chinese display name with a 3-tier fallback that
+ * ALWAYS returns a non-empty string:
+ *   1. SKILL.md frontmatter `name_zh` (author-declared, zero dependency)
+ *   2. Per-user cache from `~/.aideagent/skill-translations.json`
+ *   3. Heuristic kebab→readable transformation
+ * @param {{name: string, name_zh?: string}} skill
+ * @param {Object<string, string>} [cache]  optional pre-loaded cache
+ * @returns {{display: string, source: "skill_zh"|"cache"|"heuristic"}}
+ */
+function resolveDisplayName(skill, cache) {
+  const name = (skill && skill.name) || "";
+  const author_zh = typeof skill?.name_zh === "string" ? skill.name_zh.trim() : "";
+  if (author_zh) return { display: author_zh, source: "skill_zh" };
+  const cached = (cache || {})[name];
+  if (typeof cached === "string" && cached.trim()) return { display: cached.trim(), source: "cache" };
+  return { display: heuristicDisplayName(name), source: "heuristic" };
+}
+
+/** Heuristic kebab-case → readable Chinese-friendly name. Never returns "". */
+function heuristicDisplayName(name) {
+  if (!name) return "";
+  if (name === "cli-anything") return "CLI 通用工具";
+  if (name.startsWith("cli-anything-")) {
+    const rest = name.slice("cli-anything-".length);
+    return `${titleCaseRest(rest)} 命令行`;
+  }
+  return titleCaseRest(name);
+}
+
+/** Title-case a kebab token, preserving embedded acronyms. */
+function titleCaseRest(s) {
+  if (!s) return "";
+  return s.split("-").filter(Boolean)
+    .map((w) => /[A-Z]/.test(w) ? w : w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 // ── L3 Skills (scanned from .agents/.claude) ──
 
 /** Scan the local .agents/.claude folders for L3 skills and render the toggle list. */
@@ -47,11 +94,21 @@ export async function loadAndRenderSkills() {
 
     listEl.innerHTML = skills.map(s => {
       const isOn = enabled.includes(s.name);
-      const zh = translations[s.name] || "";
+      const { display: zh, source: zhSource } = resolveDisplayName(s, translations);
+      // Heuristic fallbacks always get the ⚠ marker so the user knows the
+      // name is a placeholder and can fix it. Cache and author-declared
+      // names are not flagged.
+      const zhFlag = zhSource === "heuristic"
+        ? `<span class="skill-card-zh-flag" title="自动生成的占位名 — 点击 ✎ 修正">⚠</span>`
+        : "";
       return `<div class="skill-card">
         <div class="skill-card-info">
           <div class="skill-card-name">${sanitize(s.name)}</div>
-          ${zh ? `<div class="skill-card-name-zh">${sanitize(zh)}</div>` : ""}
+          <div class="skill-card-name-zh" data-source="${zhSource}">
+            <span class="skill-card-zh-text">${sanitize(zh)}</span>
+            ${zhFlag}
+            <button class="skill-card-zh-edit" data-skill="${sanitize(s.name)}" title="编辑中文名" aria-label="编辑中文名">✎</button>
+          </div>
           <div class="skill-card-meta">
             <span class="skill-card-source">${s.source === "agents" ? "🤖 .agents" : "📦 .claude"}</span>
             ${s.version ? `<span class="skill-card-version">v${sanitize(s.version)}</span>` : ""}
@@ -65,6 +122,18 @@ export async function loadAndRenderSkills() {
         </label>
       </div>`;
     }).join("");
+
+    // Wire up the per-card "✎ edit Chinese name" buttons. Uses a delegated
+    // listener so re-renders don't need to re-bind.
+    listEl.querySelectorAll(".skill-card-zh-edit").forEach((node) => {
+      const btn = /** @type {HTMLButtonElement} */ (node);
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const name = btn.dataset.skill;
+        if (!name) return;
+        editSkillDisplayName(name, btn);
+      });
+    });
 
     listEl.querySelectorAll(".skill-toggle-input").forEach((node) => {
       const cb = /** @type {HTMLInputElement} */ (node);
@@ -146,6 +215,119 @@ async function triggerIncrementalTranslation(skills) {
       console.warn("[skills] translation ensure failed:", e);
     });
   } catch { /* silent */ }
+}
+
+/**
+ * Inline editor for a single skill's Chinese display name. Replaces the
+ * static text node with an <input> + ✓ save / ✗ cancel pair so the user
+ * can type a new name. Why inline and not `window.prompt`? Electron 30+
+ * removed `window.prompt` (returns null silently), so the only way to get
+ * editable text in a renderer is to build the input yourself. This also
+ * gives us free styling, keyboard shortcuts (Enter / Esc), and the option
+ * to clear the cache by submitting an empty value.
+ *
+ * @param {string} name  skill name (kebab-case key in skill-translations.json)
+ * @param {HTMLButtonElement} btn  the ✎ button that triggered the edit
+ */
+async function editSkillDisplayName(name, btn) {
+  /** @type {any} */
+  const api = window.aideagent;
+  if (!api?.skillsTranslationSet) return;
+  const card = btn.closest(".skill-card");
+  const textEl = /** @type {HTMLElement | null} */ (card?.querySelector(".skill-card-zh-text"));
+  const container = /** @type {HTMLElement | null} */ (card?.querySelector(".skill-card-name-zh"));
+  if (!card || !textEl || !container) return;
+  // Already editing this card? Just refocus the existing input.
+  const existingInput = /** @type {HTMLInputElement | null} */ (container.querySelector(".skill-card-zh-input"));
+  if (existingInput) { existingInput.focus(); existingInput.select(); return; }
+
+  const current = textEl.textContent || "";
+
+  // Build the editor widgets.
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "skill-card-zh-input";
+  input.value = current;
+  input.maxLength = 30;
+  input.placeholder = "输入中文名（留空清除自定义）";
+  input.spellcheck = false;
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "skill-card-zh-save";
+  saveBtn.type = "button";
+  saveBtn.textContent = "✓";
+  saveBtn.title = "保存 (Enter)";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "skill-card-zh-cancel";
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "✗";
+  cancelBtn.title = "取消 (Esc)";
+
+  // Swap static text for the editor. The flag and the edit button get
+  // hidden so only the input + ✓/✗ remain visible.
+  textEl.replaceWith(input);
+  container.appendChild(saveBtn);
+  container.appendChild(cancelBtn);
+  const flag = container.querySelector(".skill-card-zh-flag");
+  if (flag) /** @type {HTMLElement} */ (flag).style.display = "none";
+  btn.style.display = "none";
+
+  input.focus();
+  input.select();
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    // Restore the original DOM nodes.
+    if (input.parentNode) input.replaceWith(textEl);
+    saveBtn.remove();
+    cancelBtn.remove();
+    if (flag) /** @type {HTMLElement} */ (flag).style.display = "";
+    btn.style.display = "";
+  };
+
+  const save = async () => {
+    if (cleaned) return;
+    const trimmed = input.value.trim();
+    // No-op when the user re-submitted the same non-heuristic value.
+    const source = container.getAttribute("data-source");
+    if (trimmed === current.trim() && source !== "heuristic") { cleanup(); return; }
+    saveBtn.disabled = true; cancelBtn.disabled = true; input.disabled = true;
+    try {
+      const result = await api.skillsTranslationSet(name, trimmed);
+      if (!result?.ok) {
+        alert(`保存失败：${result?.error || "未知错误"}`);
+        saveBtn.disabled = false; cancelBtn.disabled = false; input.disabled = false;
+        input.focus();
+        return;
+      }
+      // Main process broadcasts "skills:translations-updated" → re-render.
+      // Don't cleanup here: the re-render replaces the whole card, so the
+      // editor widgets go away naturally.
+    } catch (e) {
+      alert(`保存失败：${/** @type {Error} */ (e).message}`);
+      saveBtn.disabled = false; cancelBtn.disabled = false; input.disabled = false;
+      input.focus();
+    }
+  };
+
+  const cancel = () => cleanup();
+
+  saveBtn.addEventListener("click", save);
+  cancelBtn.addEventListener("click", cancel);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  // Save on blur (clicking elsewhere). Delay so a click on ✓/✗ lands first.
+  input.addEventListener("blur", () => {
+    if (cleaned) return;
+    setTimeout(() => {
+      if (!cleaned && document.contains(input)) save();
+    }, 180);
+  });
 }
 
 /**

@@ -311,6 +311,16 @@ export function registerIpcHandlers() {
       return { ok: true, ...result, skipped: result.skipped || (!cfg.apiKey ? "no api key in main process" : undefined) };
     } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
   });
+  // Manual override for a single skill's display name (renderer "✎ edit" button).
+  // Pass "" to remove the override and fall back to heuristic. Broadcasts the
+  // same "translations-updated" event so the panel re-renders.
+  ipcMain.handle("skills:translation-set", async (_e, name, zh) => {
+    try {
+      const result = skills.setTranslation(name, zh);
+      if (result.ok) sendToRenderer("skills:translations-updated", { count: 1 });
+      return result;
+    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+  });
 
   ipcMain.handle("permission:respond", (event, { id, allow }) => {
     const resolve = pendingPerms.get(id);

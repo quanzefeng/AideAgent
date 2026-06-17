@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   skillsTranslationsGet: () => ipcRenderer.invoke("skills:translations-get"),
   skillsTranslationsMissing: () => ipcRenderer.invoke("skills:translations-missing"),
   skillsTranslationsEnsure: (/** @type {any} */ apiConfig) => ipcRenderer.invoke("skills:translations-ensure", apiConfig),
+  skillsTranslationSet: (/** @type {any} */ name, /** @type {any} */ zh) => ipcRenderer.invoke("skills:translation-set", name, zh),
   onTranslationsUpdated: (/** @type {any} */ cb) => ipcRenderer.on("skills:translations-updated", (_event, d) => cb(d)),
   listSkills: () => ipcRenderer.invoke("skills:list"),
   loadSkill: (/** @type {any} */ name) => ipcRenderer.invoke("skills:load", name),

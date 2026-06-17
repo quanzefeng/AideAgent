@@ -63,6 +63,35 @@ export function saveTranslations(map) {
 }
 
 /**
+ * Manually set or clear a single skill's Chinese display name. Used by the
+ * renderer's "✎ edit" button so users can override both the LLM and the
+ * heuristic fallback. Pass `""` to remove an entry.
+ *
+ * @param {string} name  skill name (kebab-case, the same key used elsewhere)
+ * @param {string} zh    Chinese display name; empty string removes the entry
+ * @returns {{ok: boolean, zh: string}}
+ */
+export function setTranslation(name, zh) {
+  try {
+    if (!name || typeof name !== "string") {
+      return { ok: false, zh: "" };
+    }
+    const cached = loadTranslations();
+    const trimmed = typeof zh === "string" ? zh.trim() : "";
+    if (trimmed) {
+      cached[name] = trimmed;
+    } else {
+      delete cached[name];
+    }
+    saveTranslations(cached);
+    return { ok: true, zh: trimmed };
+  } catch (/** @type {any} */ e) {
+    console.error("[skills-store] setTranslation:", e.message);
+    return { ok: false, zh: "" };
+  }
+}
+
+/**
  * Find skills missing a Chinese translation in the user's cache.
  * @param {Array<{name: string, description?: string}>} skills
  * @returns {Array<{name: string, description: string}>}
@@ -76,6 +105,76 @@ export function getMissingTranslations(skills) {
     missing.push({ name: s.name, description: s.description || "" });
   }
   return missing;
+}
+
+/**
+ * Three-tier display name resolver. Always returns *something* — never an
+ * empty string — so the UI never shows a blank where a name is expected.
+ *
+ * Priority:
+ *   1. Skill's own `name_zh` from SKILL.md frontmatter (author-declared)
+ *   2. Per-user cached translation from skill-translations.json
+ *   3. Heuristic kebab→readable transformation (title-case + common prefixes)
+ *
+ * @param {{name: string, name_zh?: string}} skill
+ * @param {Object<string, string>} [cached]  optional pre-loaded cache; saves an I/O
+ * @returns {{display: string, source: "skill_zh"|"cache"|"heuristic"}}
+ */
+export function translateDisplayName(skill, cached) {
+  const name = (skill && skill.name) || "";
+  // Tier 1: skill author's own declaration in SKILL.md frontmatter
+  const author_zh = typeof skill?.name_zh === "string" ? skill.name_zh.trim() : "";
+  if (author_zh) return { display: author_zh, source: "skill_zh" };
+
+  // Tier 2: per-user cached translation. If the caller passes an empty
+  // object (or no cache at all) we fall back to loading from disk — that
+  // way renderer code can pass the cached map it already has, while
+  // tests/utilities can call this with no second arg.
+  const cache = (cached && Object.keys(cached).length > 0) ? cached : loadTranslations();
+  const cached_zh = cache[name];
+  if (typeof cached_zh === "string" && cached_zh.trim()) {
+    return { display: cached_zh.trim(), source: "cache" };
+  }
+
+  // Tier 3: heuristic — always returns a non-empty readable name
+  return { display: heuristicDisplayName(name), source: "heuristic" };
+}
+
+/**
+ * Heuristic kebab-case → readable transformation. Not a translation; just
+ * ensures the UI never shows raw "cli-anything-ccswitch" as a card title.
+ * Handles common prefixes seen in the wild; falls back to title-casing.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function heuristicDisplayName(name) {
+  if (!name) return "";
+  // Common prefix substitutions (sorted longest-first so "cli-anything-"
+  // matches before "cli-").
+  if (name === "cli-anything") return "CLI 通用工具";
+  if (name.startsWith("cli-anything-")) {
+    const rest = name.slice("cli-anything-".length);
+    return `${titleCase(rest)} 命令行`;
+  }
+  return titleCase(name);
+}
+
+/**
+ * Title-case a kebab-case token. Preserves embedded acronyms and model
+ * names (CCSwitch, MiniLM, MiniLM-L6) by leaving any string that already
+ * contains an uppercase letter unchanged.
+ * @param {string} s
+ * @returns {string}
+ */
+function titleCase(s) {
+  if (!s) return "";
+  if (/[A-Z]/.test(s)) return s;
+  return s
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
 }
 
 /**
