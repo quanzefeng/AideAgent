@@ -15,7 +15,7 @@
   --space-xl: 2.5rem;    /* 40px */
 
   /* ── 圆角 Radius ── */
-  --radius-sm: 6px;
+  --radius-sm: 10px;
   --radius-md: 8px;
   --radius-lg: 12px;
 
@@ -2121,7 +2121,9 @@ html, body {
   max-width: var(--input-max-width);
   background: #ffffff;
   border: 1.8px solid #818cf8;
-  border-radius: var(--radius-sm);
+  /* Override the default 6px so the input box has a ChatGPT-style pill feel
+     without changing --radius-sm (which ~7 other elements still rely on). */
+  border-radius: 16px;
   padding: 4px 6px 6px 4px;
   box-sizing: border-box;
   transition:
