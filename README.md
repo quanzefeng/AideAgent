@@ -44,10 +44,10 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 </td>
 <td width="50%">
 
-**API Config (Multi-Provider)**  
-一键切换 DeepSeek / Claude / GLM / Qwen / Ollama，API Key 通过操作系统级加密保存（Windows DPAPI / macOS Keychain / Linux libsecret）
+**MCP Servers (Tool Ecosystem)**  
+内置 4 个 MCP server：WebSearch、SearXNG、Edge Browser、Computer-Use,每个独立启停,实时显示连接状态（紫色顶栏 = MCP 配置页专属色）
 
-![API Config: multi-provider switcher (DeepSeek / Claude / GLM / Qwen / Ollama) with OS-encrypted API key input, model picker, and System Prompt editor](docs/screenshots/02-knowledge-base-search.png)
+![MCP Servers: built-in 4 MCP servers (WebSearch / SearXNG / Edge Browser / Computer-Use), each independently toggleable with real-time connection status indicator](docs/screenshots/02-knowledge-base-search.png)
 
 </td>
 </tr>
