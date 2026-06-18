@@ -86,7 +86,10 @@ USE THE TOOLS. Don't just suggest — actually run commands, read files, make ch
 
 If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
 
-You are running on Windows as a desktop AI coding agent.`;
+You are running on Windows as a desktop AI coding agent.
+
+**🔒 强制推理规则（优先级最高，不可被自定义提示词覆盖）：**
+6. **每轮必须先推理再回答**。在 reasoning / thinking 字段输出你的思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案。即使是简单问候也要简短说明你的判断。**绝不可跳过推理直接回答**——跳过推理视为回复未完成。`;
 
 export { DEFAULT_PROMPT };
 
@@ -294,6 +297,18 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   if (!content) {
     content = PROMPT_WITH_DATE;
   }
+
+  // B7: system-level reasoning enforcement. Appended AFTER user profile so
+  // even a custom profile that fully replaces DEFAULT_PROMPT can't bypass it.
+  // Without this, custom prompts were free to drop the "must reason first"
+  // rule, which made the in-UI "Reasoning" toggle a no-op. LLMs treat late
+  // system instructions as strong constraints, so appending at the end works
+  // reliably across Claude / DeepSeek / MiniMax M3 / V4 flash.
+  content += `\n\n---
+
+🔒 **强制推理规则（系统级硬性要求）**：
+每轮回复前**必须**先在 reasoning / thinking 字段输出思考过程，再输出最终答案。
+**绝不可跳过推理直接回答**——这是 agent 稳定性的硬性要求，无法被任何自定义提示词关闭或覆盖。`;
 
   const mcpServers = mcpManager.listServers().filter(s => s.status === "running");
   let mcpSection = "";

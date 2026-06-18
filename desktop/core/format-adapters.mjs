@@ -169,7 +169,15 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
           for (const tc of delta.tool_calls) {
             if (!tcAccum[tc.index]) tcAccum[tc.index] = { id: "", type: "function", function: { name: "", arguments: "" } };
             if (tc.id) tcAccum[tc.index].id = tc.id;
-            if (tc.function?.name) tcAccum[tc.index].function.name += tc.function.name;
+            // BUGFIX: was `+=` which concatenated repeated name deltas into
+            // "bashbash" / "file_readfile_read". OpenAI-compatible providers
+            // (DeepSeek V4 flash, MiniMax M3, etc.) sometimes re-emit the
+            // tool name in a later delta after a tool_call_id, which then
+            // broke tool-executor's switch dispatch and silently dropped the
+            // call — manifesting as "no tool call" or "tool output garbled".
+            // The name is set once at the first emission; `arguments` is
+            // legitimately a streaming append.
+            if (tc.function?.name) tcAccum[tc.index].function.name = tc.function.name;
             if (tc.function?.arguments) tcAccum[tc.index].function.arguments += tc.function.arguments;
           }
         }

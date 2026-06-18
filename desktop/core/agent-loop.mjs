@@ -310,10 +310,17 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // Pass last assistant reply as task context so the selector can
   // distinguish "already working on this" from "potentially relevant old task"
   try {
-    const lastAsstMsg = [...history].reverse().find(m => m.role === "assistant");
-    const memQuery = lastAsstMsg?.content
-      ? `当前任务上下文: ${lastAsstMsg.content.slice(-500)}\n用户消息: ${prompt || ""}`
-      : prompt;
+    // B4: previously used only the last assistant message's tail (500 chars)
+    // as the memory retrieval query. That single message is often a side
+    // branch (e.g. "let me also explain X") unrelated to the user's actual
+    // current task, so we ended up injecting memories about old tasks.
+    // Use the last 5 turns (mixed user+assistant) so the retrieval query
+    // reflects the *current thread*, not whatever the LLM last said.
+    const recentMsgs = history.slice(-5);
+    const recentContext = recentMsgs
+      .map(m => `[${m.role}] ${typeof m.content === "string" ? m.content.slice(0, 200) : ""}`)
+      .join("\n");
+    const memQuery = `最近对话:\n${recentContext}\n\n用户最新消息: ${prompt || ""}`;
     const relevantMems = await selectRelevantMemories(memQuery, apiKey, apiUrl, model, apiFormat);
     if (relevantMems) {
       const memBlock = "\n\n## 相关记忆\n" + relevantMems;
@@ -324,14 +331,17 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     console.error("[memory] selection error:", e.message);
   }
 
-  // ── Current task anchor: when user sends a short reply,
-  // remind the agent what it just proposed to prevent memory interference ──
-  const isShortReply = typeof prompt === "string" && prompt.trim().length < 80;
-  if (history.length > 0 && isShortReply) {
+  // ── Current task anchor: always inject on non-first turn so the LLM
+  // knows which "主线" to follow. Previously gated on prompt < 80 chars,
+  // which meant longer real-world requests ("改一下 A 文件第 3 段") skipped
+  // the anchor and the LLM fell back to scanning history — frequently
+  // picking up an unrelated old task and producing off-topic replies.
+  // Cost: +800 chars of cache-friendly text per turn. Worth it. ──
+  if (history.length > 0) {
     const lastAsst = [...history].reverse().find(m => m.role === "assistant");
     if (lastAsst && lastAsst.content) {
       const proposalText = lastAsst.content.slice(-800);
-      const anchor = `\n\n---\n⚠️ **当前任务锚定** — 用户刚才的简短回复是在回应你**上一次的以下内容**。请优先处理这个任务，不要被历史记忆或知识库中的旧任务干扰：\n\n> ${proposalText.replace(/\n/g, "\n> ")}\n\n请立即执行你刚才提议的方案。如果用户的简短回复含义不明确，回看以上内容来理解用户意图，而不是去历史记忆中寻找任务。`;
+      const anchor = `\n\n---\n⚠️ **当前任务锚定** — 用户刚才的回复是在回应你**上一次的以下内容**。请优先处理这个任务，不要被历史记忆或知识库中的旧任务干扰：\n\n> ${proposalText.replace(/\n/g, "\n> ")}\n\n请立即执行你刚才提议的方案。如果用户的回复含义不明确，回看以上内容来理解用户意图，而不是去历史记忆中寻找任务。`;
       if (typeof userMessage.content === "string") {
         userMessage.content = anchor + "\n\n---\n**用户消息：** " + userMessage.content;
       } else if (Array.isArray(userMessage.content)) {

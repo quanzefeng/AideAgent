@@ -100,9 +100,17 @@ export const PS_UTF8_PREFIX = '$OutputEncoding = [Console]::OutputEncoding = [Sy
 export const MAX_TURNS = 50;
 export const MAX_CONTINUATIONS = 5;
 export const CONTEXT_WINDOW = 262144;
-export const CONTEXT_WARN_PCT = 0.80;
-export const CONTEXT_COMPRESS_PCT = 0.90;
-export const TOOL_RESULT_KEEP_CHARS = 2500;  // B3: was 500 — too aggressive, destroyed most tool output (file_read/grep/web_fetch results were 90%+ truncated)
+export const CONTEXT_WARN_PCT = 0.60;
+export const CONTEXT_COMPRESS_PCT = 0.70;
+// B5: was 2500 — too aggressive for LLM to make tool-calling decisions on
+// truncated content. After 5-6 rounds of file_read/grep/web_fetch, the LLM
+// would see only 2500 chars of recent tool output, decide "I have enough
+// info" and stop calling tools ("give up mid-conversation"). Raise to 8000
+// so the LLM has full context for the same turn + a few turns back. Pair
+// with earlier CONTEXT_COMPRESS_PCT=0.70 so we compress BEFORE we run out,
+// rather than waiting until 90% (too late — the conversation is already
+// in "lazy completion" mode by then).
+export const TOOL_RESULT_KEEP_CHARS = 8000;
 export const LLM_CALL_TIMEOUT = 300_000; // 5 min per LLM API call — prevents infinite hang
 
 export let abortCtrl = null;
