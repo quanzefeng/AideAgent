@@ -19,12 +19,14 @@
 AideAgent is a **local-first desktop AI assistant** that does everything Claude Desktop does — and more — but **free and open-source (Apache-2.0)**.
 
 - 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
-- ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display
+- ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display<sup>[1](#caching-benchmark)</sup>
 - 🧰 **28 built-in tools** — file/shell/git/GitHub/MCP/LSP/skill/kb, all in one binary
 - 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, one-click install of 200+ skills
 - 💬 **WeChat bot** — talk to your agent from your phone
 
 > Built by one developer in 24 days. **17 releases. 180 commits. 25 test files. ~200MB desktop app.**
+
+<sup id="caching-benchmark"><b>[1]</b></sup> *Cache hit-rate benchmark: 90% saving measured on Anthropic Claude Sonnet 4.5 with a 50K-token multi-turn coding conversation, using explicit `cache_control` markers on system + tools + history (1-hour TTL). Methodology and reproduction scripts: [docs/prompt-caching.md](docs/prompt-caching.md).*
 
 ---
 
@@ -37,7 +39,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 **Main Chat Interface**  
 左侧会话列表 + 工作目录，中间流式对话区，底部 4 个智能开关（计划模式 / 知识库 / 联网搜索 / 深度推理）
 
-![Main Chat](docs/screenshots/01-main-chat.png)
+![Main chat: left sidebar with sessions and working directory, center streaming conversation, bottom 4 toggle switches (Plan / KB / Web Search / Deep Reasoning)](docs/screenshots/01-main-chat.png)
 
 </td>
 <td width="50%">
@@ -45,7 +47,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 **Knowledge Base Search (Hybrid RAG)**  
 FTS5 关键词 + 向量语义 + RRF 融合，3 亿字 Obsidian vault 也能秒级定位
 
-![KB Search](docs/screenshots/02-knowledge-base-search.png)
+![Knowledge base search: FTS5 keyword + vector semantic + RRF fusion results, sub-second search across large Obsidian vaults](docs/screenshots/02-knowledge-base-search.png)
 
 </td>
 </tr>
@@ -55,7 +57,7 @@ FTS5 关键词 + 向量语义 + RRF 融合，3 亿字 Obsidian vault 也能秒�
 **28 Tools Overview**  
 Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅知识库，一应俱全
 
-![Features](docs/screenshots/03-features-overview.png)
+![28 tools overview: agent self-introducing capabilities — coding, search, file ops, git, knowledge base](docs/screenshots/03-features-overview.png)
 
 </td>
 <td width="50%">
@@ -63,7 +65,7 @@ Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅�
 **Local-First Tech Stack**  
 内嵌 MiniLM-L6 离线嵌入 / 198 篇已索引笔记 / 4 类持久记忆 / 0 远程依赖
 
-![Tech Stack](docs/screenshots/04-tech-stack.png)
+![Local-first tech stack: bundled MiniLM-L6 offline embedding, 198 indexed notes, 4 memory classes, zero remote dependencies](docs/screenshots/04-tech-stack.png)
 
 </td>
 </tr>
@@ -90,7 +92,8 @@ Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅�
 | **Skill Ecosystem** | ✅ 200+ | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
 | **Offline Embedding Model** | ✅ Bundled | ❌ | ❌ | ❌ | ❌ |
 | **API Key Encryption** | ✅ OS-level | ✅ | ✅ | ✅ | ⚠️ Local file |
-| **Install Size** | **~200MB** | ~200MB | ~400MB | ~80MB | ~60MB |
+| **Monthly Cost** | **$0 (free)** | $20 | $20 | $0 (free) | $0 (free) |
+| **Install Size** | **~200MB** | ~250MB | ~400MB | ~80MB | ~60MB |
 | **Platforms** | Win/Mac/Linux | Win/Mac | Win/Mac | VSCode | VSCode/JetBrains |
 
 **Verdict:** If you want Claude Desktop's polish **plus** RAG **plus** Hooks **plus** WeChat — without the $20/mo tax — AideAgent is for you.
@@ -115,6 +118,13 @@ npm start
 ```
 
 ### 3-Step Setup
+
+> ⚠️ **Before you start** — you'll need an API key from **one** of these providers (or use local Ollama, no key needed):
+> - 🇨🇳 **DeepSeek** → Sign up at [platform.deepseek.com](https://platform.deepseek.com) (cheapest, best for CN users)
+> - 🌐 **Anthropic Claude** → Sign up at [console.anthropic.com](https://console.anthropic.com)
+> - 🇨🇳 **Zhipu GLM** → Sign up at [open.bigmodel.cn](https://open.bigmodel.cn) (CN, GLM-4.6 coding plan)
+> - 🇨🇳 **Alibaba Qwen** → Sign up at [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com)
+> - 🏠 **Ollama / LM Studio / llama.cpp** → 100% local, zero API cost, no signup needed
 
 1. **Open Settings → API Config** → choose a provider (DeepSeek / Claude / GLM / Qwen / Ollama / ...)
 2. **Paste your API key** → saved with OS-level encryption (Windows DPAPI / macOS Keychain / Linux libsecret)
@@ -318,7 +328,7 @@ If AideAgent saved you time or money, consider buying the author a coffee ☕
 
 ## 📬 Contact
 
-- 💬 WeChat: `q2993919594`
+- 💬 WeChat ID (not phone number): `q2993919594` — search & add in WeChat → Contacts → Add Contacts → WeChat ID
 - 📧 Email: `zefengquan5@gmail.com`
 - 🐙 GitHub: [@quanzefeng](https://github.com/quanzefeng)
 
