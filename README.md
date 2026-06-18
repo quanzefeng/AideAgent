@@ -44,28 +44,28 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 </td>
 <td width="50%">
 
-**Knowledge Base Search (Hybrid RAG)**  
-FTS5 关键词 + 向量语义 + RRF 融合，3 亿字 Obsidian vault 也能秒级定位
+**API Config (Multi-Provider)**  
+一键切换 DeepSeek / Claude / GLM / Qwen / Ollama，API Key 通过操作系统级加密保存（Windows DPAPI / macOS Keychain / Linux libsecret）
 
-![Knowledge base search: FTS5 keyword + vector semantic + RRF fusion results, sub-second search across large Obsidian vaults](docs/screenshots/02-knowledge-base-search.png)
+![API Config: multi-provider switcher (DeepSeek / Claude / GLM / Qwen / Ollama) with OS-encrypted API key input, model picker, and System Prompt editor](docs/screenshots/02-knowledge-base-search.png)
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-**28 Tools Overview**  
-Agent 自主介绍能力：编程、搜索、管理文件、操作 Git、查阅知识库，一应俱全
+**Knowledge Base Setup (Local RAG)**  
+Obsidian vault 路径接入 / Embedding 模型选择 / Test Search 验证 / Index 重建与清理一站式配置
 
-![28 tools overview: agent self-introducing capabilities — coding, search, file ops, git, knowledge base](docs/screenshots/03-features-overview.png)
+![Knowledge base setup: Obsidian vault path picker, embedding model selector (MiniLM-L6 / Ollama), Test Search box, and Danger Zone (rebuild index / clear data)](docs/screenshots/03-features-overview.png)
 
 </td>
 <td width="50%">
 
-**Local-First Tech Stack**  
-内嵌 MiniLM-L6 离线嵌入 / 198 篇已索引笔记 / 4 类持久记忆 / 0 远程依赖
+**Skill Ecosystem (Fine-Grained Control)**  
+细粒度开关控制加载哪些 skill：Token Economy / API & Interface Design / Architecture Designer / Code Simplification / Self-Improving Agent 等，按需启用
 
-![Local-first tech stack: bundled MiniLM-L6 offline embedding, 198 indexed notes, 4 memory classes, zero remote dependencies](docs/screenshots/04-tech-stack.png)
+![Skill ecosystem: per-skill toggle list (Token Economy / API Design / Architecture / Code Simplification / Self-Improving / etc.), with master switch and curated catalog](docs/screenshots/04-tech-stack.png)
 
 </td>
 </tr>
