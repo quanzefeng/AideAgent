@@ -51,11 +51,11 @@
 
   <!-- Ask Question Modal -->
   <div id="ask-modal" class="modal">
-    <div class="modal-content" style="max-width:560px;">
+    <div class="modal-content" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" data-i18n="ask.title">🤔 需要确认</h2>
       </div>
-      <div class="modal-body" id="ask-modal-body"></div>
+      <div class="modal-body" id="ask-modal-body" style="overflow-y:auto;flex:1 1 auto;min-height:0;"></div>
       <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 0 0;">
         <button id="ask-submit" class="btn primary" data-i18n="ask.confirm">确认</button>
       </div>
