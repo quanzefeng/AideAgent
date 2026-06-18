@@ -37,7 +37,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 <td width="50%">
 
 **Main Chat Interface**  
-左侧会话列表 + 工作目录，中间流式对话区，底部 4 个智能开关（计划模式 / 知识库 / 联网搜索 / 深度推理）
+Left sidebar with session list and working directory, streaming conversation in the center, 4 smart toggles at the bottom (Plan Mode / Knowledge Base / Web Search / Deep Reasoning)
 
 ![Main chat: left sidebar with sessions and working directory, center streaming conversation, bottom 4 toggle switches (Plan / KB / Web Search / Deep Reasoning)](docs/screenshots/01-main-chat.png)
 
@@ -45,7 +45,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 <td width="50%">
 
 **MCP Servers (Tool Ecosystem)**  
-内置 4 个 MCP server：WebSearch、SearXNG、Edge Browser、Computer-Use,每个独立启停,实时显示连接状态（紫色顶栏 = MCP 配置页专属色）
+Built-in 4 MCP servers: WebSearch, SearXNG, Edge Browser, Computer-Use — each independently togglable with real-time connection status (purple topbar = MCP config page)
 
 ![MCP Servers: built-in 4 MCP servers (WebSearch / SearXNG / Edge Browser / Computer-Use), each independently toggleable with real-time connection status indicator](docs/screenshots/02-knowledge-base-search.png)
 
@@ -55,7 +55,7 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 <td width="50%">
 
 **Knowledge Base Setup (Local RAG)**  
-Obsidian vault 路径接入 / Embedding 模型选择 / Test Search 验证 / Index 重建与清理一站式配置
+Obsidian vault path picker / Embedding model selector / Test Search box / Index rebuild and clear — one-stop local RAG configuration
 
 ![Knowledge base setup: Obsidian vault path picker, embedding model selector (MiniLM-L6 / Ollama), Test Search box, and Danger Zone (rebuild index / clear data)](docs/screenshots/03-features-overview.png)
 
@@ -63,7 +63,7 @@ Obsidian vault 路径接入 / Embedding 模型选择 / Test Search 验证 / Inde
 <td width="50%">
 
 **Skill Ecosystem (Fine-Grained Control)**  
-细粒度开关控制加载哪些 skill：Token Economy / API & Interface Design / Architecture Designer / Code Simplification / Self-Improving Agent 等，按需启用
+Fine-grained per-skill toggles: Token Economy / API & Interface Design / Architecture Designer / Code Simplification / Self-Improving Agent — enable only what you need
 
 ![Skill ecosystem: per-skill toggle list (Token Economy / API Design / Architecture / Code Simplification / Self-Improving / etc.), with master switch and curated catalog](docs/screenshots/04-tech-stack.png)
 
