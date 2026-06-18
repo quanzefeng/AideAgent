@@ -516,6 +516,19 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           turns++;
           if (turns < MAX_TURNS) continue;
         }
+        // B8: anti-laziness guard. If the LLM has called 0 tools in the
+        // entire conversation AND the user's prompt looks operational
+        // (contains action verbs like 改/修/查/找/跑/执行/创建/读取),
+        // the LLM is trying to "complete" without doing any work. Push a
+        // reminder forcing tool use. Cap at 2 nudges to avoid loops; if the
+        // LLM still won't use tools after that, accept its answer and let
+        // the user see that it refused to act.
+        const hasActionIntent = /(改|修|查|找|跑|执行|删除|创建|添加|读取|分析|搜索|运行|test|run|fix|search|read|write|delete|create|build|install|test|debug|find)/i.test(prompt || "");
+        if (toolsCalledThisTurn === 0 && hasActionIntent && turns < MAX_TURNS - 2) {
+          msgs.push({ role: "user", content: "⚠️ 你还没调用任何工具就准备结束。用户的要求是操作性任务（不是纯聊天），请先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，再回答。如果你不确定要做什么，请用 AskUserQuestion 询问用户。" });
+          turns++;
+          continue;
+        }
         agentFinished = true;
         break;
       }

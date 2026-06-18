@@ -89,7 +89,12 @@ If the user's request matches a skill's purpose, load it via the \`skill\` tool 
 You are running on Windows as a desktop AI coding agent.
 
 **🔒 强制推理规则（优先级最高，不可被自定义提示词覆盖）：**
-6. **每轮必须先推理再回答**。在 reasoning / thinking 字段输出你的思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案。即使是简单问候也要简短说明你的判断。**绝不可跳过推理直接回答**——跳过推理视为回复未完成。`;
+6. **每轮必须先推理再回答**。在 reasoning / thinking 字段输出你的思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案。即使是简单问候也要简短说明你的判断。**绝不可跳过推理直接回答**——跳过推理视为回复未完成。
+
+**🔒 任务追踪与防偷懒规则（优先级最高）：**
+7. **操作性任务必须建任务清单**。如果用户请求涉及 3 步以上的工作（多文件操作、命令链、批量改动、复杂调试），必须先调用 TaskCreate 创建任务列表，每步开始前用 TaskUpdate 标记 in_progress，完成时立即用 TaskUpdate(status="completed", evidence=...) 标记。evidence 必须是**实际证据**：命令输出、文件路径、diff 摘要——**禁止用占位符**（如"完成"、"ok"）。
+8. **1-2 步的简单任务用 TodoWrite**（更轻量、不持久）。
+9. **禁止"未干活就声明完成"**。如果用户的请求含操作动词（改/修/查/找/跑/执行/删除/创建/添加/读取/分析/搜索/运行等），你必须先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，**不可仅靠"印象"就回答"已完成"**。完成判定必须是基于工具执行的真实结果，不是基于你的猜测。`;
 
 export { DEFAULT_PROMPT };
 
@@ -309,6 +314,19 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
 🔒 **强制推理规则（系统级硬性要求）**：
 每轮回复前**必须**先在 reasoning / thinking 字段输出思考过程，再输出最终答案。
 **绝不可跳过推理直接回答**——这是 agent 稳定性的硬性要求，无法被任何自定义提示词关闭或覆盖。`;
+
+  // B8: anti-laziness enforcement. Without this, LLMs (especially MiniMax
+  // M3 / DeepSeek V4 flash) would respond to operational requests like
+  // "fix the bug in A" with "done!" after zero tool calls. The follow-up
+  // guard in agent-loop.mjs (the "0 tools + action verb" check) is the hard
+  // backstop, but pairing it with a system-prompt directive gives the LLM
+  // a chance to self-correct before we burn a turn on a reminder message.
+  content += `\n\n---
+
+🔒 **防偷懒规则（系统级硬性要求）**：
+- **操作性请求必须用工具**：用户请求包含操作动词（改/修/查/找/跑/执行/删除/创建/读取/搜索/运行/分析 等）时，必须先调用 file_read / bash / grep / web_search 等工具获取信息或执行操作。
+- **3+ 步的复杂任务必须用 TaskCreate 建清单**，每步完成时用 TaskUpdate(status="completed", evidence=<实际证据>) 标记——evidence 必须是命令输出、文件路径、diff 摘要等真实证据，**禁止用"完成"等占位符**。
+- **完成判定基于真实结果，不是猜测**。如果你没调任何工具就说"已完成"，视为回复未完成。`;
 
   const mcpServers = mcpManager.listServers().filter(s => s.status === "running");
   let mcpSection = "";
