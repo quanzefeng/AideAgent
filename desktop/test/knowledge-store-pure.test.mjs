@@ -39,6 +39,20 @@ import {
 let tempVault;
 const originalVault = getVault();
 
+// Safety net: if the test process is killed (SIGKILL, OOM, hard exit) and
+// afterAll doesn't run, this fires to clear the leaked temp vault path from
+// ~/.aideagent/kb-config.json. Without this, an interrupted test run would
+// leave the user's KB pointing at a now-deleted C:\...\Temp\kb-test-XXXXX
+// directory until they manually reset it in Settings.
+// process.on('exit') only fires on normal exit, so this covers the "test
+// suite finished but afterAll was skipped" edge case (e.g. uncaught error
+// aborts the worker). For SIGKILL there's no recovery — that's unavoidable.
+process.on("exit", () => {
+  if (getVault() && getVault() !== originalVault) {
+    try { setVault(originalVault || ""); } catch { /* ignored */ }
+  }
+});
+
 beforeAll(() => {
   // Set up a real temp dir so realpathSync() succeeds inside isSafeVaultPath.
   // The bug fix uses realpathSync on both the vault and the resolved path.
@@ -49,8 +63,11 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  // Restore original vault so other tests in the suite aren't affected
-  if (originalVault) setVault(originalVault);
+  // Always restore — including to "" if that was the original state.
+  // The previous `if (originalVault)` guard skipped restore when the user
+  // had no vault configured, which leaked the temp path into kb-config.json
+  // (a real production incident — see git history).
+  setVault(originalVault || "");
   if (tempVault && existsSync(tempVault)) {
     try { rmSync(tempVault, { recursive: true, force: true }); } catch { /* ignored */ }
   }

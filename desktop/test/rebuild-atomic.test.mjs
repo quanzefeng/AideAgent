@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setVault } from "../knowledge-store.mjs";
+import { setVault, getVault } from "../knowledge-store.mjs";
 import { rebuildIndex } from "../kb/indexer.mjs";
 import { _setDbPath, getDb } from "../kb/db.mjs";
 import { makeIsoKb } from "./helpers/iso-kb.mjs";
@@ -20,6 +20,10 @@ import { makeIsoKb } from "./helpers/iso-kb.mjs";
 describe("Atomic rebuildIndex", () => {
   /** @type {ReturnType<typeof makeIsoKb>} */
   let iso;
+  // Capture user's real vault path BEFORE any test runs, so we can restore
+  // it in afterEach. Without this, the test leaves kb-config.json pointing
+  // at the (now-deleted) temp vault dir, breaking the user's KB. (P0-1 fix)
+  const originalVault = getVault();
 
   beforeEach(() => {
     iso = makeIsoKb({
@@ -36,6 +40,10 @@ describe("Atomic rebuildIndex", () => {
   afterEach(() => {
     _setDbPath(null);
     iso.cleanup();
+    // Always restore — including to "" if that was the original state.
+    // The previous code skipped restoration entirely, leaking the temp
+    // vault path into ~/.aideagent/kb-config.json on every run.
+    setVault(originalVault || "");
   });
 
   it("happy path: rebuild completes, lock cleared, _new tables dropped, FTS works", async () => {

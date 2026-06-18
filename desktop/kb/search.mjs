@@ -83,10 +83,15 @@ export function ftsSearch(query, limit) {
   if (hasFts5()) {
     try {
       const terms = query.split(/\s+/).filter(Boolean);
-      // Sanitize each term: strip FTS5 metacharacters that could change
-      // query semantics or break the parser. Then quote + space-CJK.
+      // Sanitize each term FIRST (strip FTS5 metacharacters like " * ( ) etc.),
+      // THEN space out CJK characters. The order matters: if we spaced first
+      // and sanitized second, the sanitizer would strip the spaces we just
+      // added (its regex rejects everything that isn't \w / CJK / dash, and
+      // space is none of those), collapsing the spaced query back to a single
+      // token that never matches the per-character FTS5 index. (P0 fix —
+      // empirically all 5 CJK tests returned 0 hits before this change.)
       const spacedTerms = terms
-        .map(t => sanitizeFtsTerm(spaceCJK(t)))
+        .map(t => spaceCJK(sanitizeFtsTerm(t)))
         .filter(t => t.length > 0)
         .map(t => '"' + t + '"');
       if (spacedTerms.length === 0) return [];
