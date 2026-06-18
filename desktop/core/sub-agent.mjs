@@ -1,4 +1,4 @@
-// ── Sub-Agent Launcher ──────────────────────────────────────
+﻿// ── Sub-Agent Launcher ──────────────────────────────────────
 
 /**
  * @typedef {{ apiKey?: string, apiUrl?: string, model?: string, apiFormat?: string }} ApiConfig
@@ -29,7 +29,7 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
   const subTools = allToolDefs.filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
 
   const sysContent = `你是 AideAgent 的子代理，拥有完整工具集。
-可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, memory_search, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
+可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
 你的任务是: ${prompt}
 完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。`;
   /** @type {Array<any>} */
@@ -79,7 +79,26 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
       if (isAnthropic) {
         const sys = cleanMsgs.find(m => m.role === "system");
         body.system = sys?.content || "";
-        body.messages = cleanMsgs.filter(m => m.role !== "system");
+        // BUGFIX: Anthropic API 不识别 role="tool"（tool result）和内联 tool_calls 数组。
+        // 必须转换为 content blocks 格式（toAnthropicMessages 的惯例）。
+        body.messages = cleanMsgs.filter(m => m.role !== "system").map(m => {
+          if (m.role === "tool") {
+            // tool result → { role: "user", content: [{type: "tool_result", tool_use_id, content}] }
+            return { role: "user", content: [{ type: "tool_result", tool_use_id: m.tool_call_id, content: m.content }] };
+          }
+          if (m.role === "assistant" && m.tool_calls?.length > 0) {
+            // assistant 的 tool_calls 数组 → content blocks 中的 tool_use
+            const blocks = [];
+            if (m.content) blocks.push({ type: "text", text: m.content });
+            for (const tc of m.tool_calls) {
+              let input = {};
+              try { input = JSON.parse(tc.function?.arguments || "{}"); } catch {}
+              blocks.push({ type: "tool_use", id: tc.id, name: tc.function?.name, input });
+            }
+            return { role: "assistant", content: blocks };
+          }
+          return m;
+        });
       }
 
       const res = await fetch(endpoint, {
@@ -149,8 +168,11 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
         }
       }
 
+      // BUGFIX: 某些 API（Ollama/proxy/开源模型）在流式 tool_calls 中不发送 id 字段，
+      // 导致 tc.id 为空字符串 → API 400 "tool id() not found"。兜底生成 fallback ID。
+      const _genToolId = () => `sub_tc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
       const tcs = Object.values(tcAccum).filter(tc => tc.name).map(tc => ({
-        id: tc.id, type: "function",
+        id: tc.id || _genToolId(), type: "function",
         function: { name: tc.name, arguments: tc.args || "{}" },
       }));
 

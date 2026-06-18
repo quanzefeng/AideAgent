@@ -155,7 +155,7 @@ export const SUB_AGENT_TOOL_NAMES = new Set([
   "create_skill", "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite",
   "AskUserQuestion", "kb_write", "lsp", "git_diff", "git_commit",
   "git_branch", "gh_pr", "gh_issue", "gh_repo",
-  "kb_search", "kb_get_note", "memory_search",
+  "kb_search", "kb_get_note",
 ]);
 export const SUB_AGENT_MAX_TURNS = 12;
 export const _subAgentCtrls = new Map();
