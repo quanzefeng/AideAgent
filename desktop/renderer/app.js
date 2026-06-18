@@ -6,7 +6,7 @@
 import './modules/font-settings.mjs';
 import './modules/bg-settings.mjs';
 import './modules/workspace.mjs';
-import { initKnowledgeBase } from './modules/knowledge-base.mjs';
+import { initKnowledgeBase, loadKnowledgeBasePanel } from './modules/knowledge-base.mjs';
 import { initMemoryPanel } from './modules/memory-panel.mjs';
 import { loadAgentName, loadUserName, applyAgentName, applyUserName, initAgentNameUI, initUserAvatarUI, loadUserAvatarSrc } from './modules/agent-name.mjs';
 import { sanitize, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, setStatus, loadReasoningEnabled, saveReasoningEnabled } from './modules/helpers.mjs';
@@ -2088,6 +2088,12 @@ initMemoryPanel();
       // Update KB clear status if visible
       const kbSt = document.getElementById("kb-status");
       if (kbSt && kbSt.textContent.match(/^(未配置|Not configured)$/)) kbSt.textContent = t("kb.unconfigured");
+      // Re-render KB panel status ("Indexed X notes" doesn't auto-refresh on lang switch)
+      const kbTab = document.querySelector('.settings-tab[data-tab="knowledge-base"]');
+      const kbPanel = document.getElementById("tab-knowledge-base");
+      if (kbTab?.classList.contains("active") && kbPanel && !kbPanel.classList.contains("hidden")) {
+        loadKnowledgeBasePanel().catch(() => {});
+      }
       // Update workspace
       updateWorkspaceDisplay();
     });

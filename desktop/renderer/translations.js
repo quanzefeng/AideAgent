@@ -104,6 +104,7 @@ const translations = {
     "skills.count": "{count} 个技能",
     "skills.scanning": "正在扫描 L3 本地技能...",
     "skills.empty": "未找到本地技能。技能存放在 .agents/ 或 .claude/skills/ 目录下。",
+    "skills.toggle_all": "一键开启",
     "skills.load_error": "加载本地技能失败",
     "skills.triggers": "触发:",
     "skills.tools_count": "个工具",
@@ -243,6 +244,7 @@ const translations = {
     "kb.embedding": "Embedding 模型",
     "kb.local_model": "本地 MiniLM-L6（离线，推荐）",
     "kb.ollama_model": "Ollama（需本地运行）",
+    "kb.ollama_model_name": "Ollama 模型名",
     "kb.deepseek_model": "DeepSeek API",
     "kb.unconfigured": "未配置",
     "kb.indexed": "已索引 {count} 篇笔记，{embedded} 个片段已向量化",
@@ -256,6 +258,7 @@ const translations = {
     "kb.max_body_chars": "嵌入最大字符数 (0=自动)",
     "kb.auto_chars": "(自动检测: {n})",
     "kb.error": "错误: {error}",
+    "kb.ollama_model": "Ollama 模型名",
     "kb.pick_fail": "选择文件夹失败: {error}",
     "kb.select_vault": "请先选择 Vault 路径",
     "kb.indexing": "索引中...",
@@ -368,6 +371,7 @@ const translations = {
     "chat.kb_hint": "知识库 RAG 检索",
     "chat.reasoning": "深度推理",
     "chat.reasoning_hint": "深度推理",
+    "chat.web_search": "联网搜索",
 
     // ── Status ──
     "status.thinking": "思考中...",
@@ -447,6 +451,9 @@ const translations = {
     "api.system_prompt_title": "System Prompt",
     "api.system_prompt_placeholder": "可选：设置系统级提示词，会影响所有 Agent 的对话行为",
     "api.fetch_models_btn": "获取模型",
+    "api.search_provider": "联网搜索引擎",
+    "api.tavily_option": "Tavily（推荐，稳定高效，需 API Key）",
+    "api.metasearch_option": "内置元搜索（免费备选，零配置，多源自动聚合）",
 
     // ── Additional Chat Keys ──
     "chat.welcome_title": "AideAgent",
@@ -592,6 +599,7 @@ const translations = {
     "skills.local_hint": "Locally installed skills (.agents/ / .claude/skills/), auto-detected by Agent. This panel is read-only.",
     "skills.refresh": "Refresh",
     "skills.count": "{count} skills",
+    "skills.toggle_all": "Toggle All",
     "skills.scanning": "Scanning L3 local skills...",
     "skills.empty": "No local skills found. Skills are stored in .agents/ or .claude/skills/ directories.",
     "skills.load_error": "Failed to load local skills",
@@ -733,6 +741,7 @@ const translations = {
     "kb.embedding": "Embedding Model",
     "kb.local_model": "Local MiniLM-L6 (Offline, Recommended)",
     "kb.ollama_model": "Ollama (Requires local server)",
+    "kb.ollama_model_name": "Ollama Model",
     "kb.deepseek_model": "DeepSeek API",
     "kb.unconfigured": "Not configured",
     "kb.indexed": "Indexed {count} notes, {embedded} chunks vectorized",
@@ -746,6 +755,7 @@ const translations = {
     "kb.max_body_chars": "Max body chars (0=auto)",
     "kb.auto_chars": "(auto-detected: {n})",
     "kb.error": "Error: {error}",
+    "kb.ollama_model": "Ollama Model",
     "kb.pick_fail": "Failed to select folder: {error}",
     "kb.select_vault": "Please select a Vault path first",
     "kb.indexing": "Indexing...",
@@ -858,6 +868,7 @@ const translations = {
     "chat.kb_hint": "Knowledge Base RAG Search",
     "chat.reasoning": "Reasoning",
     "chat.reasoning_hint": "Deep Reasoning",
+    "chat.web_search": "Web Search",
 
     // ── Status ──
     "status.thinking": "Thinking...",
@@ -937,6 +948,9 @@ const translations = {
     "api.system_prompt_title": "System Prompt",
     "api.system_prompt_placeholder": "Optional: set a system-level prompt affecting all Agent conversations",
     "api.fetch_models_btn": "Fetch Models",
+    "api.search_provider": "Web Search Engine",
+    "api.tavily_option": "Tavily (recommended, stable, requires API key)",
+    "api.metasearch_option": "Built-in meta-search (free, zero-config, multi-source aggregation)",
 
     // ── Additional Chat Keys ──
     "chat.welcome_title": "AideAgent",

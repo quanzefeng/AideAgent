@@ -182,10 +182,10 @@
                 <input type="password" id="settings-key" class="form-input" placeholder="sk-..." />
               </div>
               <div class="form-row" style="margin-top:12px;">
-                <label class="form-label">联网搜索引擎</label>
+                <label class="form-label" data-i18n="api.search_provider">联网搜索引擎</label>
                 <select id="settings-search-provider" class="form-select">
-                  <option value="tavily">Tavily（推荐，稳定高效，需 API Key）</option>
-                  <option value="metasearch">内置元搜索（免费备选，零配置，多源自动聚合）</option>
+                  <option value="tavily" data-i18n="api.tavily_option">Tavily（推荐，稳定高效，需 API Key）</option>
+                  <option value="metasearch" data-i18n="api.metasearch_option">内置元搜索（免费备选，零配置，多源自动聚合）</option>
                 </select>
               </div>
               <div class="form-row" id="tavily-key-row">
@@ -255,7 +255,7 @@
                 </button>
                 <button id="skills-toggle-all-btn" class="btn btn-primary" title="一键开启 / 全部关闭" style="margin-left:auto;">
                   <svg id="skills-toggle-all-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>
-                  <span id="skills-toggle-all-label">一键开启</span>
+                  <span id="skills-toggle-all-label" data-i18n="skills.toggle_all">一键开启</span>
                 </button>
                 <span id="skills-count" class="skills-count" data-i18n="skills.count">0 个技能</span>
               </div>
@@ -457,7 +457,7 @@
                 </select>
               </div>
               <div class="form-row" id="kb-ollama-model-row" style="display:none;">
-                <label class="form-label">Ollama 模型名</label>
+                <label class="form-label" data-i18n="kb.ollama_model_name">Ollama 模型名</label>
                 <select id="kb-ollama-model" class="form-select"></select>
               </div>
               <div id="kb-status" class="settings-status" style="margin:8px 0;" data-i18n="kb.unconfigured">未配置</div>
@@ -794,7 +794,7 @@
                 </div>
               </label>
               <label class="reasoning-toggle" title="联网搜索：关闭后 agent 无法使用 web_search 和 web_fetch 工具">
-                <span class="reasoning-toggle-label">联网搜索</span>
+                <span class="reasoning-toggle-label" data-i18n="chat.web_search">联网搜索</span>
                 <div class="toggle-switch toggle-switch-sm">
                   <input type="checkbox" id="web-search-toggle" checked />
                   <span class="toggle-slider"></span>
