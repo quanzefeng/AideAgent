@@ -2,7 +2,7 @@
 
 # 🤖 AideAgent
 
-### The free Claude Desktop alternative that runs RAG, hooks, and WeChat — for $0/month. Apache-2.0, 34 tools, cross-platform.
+### A local-first desktop AI assistant with RAG, Hooks, MCP, and WeChat bot — fully open-source, Apache-2.0.
 
 [![GitHub release](https://img.shields.io/github/v/release/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
@@ -16,7 +16,7 @@
 
 ## 👀 What is AideAgent?
 
-AideAgent is a **local-first desktop AI assistant** that does everything Claude Desktop does — and more — but **free and open-source (Apache-2.0)**.
+AideAgent is a **local-first desktop AI assistant** focused on privacy, deep extensibility, and zero vendor lock-in. It's **free and open-source (Apache-2.0)** — your data stays on your machine.
 
 - 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
 - ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display<sup>[1](#caching-benchmark)</sup>
@@ -73,7 +73,7 @@ Fine-grained per-skill toggles: Token Economy / API & Interface Design / Archite
 
 ---
 
-## ⚖️ AideAgent vs The Alternatives
+## ⚖️ AideAgent vs Other Tools
 
 > Tired of paying $20/mo for tools that don't have RAG, hooks, or WeChat integration?
 
@@ -96,7 +96,7 @@ Fine-grained per-skill toggles: Token Economy / API & Interface Design / Archite
 | **Install Size** | **~200MB** | ~250MB | ~400MB | ~80MB | ~60MB |
 | **Platforms** | Win/Mac/Linux | Win/Mac | Win/Mac | VSCode | VSCode/JetBrains |
 
-**Verdict:** If you want Claude Desktop's polish **plus** RAG **plus** Hooks **plus** WeChat — without the $20/mo tax — AideAgent is for you.
+**Verdict:** If you need RAG, Hooks, and WeChat integration in a local-first desktop app — and you'd rather skip the $20/mo subscription — AideAgent is worth a look.
 
 ---
 
@@ -344,21 +344,13 @@ npm run lint
 
 AideAgent started on **May 23, 2026** as a weekend experiment to answer one question:
 
-> *"Can I build a Claude Desktop replacement that doesn't charge $20/mo — and add RAG, Hooks, and WeChat while I'm at it?"*
+> *"Can I build a privacy-first local AI assistant with RAG, Hooks, and WeChat — without the $20/mo subscription?"*
 
 **24 days later:** 17 releases · 199+ commits · 34 tools · 25+ tests · 0 contributors.
 
-Today, it's your free Claude Desktop alternative.
+Today, it's a small, honest open-source project — and it's yours to use, fork, or extend.
 
 — Built with ❤️ + coffee by [@quanzefeng](https://github.com/quanzefeng)
-
----
-
-## 📈 Star History
-
-<a href="https://star-history.com/#quanzefeng/AideAgent&Date">
-  <img src="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" alt="Star History Chart" width="600" />
-</a>
 
 ---
 
