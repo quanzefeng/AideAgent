@@ -169,7 +169,64 @@ export const SUB_AGENT_MAX_TURNS = 12;
 export const _subAgentCtrls = new Map();
 
 // ── Memory Selection ────────────────────────────────────────
-export const _surfacedMemories = new Set();
+// P3方案3(c): _surfacedMemories now has a per-turn TTL so that memories
+// surfaced once can become candidates again after N conversation turns.
+// Without TTL, a memory that the LLM surfaced in turn 1 stays "locked out"
+// for the entire session even if the user's topic shifts — leading to the
+// Agent seeing only stale memories and "answering about the wrong thing".
+//
+// Map<filename, { turn: number, expiresAt: number }> instead of Set<string>.
+// Public API: markSurfaced(filename), pruneSurfacedMemories(now, ttl),
+// isSurfaced(filename, now) — wrapped in helpers so callers don't have
+// to think about the data shape.
+const _SURFACED_TTL_TURNS = 50; // 50 turns ~= 1-2 hours of active conversation
+
+/** @type {Map<string, { turn: number, expiresAt: number }>} */
+const _surfacedMemories = new Map();
+
+/** @param {string} filename */
+export function markSurfaced(filename) {
+  const turn = _currentTurn;
+  _surfacedMemories.set(filename, { turn, expiresAt: turn + _SURFACED_TTL_TURNS });
+}
+
+/**
+ * Drop expired entries. Cheap to call on every selection — Map.delete is O(1).
+ * @param {number} now
+ */
+export function pruneSurfacedMemories(now) {
+  for (const [k, v] of _surfacedMemories) {
+    if (v.expiresAt <= now) _surfacedMemories.delete(k);
+  }
+}
+
+/**
+ * @param {string} filename
+ * @param {number} now
+ * @returns {boolean}
+ */
+export function isSurfaced(filename, now) {
+  const v = _surfacedMemories.get(filename);
+  return !!(v && v.expiresAt > now);
+}
+
+/** Get raw entries (for tests + debugging). */
+export function getSurfacedMemoriesSnapshot() {
+  return Array.from(_surfacedMemories.entries()).map(([k, v]) => ({ filename: k, ...v }));
+}
+
+/** Reset for tests. */
+export function resetSurfacedMemories() {
+  _surfacedMemories.clear();
+}
+
+// Per-session turn counter. Bumped once per LLM call by the agent loop.
+// Memory-selection uses this to decide which "surfaced" memories have expired.
+let _currentTurn = 0;
+export function bumpTurnCounter() { _currentTurn++; return _currentTurn; }
+export function getCurrentTurn() { return _currentTurn; }
+/** Test-only: reset to 0. */
+export function resetTurnCounter() { _currentTurn = 0; }
 
 // ── Prompt Store ────────────────────────────────────────────
 export let _promptStorePath = null;

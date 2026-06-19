@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, searchMemory } from "../memory-store.mjs";
+import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, searchMemory, purgeByType } from "../memory-store.mjs";
 
 describe("Memory Store", () => {
   let createdFilename;
@@ -100,6 +100,50 @@ describe("Memory Store", () => {
     it("createMemory requires name", () => {
       const result = createMemory("", "", "", "");
       expect(result.error).toBeTruthy();
+    });
+  });
+
+  describe("purgeByType", () => {
+    // Create isolated test memories so we don't touch real user data
+    const testFiles = [];
+    afterAll(() => {
+      // Always clean up — never leave test files behind
+      for (const f of testFiles) {
+        try { deleteMemory(f); } catch { /* ignored */ }
+      }
+    });
+
+    it("refuses to delete 'user' type (safety)", () => {
+      const result = purgeByType("user");
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/invalid type/i);
+    });
+
+    it("refuses to delete 'bogus' type", () => {
+      const result = purgeByType("totally-not-a-type");
+      expect(result.ok).toBe(false);
+    });
+
+    it("removes all memories of a given type", () => {
+      const a = createMemory("purge_test_a", "purgedesc a", "project", "alpha body");
+      const b = createMemory("purge_test_b", "purgedesc b", "project", "beta body");
+      const c = createMemory("purge_test_c", "purgedesc c", "feedback", "gamma body");
+      testFiles.push(a.filename, b.filename, c.filename);
+
+      const before = listMemories().filter(m => m.type === "project" && m.filename.startsWith("purge_test_"));
+      expect(before.length).toBe(2);
+
+      const result = purgeByType("project");
+      expect(result.ok).toBe(true);
+      expect(result.removed).toBeGreaterThanOrEqual(2);
+      expect(result.names).toContain(a.filename);
+      expect(result.names).toContain(b.filename);
+
+      const afterProjects = listMemories().filter(m => m.type === "project" && m.filename.startsWith("purge_test_"));
+      const feedbackStillThere = listMemories().find(m => m.filename === c.filename);
+      expect(afterProjects.length).toBe(0);
+      expect(feedbackStillThere).toBeTruthy();
+      expect(feedbackStillThere.type).toBe("feedback");
     });
   });
 

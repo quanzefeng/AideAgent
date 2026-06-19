@@ -23,7 +23,13 @@ const MAX_INDEX_BYTES = 25000;
 // Phase 3: hard cap on project-memory files. When appendProjectMemory() is
 // about to create a NEW one and the count exceeds this, the oldest (by mtime)
 // is deleted first. User / feedback / reference memories are not affected.
-const MAX_PROJECT_MEMORIES = 30;
+//
+// P3方案1: 30 → 10. With 30, the LLM-side memory picker has to choose 8
+// from 30 candidates every turn, leading to noisy context that interferes
+// with the agent's reasoning ("answering about the wrong thing"). 10 keeps
+// the working set small enough for selection to stay useful. User / feedback
+// memories are NOT capped — those are higher-signal and always worth keeping.
+const MAX_PROJECT_MEMORIES = 10;
 
 if (!existsSync(MEM_DIR)) mkdirSync(MEM_DIR, { recursive: true });
 
@@ -290,6 +296,36 @@ export function updateMemory(filename, body, name, description, type) {
 }
 
 /**
+ * Bulk-delete all memories of a given type. Used by the "purge" button in
+ * the Settings → Memory panel. Always rebuilds the FTS index after.
+ *
+ * Safety: refuses to delete the `user` type (which holds user_profile.md).
+ * Caller should pre-confirm in the UI; we still double-check here.
+ *
+ * @param {string} type  one of "project" | "feedback" | "reference"
+ * @returns {{ ok: boolean, removed?: number, names?: string[], error?: string }}
+ */
+export function purgeByType(type) {
+  if (!type || (type !== "project" && type !== "feedback" && type !== "reference")) {
+    return { ok: false, error: `invalid type: ${type} (refusing to bulk-delete user memories)` };
+  }
+  const all = listMemories().filter(m => m.type === type);
+  const removed = [];
+  const failed = [];
+  for (const m of all) {
+    const r = deleteMemory(m.filename);
+    if (r?.ok) removed.push(m.filename);
+    else failed.push(m.filename);
+  }
+  // Rebuild FTS + index so the count badge + search reflect the purge
+  try { rebuildIndex(); } catch { /* ignored */ }
+  if (failed.length > 0) {
+    return { ok: true, removed: removed.length, names: removed, failed };
+  }
+  return { ok: true, removed: removed.length, names: removed };
+}
+
+/**
  * @param {string} filename
  * @returns {{ ok: boolean, error?: string }}
  */
@@ -444,9 +480,14 @@ export function appendProjectMemory(content) {
   const safeContent = String(content).trim();
 
   // P2: try to merge into an existing similar project memory first.
-  // Scans the most recent 20 project memories; if any has >50% word overlap
-  // with the new content, append a dated update to that file instead of
-  // creating a new one. Prevents unbounded fragmentation from auto-review.
+  // Scans the most recent 20 project memories; if any has >70% word overlap
+  // AND ≥5 overlapping words AND length ratio within 2x, append a dated
+  // update to that file instead of creating a new one.
+  //
+  // P3方案3(a): tightened from 50% to 70% — the old threshold let almost
+  // any related memory merge, producing giant "kitchen sink" files where
+  // unrelated decisions piled up. 70% + ≥5 words + length sanity keeps
+  // merges topic-coherent.
   const allMemories = listMemories();
   const candidates = allMemories
     .filter(m => m.type === "project" && m.body && m.body.trim())
@@ -455,9 +496,12 @@ export function appendProjectMemory(content) {
   const newWords = safeContent.split(/\s+/).filter(w => w.length > 2);
   if (newWords.length > 0) {
     for (const m of candidates) {
-      const overlap = newWords.filter(w => m.body.includes(w)).length;
-      const ratio = overlap / newWords.length;
-      if (ratio >= 0.5) {
+      const overlapWords = newWords.filter(w => m.body.includes(w));
+      const ratio = overlapWords.length / newWords.length;
+      // Length sanity: don't merge a 50-char note into a 5000-char memory
+      const lengthRatio = Math.max(safeContent.length, m.body.length) /
+                          Math.min(safeContent.length, m.body.length);
+      if (ratio >= 0.7 && overlapWords.length >= 5 && lengthRatio <= 2) {
         // Merge with date-stamped separator
         const today = new Date().toISOString().slice(0, 10);
         const merged = `${m.body}\n\n---\n\n[更新 ${today}]\n${safeContent}`;
@@ -488,6 +532,15 @@ export function enforceProjectMemoryCap() {
   const projects = all
     .filter(m => m.type === "project")
     .sort((a, b) => (a.mtimeMs || 0) - (b.mtimeMs || 0));  // oldest first
+
+  // P3方案3(d): soft reminder when project memory is getting crowded.
+  // 80% of cap = "consider cleaning soon". Goes to console so devs/maintainers
+  // notice, but does NOT spam logs on every append — only when crossing 80%.
+  const SOFT_WARN_THRESHOLD = Math.floor(MAX_PROJECT_MEMORIES * 0.8);
+  if (projects.length >= SOFT_WARN_THRESHOLD && projects.length < MAX_PROJECT_MEMORIES) {
+    console.warn(`[memory-store] project memory getting crowded: ${projects.length}/${MAX_PROJECT_MEMORIES} (≥${SOFT_WARN_THRESHOLD}). Consider cleanup before Agent thinking degrades.`);
+  }
+
   const overflow = projects.length - MAX_PROJECT_MEMORIES;
   if (overflow <= 0) return { removed: 0, names: [] };
   const toRemove = projects.slice(0, overflow);

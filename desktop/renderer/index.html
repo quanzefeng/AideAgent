@@ -403,6 +403,13 @@
                 <button id="memory-new-btn" class="btn primary btn-sm" data-i18n="memory.new">＋ 新建</button>
               </div>
             </div>
+            <div id="memory-stats-bar" class="memory-stats-bar">
+              <span class="memory-stat-chip" data-type="project"><span class="memory-stat-icon">📋</span><span class="memory-stat-label" data-i18n="memory.type_project">项目上下文</span><span class="memory-stat-count" id="memory-stat-project">0</span></span>
+              <span class="memory-stat-chip" data-type="feedback"><span class="memory-stat-icon">💬</span><span class="memory-stat-label" data-i18n="memory.type_feedback">用户反馈</span><span class="memory-stat-count" id="memory-stat-feedback">0</span></span>
+              <span class="memory-stat-chip" data-type="user"><span class="memory-stat-icon">👤</span><span class="memory-stat-label" data-i18n="memory.type_user">用户信息</span><span class="memory-stat-count" id="memory-stat-user">0</span></span>
+              <span class="memory-stat-chip" data-type="reference"><span class="memory-stat-icon">🔗</span><span class="memory-stat-label" data-i18n="memory.type_reference">外部参考</span><span class="memory-stat-count" id="memory-stat-reference">0</span></span>
+              <button id="memory-purge-project-btn" class="memory-purge-btn" data-i18n-title="memory.purge_btn_title" title="清空所有项目记忆">🗑️ <span data-i18n="memory.purge_btn_label">清空项目</span></button>
+            </div>
             <div class="memory-layout">
               <div id="memory-list" class="memory-list"></div>
               <div class="memory-editor-panel" id="memory-editor-panel">

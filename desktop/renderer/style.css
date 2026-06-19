@@ -1183,6 +1183,65 @@ html, body {
 .memory-list-empty-hint { padding: 0 12px; color: var(--text-light); font-size: 11px; text-align: center; }
 
 /* ── Memory Panel ──────────────────────────────────────── */
+.memory-stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-soft, rgba(99, 102, 241, 0.04));
+  border: 1px solid var(--border, rgba(99, 102, 241, 0.12));
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.memory-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, rgba(99, 102, 241, 0.18));
+  border-radius: 14px;
+  font-size: 12px;
+  color: var(--text, #333);
+}
+.memory-stat-icon { font-size: 13px; }
+.memory-stat-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0 5px;
+  background: var(--bg-soft, rgba(99, 102, 241, 0.08));
+  border-radius: 8px;
+  color: var(--text, #555);
+}
+.memory-stat-chip.memory-stat-overflow {
+  border-color: var(--danger, #d0312d);
+  background: rgba(208, 49, 45, 0.06);
+}
+.memory-stat-chip.memory-stat-overflow .memory-stat-count {
+  background: var(--danger, #d0312d);
+  color: #fff;
+}
+.memory-purge-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--danger, #d0312d);
+  color: var(--danger, #d0312d);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.memory-purge-btn:hover:not(:disabled) {
+  background: rgba(208, 49, 45, 0.08);
+}
+.memory-purge-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--text-muted, #999);
+  color: var(--text-muted, #999);
+}
 .memory-layout {
   display: flex;
   flex-direction: column;

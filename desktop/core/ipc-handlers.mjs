@@ -16,7 +16,7 @@ import {
   getAbortCtrl, setAbortCtrl,
   taskStore, setTodoList,
   setEpisodicSearched,
-  _subAgentCtrls as _subAgentCtrlsRaw, _surfacedMemories,
+  _subAgentCtrls as _subAgentCtrlsRaw, resetSurfacedMemories,
   getWorkspace, setWorkspace,
   getPlanMode, setPlanMode,
   pendingPerms, _askResolvers,
@@ -81,7 +81,7 @@ export function registerIpcHandlers() {
     setEpisodicSearched(false);
     taskStore.clear();
     setTodoList([]);
-    _surfacedMemories.clear();
+    resetSurfacedMemories();
     for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
     _subAgentCtrls.clear();
     resetPromptCache(); // P0: invalidate stale system prompt cache from previous session
@@ -258,6 +258,9 @@ export function registerIpcHandlers() {
   });
   ipcMain.handle("memory:delete", async (_e, filename) => {
     return memory.deleteMemory(filename);
+  });
+  ipcMain.handle("memory:purge-by-type", async (_e, type) => {
+    return memory.purgeByType(type);
   });
 
   // ── Skills IPC ──────────────────────────────────────────

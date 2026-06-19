@@ -23,6 +23,41 @@ export async function loadMemoryPanel() {
   const deleteBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-delete-btn"));
   const newBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-new-btn"));
   const statusEl = document.getElementById("memory-edit-status");
+  const purgeBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("memory-purge-project-btn"));
+
+  /**
+   * Update the count chips at the top of the memory panel.
+   * Highlights the project chip in red when count exceeds 10.
+   * @param {Array<{filename:string;name:string;description:string;type:string;body:string}>} memories
+   */
+  function refreshStats(memories) {
+    const counts = { project: 0, feedback: 0, user: 0, reference: 0 };
+    for (const m of memories) {
+      if (counts[m.type] !== undefined) counts[m.type]++;
+    }
+    for (const [type, n] of Object.entries(counts)) {
+      const el = document.getElementById(`memory-stat-${type}`);
+      if (el) {
+        el.textContent = String(n);
+        const chip = el.closest(".memory-stat-chip");
+        if (chip) {
+          chip.classList.toggle("memory-stat-overflow", type === "project" && n > 10);
+        }
+      }
+    }
+    // Disable the purge button only when there's literally nothing to purge.
+// Bug fix: was `counts.project <= 3` — that disabled the button when
+// count was 1, 2, or 3 (i.e. when the user had exactly the memories
+// they wanted to clear!). Now it's `<= 0` so the button works for any
+// positive count. The "below comfort threshold" reasoning was backwards.
+    if (purgeBtn) {
+      const tooFew = counts.project <= 0;
+      purgeBtn.disabled = tooFew;
+      purgeBtn.title = tooFew
+        ? t("memory.purge_disabled_hint").replace("{cap}", "1")
+        : t("memory.purge_btn_title");
+    }
+  }
 
   /**
    * @param {string} [filter]
@@ -38,6 +73,8 @@ export async function loadMemoryPanel() {
       : _memoryListCache;
 
     if (!listEl) return;
+    // Update the count chips regardless of search filter (we want totals, not filtered)
+    refreshStats(_memoryListCache);
     listEl.innerHTML = filtered.length === 0
       ? `<div class="memory-list-empty">${t("memory.empty")}</div><div class="memory-list-empty-hint">${t("memory.auto_hint")}</div>`
       : filtered.map(m => {
@@ -135,6 +172,46 @@ export async function loadMemoryPanel() {
   });
 
   newBtn?.addEventListener("click", newMemory);
+
+  // Purge button — bulk-delete all project-type memories with double confirmation
+  purgeBtn?.addEventListener("click", async () => {
+    if (!_memoryListCache) return;
+    const projects = _memoryListCache.filter(m => m.type === "project");
+    if (projects.length === 0) return;
+
+    // Build confirmation message listing every file that will be deleted
+    const namesPreview = projects.length <= 12
+      ? projects.map(m => `  • ${m.name}`).join("\n")
+      : projects.slice(0, 10).map(m => `  • ${m.name}`).join("\n") + `\n  ... and ${projects.length - 10} more`;
+    const confirmMsg = t("memory.purge_confirm_body")
+      .replace("{count}", String(projects.length))
+      .replace("{names}", namesPreview);
+    const ok = confirm(confirmMsg);
+    if (!ok) return;
+
+    try {
+      purgeBtn.disabled = true;
+      const result = await window.aideagent.memoryPurgeByType("project");
+      if (result?.ok) {
+        if (statusEl) {
+          statusEl.textContent = t("memory.purge_done").replace("{count}", String(result.removed || projects.length));
+          setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 3000);
+        }
+      } else {
+        if (statusEl) {
+          statusEl.textContent = t("memory.purge_fail").replace("{error}", result?.error || "unknown");
+          setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 3000);
+        }
+      }
+      _memoryCurrentFile = null;
+      await refreshList(searchInput?.value || "");
+    } catch (/** @type {any} */ e) {
+      if (statusEl) {
+        statusEl.textContent = t("memory.purge_fail").replace("{error}", e?.message || String(e));
+        setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 3000);
+      }
+    }
+  });
 
   searchInput?.addEventListener("input", () => {
     refreshList(searchInput.value);

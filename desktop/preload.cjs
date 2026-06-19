@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   memoryCreate: (/** @type {any} */ name, /** @type {any} */ description, /** @type {any} */ type, /** @type {any} */ content) => ipcRenderer.invoke("memory:create", { name, description, type, content }),
   memoryUpdate: (/** @type {any} */ filename, /** @type {any} */ content, /** @type {any} */ name, /** @type {any} */ description, /** @type {any} */ type) => ipcRenderer.invoke("memory:update", { filename, content, name, description, type }),
   memoryDelete: (/** @type {any} */ filename) => ipcRenderer.invoke("memory:delete", filename),
+  memoryPurgeByType: (/** @type {any} */ type) => ipcRenderer.invoke("memory:purge-by-type", type),
   workspaceGet: () => ipcRenderer.invoke("workspace:get"),
   workspaceSet: (/** @type {any} */ path) => ipcRenderer.invoke("workspace:set", path),
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),

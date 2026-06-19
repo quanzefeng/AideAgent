@@ -16,7 +16,7 @@ import {
   taskStore, getTodoList,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
-  _surfacedMemories,
+  resetSurfacedMemories, bumpTurnCounter,
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
@@ -416,6 +416,10 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
     while (turns < MAX_TURNS) {
       turns++;
+      // P3方案3(c): bump the global turn counter so memory-selection.mjs
+      // can expire old surfaced memories. Without this, a memory surfaced
+      // in turn 1 stays locked out for the entire session.
+      bumpTurnCounter();
       compressContext(msgs);
 
       // Check context overflow — break to continuation
@@ -637,7 +641,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       // the important facts, but giving the model fresh memory access lets
       // it recall file paths / decisions / preferences that may not be in
       // the summary's limited budget.
-      _surfacedMemories.clear();
+      resetSurfacedMemories();
       msgs = [sysMsg, continuationMsg, ...recentMsgs];
       if (_contextMsg) msgs.push(_contextMsg);
 

@@ -428,7 +428,13 @@ Working directory: ${WORKSPACE}`;
     }
     try {
       const HOME = os.homedir();
-      for (const [label, path] of [["USER.md", join(HOME, ".aideagent", "memories", "USER.md")], ["MEMORY.md", join(HOME, ".aideagent", "memories", "MEMORY.md")]]) {
+      // Fix: was reading from `memories/` (legacy single-file path) but
+      // memory-store.mjs writes to `memory/` (new multi-file path). The
+      // legacy path never exists on fresh installs, so the sections were
+      // silently dropped. Read from the new location to actually surface
+      // the index file. The `readFileSync` is wrapped in try/catch so a
+      // missing file is still a no-op for users with no MEMORY.md.
+      for (const [label, path] of [["USER.md", join(HOME, ".aideagent", "memory", "USER.md")], ["MEMORY.md", join(HOME, ".aideagent", "memory", "MEMORY.md")]]) {
         try {
           const text = readFileSync(path, "utf8").trim();
           if (text) memorySections.push({ label, text });
