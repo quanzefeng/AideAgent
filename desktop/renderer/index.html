@@ -656,10 +656,14 @@
                   <span id="update-progress-percent">0%</span>
                 </div>
                 <div style="background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden;">
-                  <div id="update-progress-bar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;border-radius:4px;"></div>
+                  <div id="update-progress-bar" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s;border-radius:4px;"></div>
                 </div>
               </div>
-              <button id="update-install-btn" class="btn primary hidden" style="width:100%;margin-top:8px;" data-i18n="about.install_update">立即安装并重启</button>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button id="update-download-btn" class="btn primary hidden" style="flex:1;" data-i18n="about.download_update">下载更新</button>
+                <button id="update-install-btn" class="btn primary hidden" style="flex:1;" data-i18n="about.install_update">立即安装并重启</button>
+                <button id="update-skip-btn" class="btn hidden" style="flex:0 0 auto;" data-i18n="about.skip_version">跳过此版本</button>
+              </div>
             </div>
 
             <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">

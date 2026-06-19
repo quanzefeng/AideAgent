@@ -13,6 +13,7 @@ import { sanitize, renderMarkdown, renderLatexInElement, autoResize, formatFileS
 import { loadEnabledSkills } from './modules/skills-panel.mjs';
 import { switchSettingsTab, initSettingsTabs } from './modules/settings-tabs.mjs';
 import { createFilePreviews } from './modules/file-previews.mjs';
+import { initUpdateToast, getSkippedVersion, setSkippedVersion } from './modules/update-toast.mjs';
 import { createPromptStore } from './modules/prompt-store.mjs';
 import { createMcpPanel } from './modules/mcp.mjs';
 import { createWechatPanel } from './modules/wechat.mjs';
@@ -1952,6 +1953,9 @@ refreshSessionList();
 initKnowledgeBase();
 initMemoryPanel();
 
+/* ── Update Toast (top-right slide-in notifications) ── */
+initUpdateToast();
+
 /* ── About / Update Panel ─────────────────────────── */
 (function initAboutPanel() {
   const AUTO_UPDATE_KEY = "AideAgent_auto_update";
@@ -1963,9 +1967,33 @@ initMemoryPanel();
   const progressBar = document.getElementById("update-progress-bar");
   const progressText = document.getElementById("update-progress-text");
   const progressPercent = document.getElementById("update-progress-percent");
+  const downloadBtn = document.getElementById("update-download-btn");
   const installBtn = document.getElementById("update-install-btn");
+  const skipBtn = document.getElementById("update-skip-btn");
   const changelogEl = document.getElementById("changelog-content");
   const versionEl = document.getElementById("about-version");
+
+  // ── Helpers ──────────────────────────────────────────
+  // Reset the panel to its "no update" baseline before re-rendering.
+  // Called whenever a new status arrives so stale buttons / progress
+  // from a previous update flow don't linger.
+  const resetPanelButtons = () => {
+    progressContainer?.classList.add("hidden");
+    downloadBtn?.classList.add("hidden");
+    installBtn?.classList.add("hidden");
+    skipBtn?.classList.add("hidden");
+    if (progressBar) progressBar.style.width = "0%";
+    if (progressPercent) progressPercent.textContent = "0%";
+  };
+
+  // Read the renderer-side skip preference. Returns the version string
+  // or null. This is the cross-session source of truth (main process
+  // mirrors it in memory for in-session checks only).
+  const isVersionSkipped = (version) => {
+    if (!version) return false;
+    const stored = getSkippedVersion();
+    return !!stored && stored === version;
+  };
 
   // Load current version + changelog from GitHub
   window.aideagent.updateCheckVersion().then(v => {
@@ -1982,8 +2010,15 @@ initMemoryPanel();
       .catch(() => { /* silent fallback — keep default HTML */ });
   }).catch(() => {});
 
-  // Load auto-check preference
-  const autoEnabled = localStorage.getItem(AUTO_UPDATE_KEY) === "true";
+  // Load auto-check preference. Three-state semantics:
+  //   - key never set      → first install, default to ON (99% of users
+  //                          never find this checkbox in Settings otherwise)
+  //   - key === "true"     → user explicitly opted in
+  //   - key === "false"    → user explicitly opted out — respect it
+  // This avoids silently re-enabling auto-check for users who previously
+  // turned it off during the previous build's default-off period.
+  const storedAuto = localStorage.getItem(AUTO_UPDATE_KEY);
+  const autoEnabled = storedAuto === null ? true : storedAuto === "true";
   if (autoCheckbox) autoCheckbox.checked = autoEnabled;
 
   autoCheckbox?.addEventListener("change", () => {
@@ -2004,10 +2039,41 @@ initMemoryPanel();
     checkBtn.disabled = false;
   });
 
-  // Install button
+  // Download button (visible in "available" state) — triggers the actual
+  // download. With autoDownload=false the main process only downloads
+  // when the user explicitly asks for it.
+  downloadBtn?.addEventListener("click", async () => {
+    downloadBtn.disabled = true;
+    progressContainer?.classList.remove("hidden");
+    progressContainer && (progressText.textContent = t("about.downloading"));
+    try {
+      await window.aideagent.updateDownload?.();
+    } catch (e) {
+      statusEl.textContent = t("about.check_failed", { error: e.message });
+      statusEl.style.color = "var(--danger)";
+    }
+    downloadBtn.disabled = false;
+  });
+
+  // Install button (visible in "downloaded" state) — quit-and-install.
   installBtn?.addEventListener("click", () => {
     window.aideagent.updateInstall();
   });
+
+  // Skip button (visible in "available" state) — remembers the version
+  // in localStorage so future auto-checks don't pester the user about it.
+  // Also informs the main process for in-session consistency.
+  skipBtn?.addEventListener("click", () => {
+    if (!currentVersion) return;
+    setSkippedVersion(currentVersion);
+    window.aideagent.updateSkip?.(currentVersion).catch(() => {});
+    statusEl.textContent = t("about.skipped", { version: currentVersion });
+    statusEl.style.color = "var(--text-light)";
+    resetPanelButtons();
+  });
+
+  // Tracks the currently-displayed version so skipBtn knows what to skip.
+  let currentVersion = null;
 
   // Listen for status updates from main process
   window.aideagent.onUpdateStatus?.((data) => {
@@ -2015,37 +2081,52 @@ initMemoryPanel();
       case "checking":
         statusEl.textContent = t("about.checking");
         statusEl.style.color = "var(--text-light)";
-        progressContainer?.classList.add("hidden");
-        installBtn?.classList.add("hidden");
+        resetPanelButtons();
         break;
-      case "available":
-        statusEl.textContent = t("about.new_version", { version: data.version });
+      case "available": {
+        currentVersion = data.version;
+        statusEl.textContent = t("about.new_version_ready", { version: data.version });
         statusEl.style.color = "var(--primary)";
-        progressContainer?.classList.remove("hidden");
-        installBtn?.classList.add("hidden");
+        resetPanelButtons();
         if (data.releaseNotes && changelogEl) {
           changelogEl.innerHTML = marked.parse(data.releaseNotes);
         }
+        // Honor cross-session skip: if the user previously skipped this
+        // exact version, show a static "skipped" message and hide all
+        // action buttons. (data.skipped is the in-session fast path set
+        // by update:skip IPC; getSkippedVersion() is the persistent one.)
+        const skipped = data.skipped || isVersionSkipped(data.version);
+        if (skipped) {
+          statusEl.textContent = t("about.skipped", { version: data.version });
+          statusEl.style.color = "var(--text-light)";
+          // Hide all action buttons — version is silently skipped.
+        } else {
+          downloadBtn?.classList.remove("hidden");
+          skipBtn?.classList.remove("hidden");
+        }
         break;
+      }
       case "not-available":
         statusEl.textContent = t("about.status_idle");
         statusEl.style.color = "var(--text-light)";
-        progressContainer?.classList.add("hidden");
-        installBtn?.classList.add("hidden");
+        resetPanelButtons();
+        currentVersion = null;
         break;
       case "downloaded":
         statusEl.textContent = t("about.downloaded", { version: data.version });
         statusEl.style.color = "#22c55e";
         // Show 100% on progress bar, keep it visible, and show install button
+        progressContainer?.classList.remove("hidden");
         if (progressBar) progressBar.style.width = "100%";
         if (progressPercent) progressPercent.textContent = "100%";
+        downloadBtn?.classList.add("hidden");
+        skipBtn?.classList.add("hidden");
         installBtn?.classList.remove("hidden");
         break;
       case "error":
         statusEl.textContent = t("about.check_failed", { error: data.message });
         statusEl.style.color = "var(--danger)";
-        progressContainer?.classList.add("hidden");
-        installBtn?.classList.add("hidden");
+        resetPanelButtons();
         break;
     }
   });

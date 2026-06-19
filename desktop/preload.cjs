@@ -129,6 +129,8 @@ contextBridge.exposeInMainWorld("aideagent", {
   // Update Manager
   updateCheckVersion: () => ipcRenderer.invoke("update:get-version"),
   updateCheckForUpdates: () => ipcRenderer.invoke("update:check"),
+  updateDownload: () => ipcRenderer.invoke("update:download"),
+  updateSkip: (/** @type {any} */ version) => ipcRenderer.invoke("update:skip", version),
   updateInstall: () => ipcRenderer.invoke("update:install"),
   onUpdateStatus: (/** @type {any} */ cb) => ipcRenderer.on("update:status", (_e, d) => cb(d)),
   onUpdateProgress: (/** @type {any} */ cb) => ipcRenderer.on("update:progress", (_e, d) => cb(d)),
