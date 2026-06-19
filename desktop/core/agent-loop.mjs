@@ -581,6 +581,22 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
         hookManager.fire("PostToolUse", { tool: tc.function.name, result }).catch(() => {});
 
+        // P3方案A: if view_image returned image data, inject it as a separate
+        // user message with an image_url content block so the LLM can SEE it
+        // on the next call. The tool message above just carries the metadata
+        // (path/size), the actual base64 image is injected here. Anthropic
+        // adapter (format-adapters.mjs:76-78) converts image_url → image block.
+        // OpenAI-compatible APIs (incl. MiniMax /anthropic) accept this natively.
+        if (result?.type === "image" && result?.data && result?.media_type) {
+          msgs.push({
+            role: "user",
+            content: [{
+              type: "image_url",
+              image_url: { url: `data:${result.media_type};base64,${result.data}` },
+            }],
+          });
+        }
+
         // P3: turn-level checkpoint — every 5 turns persist the current
         // history snapshot so a crash mid-task can be resumed. Cap the
         // snapshot at 200 messages to keep the DB write fast.

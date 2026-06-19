@@ -146,7 +146,7 @@ export function setPlanMode(v) { planMode = v; }
 export function getPlanMode() { return planMode; }
 
 export const PLAN_MODE_READONLY = new Set([
-  "file_read", "grep", "glob", "web_search", "web_fetch",
+  "file_read", "view_image", "grep", "glob", "web_search", "web_fetch",
   "Agent", "AskUserQuestion", "TaskList", "TodoWrite", "write_memory", "kb_write",
   "skill", "invoke_skill", "lsp",
 ]);

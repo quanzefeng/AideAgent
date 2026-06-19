@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, extname } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { safeStorage } from "electron";
@@ -243,6 +243,59 @@ export async function runTool(tc) {
         return { content, size: content.length };
       } catch (e) { return { error: e.message }; }
     }
+    case "view_image": {
+      // P3: dedicated image-viewing tool. Unlike file_read (which forces utf-8
+      // and would garble a PNG), view_image reads binary, base64-encodes, and
+      // returns a structured { type: "image", ... } payload that agent-loop
+      // converts into an image content block for the next LLM call. This is
+      // what enables the model to SEE screenshots, diagrams, charts, etc.
+      try {
+        if (!args.path || typeof args.path !== "string") {
+          return { error: "path is required" };
+        }
+        // Whitelist of supported formats — both MIME detection and tool docs
+        // depend on this set; keep them in sync with the tool definition.
+        const ext = extname(args.path).toLowerCase();
+        const supported = {
+          ".png":  "image/png",
+          ".jpg":  "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".gif":  "image/gif",
+          ".webp": "image/webp",
+        };
+        const media_type = supported[ext];
+        if (!media_type) {
+          return { error: `Unsupported image format: "${ext || "(no extension)"}". Supported: png, jpg, jpeg, gif, webp.` };
+        }
+        // Read binary (no encoding arg → Buffer)
+        const buf = await readFile(args.path);
+        // P3: size limit guard. Two thresholds:
+        //   - 5MB soft warn: user probably didn't intend a large image,
+        //     this is the typical "let me view this screenshot" case.
+        //   - 10MB hard reject: prevents accidental token blowup. A 10MB
+        //     image ≈ 13MB base64 ≈ 4K-15K tokens depending on resize, which
+        //     is sustainable for one-off views but ruinous for multi-turn
+        //     conversations if the user calls view_image repeatedly.
+        // Future: replace with auto-resize to 2048x2048 (sharp dep) so users
+        // don't have to think about this at all.
+        const SOFT_WARN_BYTES = 5 * 1024 * 1024;
+        const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+        if (buf.length > MAX_IMAGE_BYTES) {
+          return { error: `Image too large: ${(buf.length / 1024 / 1024).toFixed(2)}MB (max 10MB). Resize the image first (e.g. with an image editor or 'sips' on macOS).` };
+        }
+        if (buf.length > SOFT_WARN_BYTES) {
+          console.warn(`[view_image] ⚠️ Large image: ${(buf.length / 1024 / 1024).toFixed(2)}MB at ${args.path}. Base64 ≈ ${((buf.length * 4) / 3 / 1024).toFixed(0)}KB string. Will consume significant tokens in this conversation — call view_image sparingly on this file.`);
+        }
+        const data = buf.toString("base64");
+        return {
+          type: "image",
+          media_type,
+          data,
+          size: buf.length,
+          description: `Image at ${args.path} (${(buf.length / 1024).toFixed(1)}KB, ${ext})`,
+        };
+      } catch (e) { return { error: e.message }; }
+    }
     case "file_write": {
       try {
         const dir = dirname(args.path);
@@ -407,7 +460,7 @@ export async function runTool(tc) {
         const defs = getAllToolDefs(true, true) || [];
         // Categorize by inspecting name + description
         const categorize = (name) => {
-          if (["file_read", "file_write", "file_edit", "grep", "glob", "lsp"].includes(name)) return "file";
+          if (["file_read", "file_write", "file_edit", "view_image", "grep", "glob", "lsp"].includes(name)) return "file";
           if (name === "bash") return "shell";
           if (["web_search", "web_fetch"].includes(name)) return "web";
           if (["git_diff", "git_commit", "git_branch"].includes(name)) return "git";

@@ -2086,7 +2086,9 @@ initUpdateToast();
       case "available": {
         currentVersion = data.version;
         statusEl.textContent = t("about.new_version_ready", { version: data.version });
-        statusEl.style.color = "var(--primary)";
+        // Use --accent instead of --primary (--primary was never defined in any :root block;
+        // the bar CSS uses --accent correctly. Fall back to a hardcoded indigo for safety).
+        statusEl.style.color = "var(--accent, #6366f1)";
         resetPanelButtons();
         if (data.releaseNotes && changelogEl) {
           changelogEl.innerHTML = marked.parse(data.releaseNotes);

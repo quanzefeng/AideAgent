@@ -43,6 +43,20 @@ export const TOOL_DEFS = [
   {
     type: "function",
     function: {
+      name: "view_image",
+      description: "View the visual content of an image file at a path. Returns the image as multimodal input so the model can SEE it (OCR, diagrams, screenshots, photos). Supports png/jpg/jpeg/gif/webp. Max 10MB (warns above 5MB).\n\nUSE for: any image file the user or workspace contains — diagrams, screenshots, charts, photos, UI mockups. Particularly useful for understanding:\n- Architecture diagrams (PNG/SVG exported as PNG)\n- Screenshot of an error or UI\n- Whiteboard photos\n- Charts/graphs\n- Embedded images in documentation\n\nDO NOT use for: text files (use `file_read`); large PDFs (use a PDF-specific tool); repeatedly viewing the same image in one conversation (the result is cached).\n\n**Size note:** images >5MB trigger a console warning because they consume many tokens per turn — call sparingly on large files.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Absolute or workspace-relative path to the image file" },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "file_write",
       description: "Create or fully overwrite a file. Auto-creates parent directories.\n\nUSE for: new files; complete rewrites; small config files.\n\nDO NOT use for: surgical changes to existing files (use `file_edit` — it preserves surrounding code and is safer); writing markdown notes to the knowledge base (use `kb_write`); writing session memories (use `write_memory`).",
       parameters: {
