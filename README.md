@@ -2,7 +2,7 @@
 
 # 🤖 AideAgent
 
-### The open-source Claude Desktop alternative — 28 tools, local RAG, Prompt Caching, all in one cross-platform desktop app.
+### The free Claude Desktop alternative that runs RAG, hooks, and WeChat — for $0/month. Apache-2.0, 34 tools, cross-platform.
 
 [![GitHub release](https://img.shields.io/github/v/release/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
@@ -20,11 +20,11 @@ AideAgent is a **local-first desktop AI assistant** that does everything Claude 
 
 - 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
 - ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display<sup>[1](#caching-benchmark)</sup>
-- 🧰 **28 built-in tools** — file/shell/git/GitHub/MCP/LSP/skill/kb, all in one binary
-- 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, one-click install of 200+ skills
+- 🧰 **34 built-in tools** — file/shell/git/GitHub/MCP/LSP/skill/kb, all in one binary
+- 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, access 350K+ skills via skills.sh
 - 💬 **WeChat bot** — talk to your agent from your phone
 
-> Built by one developer in 24 days. **17 releases. 180 commits. 25 test files. ~200MB desktop app.**
+> Built by one developer in 24 days. **17 releases. 199+ commits. 25+ test files. ~200MB desktop app.**
 
 <sup id="caching-benchmark"><b>[1]</b></sup> *Cache hit-rate benchmark: 90% saving measured on Anthropic Claude Sonnet 4.5 with a 50K-token multi-turn coding conversation, using explicit `cache_control` markers on system + tools + history (1-hour TTL). Methodology and reproduction scripts: [docs/prompt-caching.md](docs/prompt-caching.md).*
 
@@ -89,7 +89,7 @@ Fine-grained per-skill toggles: Token Economy / API & Interface Design / Archite
 | **WeChat Bot** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Self-Evolving Memory** | ✅ Auto | ❌ | ❌ | ❌ | ❌ |
 | **Auto-Compress & Continue** | ✅ Up to 5× | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ❌ |
-| **Skill Ecosystem** | ✅ 200+ | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
+| **Skill Ecosystem** | ✅ 350K+ via skills.sh | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
 | **Offline Embedding Model** | ✅ Bundled | ❌ | ❌ | ❌ | ❌ |
 | **API Key Encryption** | ✅ OS-level | ✅ | ✅ | ✅ | ⚠️ Local file |
 | **Monthly Cost** | **$0 (free)** | $20 | $20 | $0 (free) | $0 (free) |
@@ -128,9 +128,19 @@ npm start
 
 1. **Open Settings → API Config** → choose a provider (DeepSeek / Claude / GLM / Qwen / Ollama / ...)
 2. **Paste your API key** → saved with OS-level encryption (Windows DPAPI / macOS Keychain / Linux libsecret)
-3. **Start chatting** → Agent has 28 tools ready to go
+3. **Start chatting** → Agent has 34 tools ready to go
 
 > 💡 **No API key?** Use Ollama / LM Studio / llama.cpp for fully local inference. Zero data leaves your machine.
+
+---
+
+<div align="center">
+
+### ⭐ **If AideAgent saves you $20/mo, give it a star** — it helps others find it.
+
+[**⭐ Star**](https://github.com/quanzefeng/AideAgent) · [**🍴 Fork**](https://github.com/quanzefeng/AideAgent/fork) · [**👀 Watch**](https://github.com/quanzefeng/AideAgent/watchers)
+
+</div>
 
 ---
 
@@ -152,7 +162,7 @@ npm start
 - **DeepSeek auto-cache** — message ordering optimized for maximum prefix match
 - **Live hit-rate display** — `💾 90% cached` shown after each reply with color coding (🟢≥80% / 🟡≥50% / 🔴<50%)
 
-### 🧰 28 Built-in Tools
+### 🧰 34 Built-in Tools
 
 | Category | Tools |
 |---|---|
@@ -167,7 +177,7 @@ npm start
 
 ### 🔌 MCP + Skill Ecosystem
 - **MCP** — stdio + HTTP transports, **auto-detects** Claude Code/Desktop/OpenCode configs
-- **200+ skills** installable via `npx skills add` (L3 system)
+- **350K+ skills** accessible via `npx skills add` from skills.sh (L3 system)
 - **L2 agent-created skills** — agent learns your workflow and creates reusable skills automatically
 - **Curator** auto-archives skills unused for 30+ days, detects duplicates
 
@@ -223,7 +233,7 @@ desktop/
 ├── preload.cjs              # IPC bridge (~60 channels)
 ├── core/
 │   ├── agent-loop.mjs       # Conversation loop + auto-continue + auto-review
-│   ├── tool-executor.mjs    # 28 tools + cross-platform shell
+│   ├── tool-executor.mjs    # 34 tools + cross-platform shell
 │   ├── tool-definitions.mjs # Tool schemas
 │   ├── system-prompt.mjs    # Prompt builder + AGENTS.md loading
 │   ├── format-adapters.mjs  # OpenAI/Anthropic adapters + Prompt Caching
@@ -278,13 +288,31 @@ desktop/
 
 ## 🗺️ Roadmap
 
-- [ ] **Agent Marketplace** — share and install community-created skills
+**Done ✅ (v1.0.x)**
+- ✅ v1.0.20 — 34 tools · 17 releases · 199+ commits · 25+ test files (2026-06-18)
+
+**Coming soon 🚧**
+- [ ] **v1.1** — Multi-modal vision input (image understanding)
+- [ ] **v1.2** — Plugin marketplace (community-driven L3 skills)
+- [ ] **v1.3** — Cross-device sync (E2E encrypted)
+- [ ] **v2.0** — Cloud-optional mode (for team collaboration)
 - [ ] **VSCode Extension** — same agent, in your editor
 - [ ] **Multi-Agent Collaboration** — orchestrate multiple agents on one task
 - [ ] **Voice Mode** — push-to-talk with Whisper integration
-- [ ] **Cloud Sync (optional, E2E-encrypted)** — for users who want it
+- [ ] **Agent Marketplace** — share and install community-created skills
 
 See [open issues](https://github.com/quanzefeng/AideAgent/issues) for the full list.
+
+---
+
+## 🙌 Support
+
+If AideAgent is useful to you, here are 3 ways to show support (it really helps the project grow):
+
+- ⭐ **[Star this repo](https://github.com/quanzefeng/AideAgent)** — 1 click, biggest impact
+- 🐛 **[Report a bug](../../issues/new?template=bug_report.md)** — even typos count
+- 💬 **[Join discussions](../../discussions)** — questions, ideas, showcase
+- 🐦 **Tag [@quanzefeng](https://github.com/quanzefeng)** when you share something you built with it
 
 ---
 
@@ -312,6 +340,26 @@ npm run lint
 
 ---
 
+## 📖 The Story
+
+AideAgent started on **May 23, 2026** as a weekend experiment to answer one question:
+
+> *"Can I build a Claude Desktop replacement that doesn't charge $20/mo — and add RAG, Hooks, and WeChat while I'm at it?"*
+
+**24 days later:** 17 releases · 199+ commits · 34 tools · 25+ tests · 0 contributors.
+
+Today, it's your free Claude Desktop alternative.
+
+— Built with ❤️ + coffee by [@quanzefeng](https://github.com/quanzefeng)
+
+---
+
+## 📈 Star History
+
+<a href="https://star-history.com/#quanzefeng/AideAgent&Date">
+  <img src="https://api.star-history.com/svg?repos=quanzefeng/AideAgent&type=Date" alt="Star History Chart" width="600" />
+</a>
+
 ---
 
 ## 💖 Sponsorship
@@ -336,7 +384,9 @@ If AideAgent saved you time or money, consider buying the author a coffee ☕
 
 <div align="center">
 
-**If this project helps you, please consider starring it — it helps more developers find it.**
+### ⭐ **If this project helps you, please star it** — it helps more developers find it.
+
+[![Star AideAgent](https://img.shields.io/github/stars/quanzefeng/AideAgent?style=social)](https://github.com/quanzefeng/AideAgent)
 
 Made with ❤️ by one developer in 24 days.
 
