@@ -548,11 +548,37 @@
           <div class="settings-panel" id="panel-font">
             <div class="font-settings">
               <label class="agent-name-label" data-i18n="font.label">聊天字体</label>
-              <select id="font-select" class="form-select" style="width:100%;margin-bottom:8px;">
+              <select id="font-select" class="form-select" style="width:100%;margin-bottom:14px;">
                 <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.yahei">微软雅黑（默认）</option>
                 <option value="'Noto Serif SC', 'Source Han Serif SC', serif" data-i18n="font.serif">思源宋体</option>
               </select>
-              <p class="hint" data-i18n="font.hint">修改后立即生效，影响所有对话消息和思考过程的显示字体</p>
+
+              <h3 class="section-title" style="margin-top:18px;font-size:13px;" data-i18n="font.weight_title">文字粗细</h3>
+
+              <div class="font-weight-grid" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
+                  <label class="form-label" data-i18n="font.weight_normal" style="margin:0;">普通文字</label>
+                  <input type="number" id="fw-normal-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="300" />
+                </div>
+                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
+                  <label class="form-label" data-i18n="font.weight_medium" style="margin:0;">标签 / 小标题</label>
+                  <input type="number" id="fw-medium-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="400" />
+                </div>
+                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
+                  <label class="form-label" data-i18n="font.weight_semibold" style="margin:0;">段落标题</label>
+                  <input type="number" id="fw-semibold-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="700" />
+                </div>
+                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
+                  <label class="form-label" data-i18n="font.weight_bold" style="margin:0;">真正粗体</label>
+                  <input type="number" id="fw-bold-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="700" />
+                </div>
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+                <button id="fw-reset-btn" class="btn" data-i18n="font.weight_reset" style="padding:6px 14px;">恢复默认</button>
+                <button id="fw-save-btn" class="btn primary" data-i18n="font.weight_save" style="padding:6px 18px;" disabled>保存</button>
+              </div>
+              <p class="hint" data-i18n="font.hint" style="margin-top:10px;">实时预览（仅当前会话），点保存后跨重启保留。微软雅黑仅支持 300/400/700，输入其他值会自动 fallback（无合成）</p>
             </div>
           </div>
 

@@ -6,6 +6,17 @@
 /* ========================================
    设计系统 · 结构 Token（主题无关）
    ======================================== */
+
+/* P3方案A (v3): 禁用浏览器自动合成粗体。微软雅黑只装了 300/400/700
+   三个权重——如果不禁用合成，用户输入 font-weight: 500/600/800 时，
+   Chromium 会"加粗"渲染（看起来像 700），造成"突然变粗"的体验。
+   关闭合成后，500/600/800 会诚实地 fallback 到 400（最近邻），
+   视觉上无变化而不是"魔法"变粗。
+   副作用：用户若真的想要超过 700 的粗体（比如 Extra Bold），不再
+   能靠合成得到——但 YaHei 本来就没有更粗的字体，所以这是正确的。 */
+* {
+  font-synthesis: none;
+}
 :root {
   /* ── 间距 Spacing ── */
   --space-xs: 0.25rem;   /*  4px */
@@ -40,6 +51,12 @@
   --font-sans:  -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-mono:  'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
   --chat-font:  'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+
+  /* ── 字体粗细 (P3方案B: 用户可在 设置 → 字体 面板自定义) ── */
+  --fw-normal:   400;   /* 普通正文、Assistant 回答 */
+  --fw-medium:   500;   /* 标签 / 小标题 / hint */
+  --fw-semibold: 600;   /* 段落标题 / 按钮 / badge */
+  --fw-bold:     700;   /* 真正粗体（极少用） */
 
   /* ── 布局 ── */
   --sidebar-width: 240px;
@@ -181,6 +198,10 @@ html, body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.6;
+  /* P3方案B v3: bind body text to --fw-normal so user-edits actually
+     affect visible chat text. Default (300) is lighter than the browser's
+     built-in 400 — this is intentional and matches the user's spec. */
+  font-weight: var(--fw-normal);
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -274,7 +295,7 @@ html, body {
 
 .modal-body h2 {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   margin-bottom: var(--space-sm);
   color: var(--text);
 }
@@ -331,7 +352,7 @@ html, body {
   color: var(--text);
   font-size: 13px;
   font-family: var(--font-sans);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition:
     all var(--duration-fast) var(--ease-out);
@@ -352,7 +373,7 @@ html, body {
 .btn.primary {
   background: var(--accent);
   color: #fff;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   border-color: var(--accent);
 }
 
@@ -449,7 +470,7 @@ html, body {
   gap: 8px;
   padding: 10px 14px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--text-light);
   cursor: pointer;
   border-right: 2px solid transparent;
@@ -534,7 +555,7 @@ html, body {
 
 .form-label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text-light);
 }
 
@@ -625,7 +646,7 @@ html, body {
 .agent-name-label {
   display: block;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text);
   margin-bottom: 8px;
 }
@@ -678,7 +699,7 @@ html, body {
 }
 .bg-settings .section-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   margin: 0 0 4px 0;
   color: var(--text);
 }
@@ -813,7 +834,7 @@ html, body {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.5px;
 }
 .bg-color-swatch {
@@ -836,7 +857,7 @@ html, body {
   border: none;
   padding: 6px 22px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
@@ -975,7 +996,7 @@ html, body {
   font-size: 12px;
 }
 #kb-test-results .kb-result-item:hover { background: #dce2ed; }
-#kb-test-results .kb-result-title { font-weight: 600; color: var(--text-primary); }
+#kb-test-results .kb-result-title { font-weight: var(--fw-semibold); color: var(--text-primary); }
 #kb-test-results .kb-result-path { color: var(--text-muted); font-size: 11px; }
 #kb-test-results .kb-result-snippet { color: var(--text-secondary); margin-top: 4px; }
 
@@ -1011,7 +1032,7 @@ html, body {
 
 .logo.small .brand {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text);
   letter-spacing: -0.01em;
 }
@@ -1166,7 +1187,7 @@ html, body {
   flex-wrap: wrap;
 }
 .section-header-left { display: flex; flex-direction: column; gap: 2px; }
-.section-title { font-size: 15px; font-weight: 600; margin: 0; color: var(--text-primary); }
+.section-title { font-size: 15px; font-weight: var(--fw-semibold); margin: 0; color: var(--text-primary); }
 .section-hint { font-size: 11px; color: var(--text-muted); }
 .section-header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
@@ -1207,7 +1228,7 @@ html, body {
 }
 .memory-stat-icon { font-size: 13px; }
 .memory-stat-count {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   padding: 0 5px;
   background: var(--bg-soft, rgba(99, 102, 241, 0.08));
@@ -1267,14 +1288,14 @@ html, body {
 }
 .memory-list-item:hover { border-color: var(--accent); background: var(--bg-tertiary); }
 .memory-list-item.active { border-color: var(--accent); background: var(--bg-tertiary); box-shadow: 0 0 0 1px var(--accent); }
-.memory-list-item-name { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.memory-list-item-name { font-size: 12px; font-weight: var(--fw-semibold); display: flex; align-items: center; gap: 4px; }
 .memory-list-item-desc { display: none; }
 .memory-type-badge {
   display: inline-block;
   font-size: 9px;
   padding: 1px 6px;
   border-radius: 3px;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.3px;
   flex-shrink: 0;
@@ -1314,7 +1335,7 @@ html, body {
   gap: 10px;
   margin-bottom: 12px;
 }
-.form-card-header { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.form-card-header { font-size: 13px; font-weight: var(--fw-semibold); color: var(--text-primary); }
 .form-card-actions { display: flex; gap: 8px; }
 
 /* ── Curator bar ───────────────────────────────────────── */
@@ -1376,7 +1397,7 @@ html, body {
   gap: 8px;
 }
 .skill-card-name {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: 13px;
   color: var(--text);
   display: flex;
@@ -1388,7 +1409,7 @@ html, body {
 .skill-card-name-zh {
   font-size: 12px;
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   margin-top: 1px;
   margin-bottom: 2px;
   letter-spacing: 0.01em;
@@ -1448,7 +1469,7 @@ html, body {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   line-height: 1.2;
   padding: 3px 6px;
   border-radius: 4px;
@@ -1519,7 +1540,7 @@ html, body {
   font-size: 10px;
   padding: 2px 10px;
   border-radius: 10px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .skill-status-badge.active { background: rgba(34,197,94,0.15); color: #22c55e; }
 .skill-status-badge.archived { background: rgba(255,255,255,0.06); color: var(--text-muted); }
@@ -1553,7 +1574,7 @@ html, body {
   margin-bottom: 12px;
   font-size: 12px;
 }
-.patterns-card-header { font-weight: 600; margin-bottom: 8px; color: #f59e0b; }
+.patterns-card-header { font-weight: var(--fw-semibold); margin-bottom: 8px; color: #f59e0b; }
 .patterns-item {
   display: flex;
   align-items: center;
@@ -1588,7 +1609,7 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .info-value {
@@ -1736,7 +1757,7 @@ html, body {
 
 .welcome h1 {
   font-size: 22px;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   letter-spacing: -0.02em;
   color: var(--text);
 }
@@ -1745,7 +1766,7 @@ html, body {
   font-size: 13px;
   color: var(--accent);
   font-family: var(--font-mono);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   letter-spacing: 0.04em;
 }
 
@@ -1782,7 +1803,7 @@ html, body {
   align-items: center;
   gap: 6px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text);
@@ -1907,7 +1928,7 @@ html, body {
   color: var(--text-light);
   font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   user-select: none;
   padding: 2px 0;
 }
@@ -1980,7 +2001,7 @@ html, body {
 }
 
 .tool-entry-name {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -2010,7 +2031,7 @@ html, body {
 .tool-entry-args .tool-arg-key {
   color: var(--accent);
   margin-right: 2px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .tool-entry-args .tool-arg-val {
@@ -2071,7 +2092,7 @@ html, body {
 .message-text h5,
 .message-text h6 {
   margin: var(--space-md) 0 var(--space-xs);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   line-height: 1.3;
 }
 
@@ -2147,7 +2168,7 @@ html, body {
 .message-bubble th,
 .message-text th {
   background: var(--bg-card);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .message-bubble a,
@@ -2520,7 +2541,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: 0.95rem;
   color: var(--text-primary, #e8e8e8);
   white-space: nowrap;
@@ -2638,7 +2659,7 @@ html, body {
 
 .mcp-add-form .form-label {
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--text-secondary, #aaa);
 }
 
@@ -2684,7 +2705,7 @@ html, body {
   align-items: center;
   gap: 8px;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text-primary, #e8e8e8);
 }
 
@@ -2695,7 +2716,7 @@ html, body {
 
 .mcp-server-status-label {
   font-size: 0.8rem;
-  font-weight: 400;
+  font-weight: var(--fw-normal);
   color: var(--text-muted, #888);
 }
 
@@ -2844,7 +2865,7 @@ html, body {
 
 .prompt-editor-name-label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -2884,7 +2905,7 @@ html, body {
 .prompt-enable-btn {
   padding: 6px 20px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
@@ -2954,7 +2975,7 @@ html, body {
 .wechat-qr-status.error { color: var(--danger-color, #ef4444); }
 
 .wechat-badge {
-  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: var(--fw-medium);
 }
 .wechat-badge.connected { background: rgba(34,197,94,0.15); color: #22c55e; }
 .wechat-badge.disconnected { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
@@ -3025,7 +3046,7 @@ html, body {
 }
 .token-budget.ok { color: var(--text-muted, #888); background: transparent; }
 .token-budget.warn { color: #f59e0b; background: rgba(245,158,11,0.1); }
-.token-budget.danger { color: #ef4444; background: rgba(239,68,68,0.12); font-weight: 600; }
+.token-budget.danger { color: #ef4444; background: rgba(239,68,68,0.12); font-weight: var(--fw-semibold); }
 
 .context-usage {
   font-size: 11px;

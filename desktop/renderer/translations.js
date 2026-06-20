@@ -350,7 +350,14 @@ const translations = {
     "font.label": "聊天字体",
     "font.yahei": "微软雅黑（默认）",
     "font.serif": "思源宋体",
-    "font.hint": "修改后立即生效，影响所有对话消息和思考过程的显示字体",
+    "font.hint": "实时预览（仅当前会话），点保存后跨重启保留。微软雅黑仅支持 300/400/700，输入其他值会自动 fallback（无合成）",
+    "font.weight_title": "文字粗细",
+    "font.weight_normal": "普通文字",
+    "font.weight_medium": "标签 / 小标题",
+    "font.weight_semibold": "段落标题",
+    "font.weight_bold": "真正粗体",
+    "font.weight_save": "保存",
+    "font.weight_reset": "恢复默认",
 
     // ── Language Panel ──
     "lang.interface": "界面语言",
@@ -862,7 +869,14 @@ const translations = {
     "font.label": "Chat Font",
     "font.yahei": "Microsoft YaHei (Default)",
     "font.serif": "Source Han Serif",
-    "font.hint": "Takes effect immediately, affects all chat messages and reasoning display",
+    "font.hint": "Live preview (session only). Save persists across restarts. Microsoft YaHei only ships 300/400/700; other values fall back (no synthesis).",
+    "font.weight_title": "Font Weight",
+    "font.weight_normal": "Body Text",
+    "font.weight_medium": "Labels",
+    "font.weight_semibold": "Headings",
+    "font.weight_bold": "True Bold",
+    "font.weight_save": "Save",
+    "font.weight_reset": "Reset",
 
     // ── Language Panel ──
     "lang.interface": "Interface Language",
