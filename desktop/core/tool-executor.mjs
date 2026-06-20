@@ -1117,8 +1117,43 @@ export async function runTool(tc) {
             break;
           }
           case "readme": {
-            cmd = args.repo ? `gh api repos/${args.repo}/readme -q .content | python -m base64 -d 2>/dev/null || gh api repos/${args.repo}/readme -q .content` : "gh api repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/readme -q .content";
-            break;
+            // ── Cross-platform + no shell pipeline ────────────────────────
+            // Old impl: `gh api ... -q .content | python -m base64 -d 2>/dev/null || ...`
+            //   - `python -m base64` doesn't exist (base64 isn't a stdlib module)
+            //     → fallback branch always ran, returning raw base64 to the LLM
+            //   - `2>/dev/null` / `||` are bash syntax; PowerShell 5.1 created
+            //     a file named `null` and treated `||` as a syntax error
+            //   - `$(gh repo view ...)` nested command only works on PS 7+
+            //
+            // Fix: spawn `gh api ... -q .content` (returns base64-encoded
+            // readme as a single string, no shell interpolation), then decode
+            // in JS. Works identically on pwsh / powershell / bash.
+            let repoArg = args.repo;
+            if (!repoArg) {
+              // Resolve the current repo via gh's own JSON output.
+              const resolve = await runSpawnSafe("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
+              if (resolve.code !== 0 || !resolve.out) {
+                return { error: "Could not resolve current repo (run inside a GitHub repo, or pass args.repo).", stderr: resolve.err || "" };
+              }
+              repoArg = resolve.out.trim();
+            }
+            const rr = await runSpawnSafe("gh", ["api", `repos/${repoArg}/readme`, "-q", ".content"]);
+            if (rr.code !== 0) {
+              return { error: `gh api readme failed: ${rr.err || rr.out}`, success: false };
+            }
+            const b64 = (rr.out || "").replace(/\s+/g, "");
+            let decoded = "";
+            if (b64) {
+              try { decoded = Buffer.from(b64, "base64").toString("utf-8"); }
+              catch (/** @type {any} */ decErr) {
+                // gh sometimes wraps the base64 with quotes or returns it
+                // as a JSON string; strip outer quotes and retry.
+                const stripped = b64.replace(/^"|"$/g, "");
+                try { decoded = Buffer.from(stripped, "base64").toString("utf-8"); }
+                catch { return { error: `Failed to decode base64 readme: ${decErr.message}`, raw_b64: b64.slice(0, 200) }; }
+              }
+            }
+            return { output: decoded, repo: repoArg, success: true };
           }
           case "clone": {
             if (!args.repo && !args.url) return { error: "Repository (owner/repo) or URL is required" };

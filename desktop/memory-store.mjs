@@ -472,6 +472,58 @@ export function appendUserMemory(content) {
  * @param {string} content
  * @returns {{ ok: boolean, filename?: string, name?: string, error?: string, merged?: boolean }}
  */
+/**
+ * Tokenize text for memory dedup / merge matching.
+ *
+ * Why not just `text.split(/\s+/)`: Chinese (and other CJK) text has no
+ * word boundaries, so `split(/\s+/)` returns ONE giant token per line. That
+ * made `appendProjectMemory`'s 70%-overlap merge branch unreachable for
+ * Chinese users — every append created a new file until the project-memory
+ * cap kicked in and silently deleted the oldest ones. English text instead
+ * got over-merged because `body.includes("code")` matched "codebase",
+ * "encode", "decode", etc.
+ *
+ * Strategy:
+ *   - ASCII words: matched as-is via `\w+` (length > 2). Exact Set lookup,
+ *     so "code" no longer matches "codebase".
+ *   - CJK: 2-grams (bigrams) — "代码审查" → {"代码","码审","审查"}.
+ *     Bigrams capture enough semantic locality that two paragraphs about
+ *     the same topic share many bigrams, but unrelated topics rarely do.
+ *     Single chars are too noisy; trigrams require near-identical text.
+ *
+ * @param {string} text
+ * @returns {string[]} array of tokens (may contain duplicates — caller decides dedup)
+ */
+export function tokenizeForMemory(text) {
+  if (!text) return [];
+  const s = String(text);
+  const tokens = [];
+
+  // ASCII words: identifiers, file names, English words. Keep length > 2
+  // to avoid noise from "a", "an", "the", "to", etc.
+  const asciiMatches = s.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g);
+  if (asciiMatches) tokens.push(...asciiMatches);
+
+  // CJK bigrams. Run on every maximal CJK run in the text so mixed
+  // content like "用 React 写前端" still extracts "用Re"... no — only
+  // CJK-to-CJK pairs. ASCII boundaries naturally split runs.
+  const cjkRuns = s.match(/[\u3400-\u9fff\uf900-\ufaff]+/g);
+  if (cjkRuns) {
+    for (const run of cjkRuns) {
+      // Single-char run → emit the char itself so it can still match
+      if (run.length === 1) { tokens.push(run); continue; }
+      for (let i = 0; i < run.length - 1; i++) {
+        tokens.push(run.slice(i, i + 2));
+      }
+      // Also include the last single char so trailing-character overlap
+      // ("审查" + "查证" → shared "查") still registers.
+      tokens.push(run.slice(-1));
+    }
+  }
+
+  return tokens;
+}
+
 export function appendProjectMemory(content) {
   // P1: reject empty content
   if (!content || !String(content).trim()) {
@@ -480,28 +532,40 @@ export function appendProjectMemory(content) {
   const safeContent = String(content).trim();
 
   // P2: try to merge into an existing similar project memory first.
-  // Scans the most recent 20 project memories; if any has >70% word overlap
-  // AND ≥5 overlapping words AND length ratio within 2x, append a dated
+  // Scans the most recent 20 project memories; if any has >70% token overlap
+  // AND ≥5 overlapping tokens AND length ratio within 2x, append a dated
   // update to that file instead of creating a new one.
   //
   // P3方案3(a): tightened from 50% to 70% — the old threshold let almost
   // any related memory merge, producing giant "kitchen sink" files where
-  // unrelated decisions piled up. 70% + ≥5 words + length sanity keeps
+  // unrelated decisions piled up. 70% + ≥5 tokens + length sanity keeps
   // merges topic-coherent.
+  //
+  // CJK fix: previously used `split(/\s+/)`, which produces ONE token per
+  // line for Chinese (no spaces) → branch never fired for Chinese users,
+  // so every append hit the project-memory cap and silently evicted older
+  // memories. Now uses tokenizeForMemory() (CJK bigrams + ASCII words) and
+  // Set-based exact matching instead of substring `includes()` (which
+  // caused "code" to match "codebase" for English users).
   const allMemories = listMemories();
   const candidates = allMemories
     .filter(m => m.type === "project" && m.body && m.body.trim())
     .slice(0, 20);
 
-  const newWords = safeContent.split(/\s+/).filter(w => w.length > 2);
-  if (newWords.length > 0) {
+  const newTokens = tokenizeForMemory(safeContent);
+  if (newTokens.length > 0) {
+    const newTokenSet = new Set(newTokens);
     for (const m of candidates) {
-      const overlapWords = newWords.filter(w => m.body.includes(w));
-      const ratio = overlapWords.length / newWords.length;
+      const existingTokens = new Set(tokenizeForMemory(m.body));
+      let overlapCount = 0;
+      for (const t of newTokenSet) {
+        if (existingTokens.has(t)) overlapCount++;
+      }
+      const ratio = overlapCount / newTokenSet.size;
       // Length sanity: don't merge a 50-char note into a 5000-char memory
       const lengthRatio = Math.max(safeContent.length, m.body.length) /
                           Math.min(safeContent.length, m.body.length);
-      if (ratio >= 0.7 && overlapWords.length >= 5 && lengthRatio <= 2) {
+      if (ratio >= 0.7 && overlapCount >= 5 && lengthRatio <= 2) {
         // Merge with date-stamped separator
         const today = new Date().toISOString().slice(0, 10);
         const merged = `${m.body}\n\n---\n\n[更新 ${today}]\n${safeContent}`;
@@ -584,14 +648,16 @@ export function writeProjectMemory(content) {
  */
 export function checkDuplicate(type, text) {
   const memories = listMemories();
-  const words = text.split(/\s+/).filter(w => w.length > 2);
-  if (words.length === 0) return false;
+  const tokens = tokenizeForMemory(text);
+  if (tokens.length === 0) return false;
+  const tokenSet = new Set(tokens);
   for (const m of memories) {
+    const existingTokens = new Set(tokenizeForMemory(m.body));
     let matchCount = 0;
-    for (const w of words) {
-      if (m.body.includes(w)) matchCount++;
+    for (const t of tokenSet) {
+      if (existingTokens.has(t)) matchCount++;
     }
-    if (matchCount / words.length > 0.5) return true;
+    if (matchCount / tokenSet.size > 0.5) return true;
   }
   return false;
 }
