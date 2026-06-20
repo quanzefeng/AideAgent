@@ -127,7 +127,8 @@ export function createFilePreviews({
   }
 
   function init() {
-    uploadBtn.addEventListener("click", () => fileInput.click());
+    // uploadBtn click is owned by app.js (toggles the input-menu popover);
+    // the "上传文件" item inside the popover triggers `fileInput.click()`.
     fileInput.addEventListener("change", () => {
       handleFileUpload(fileInput.files);
       fileInput.value = ""; // allow re-selecting same files

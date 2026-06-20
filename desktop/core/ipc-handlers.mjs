@@ -8,6 +8,7 @@ import sessionDb from "../session-db.mjs";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
+import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
@@ -263,6 +264,23 @@ export function registerIpcHandlers() {
     return memory.purgeByType(type);
   });
 
+  // ── Prompts API (Stage 2 — user-defined reusable prompts) ──
+  ipcMain.handle("prompts:list", async () => {
+    try { return prompts.listPrompts(); } catch { return []; }
+  });
+  ipcMain.handle("prompts:read", async (_e, id) => {
+    try { return prompts.readPrompt(id); } catch { return null; }
+  });
+  ipcMain.handle("prompts:create", async (_e, input) => {
+    return prompts.createPrompt(input || {});
+  });
+  ipcMain.handle("prompts:update", async (_e, id, input) => {
+    return prompts.updatePrompt(id, input || {});
+  });
+  ipcMain.handle("prompts:delete", async (_e, id) => {
+    return prompts.deletePrompt(id);
+  });
+
   // ── Skills IPC ──────────────────────────────────────────
   ipcMain.handle("skills:list-all", async () => skills.listSkills());
   ipcMain.handle("skills:load-one", async (_e, name) => skills.loadSkill(name));
@@ -341,6 +359,23 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("skills:list", async () => {
     return scanSkills();
+  });
+
+  // Read the full SKILL.md content by absolute path. Used by the renderer
+  // "Import to input" button (Stage 4 of the prompts/skills flow) to fetch
+  // the body of a skill from its on-disk location — needed because L3
+  // skills live in ~/.agents/ or ~/.claude/, not ~/.aideagent/skills/.
+  //
+  // Path-scoped (not arbitrary fs access): the renderer only gets paths
+  // from the trusted scanSkills() output, never from user input.
+  ipcMain.handle("skills:read-content", async (_e, filePath) => {
+    try {
+      if (!filePath || typeof filePath !== "string") return null;
+      if (!existsSync(filePath)) return null;
+      // Refuse paths that aren't SKILL.md files — defense in depth
+      if (!filePath.endsWith("SKILL.md") && !filePath.endsWith("skill.md")) return null;
+      return readFileSync(filePath, "utf-8");
+    } catch { return null; }
   });
 
   // ── Knowledge Base IPC ──────────────────────────────────

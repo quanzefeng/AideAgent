@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   // Skills
   skillsListAll: () => ipcRenderer.invoke("skills:list-all"),
   skillsLoadOne: (/** @type {any} */ name) => ipcRenderer.invoke("skills:load-one", name),
+  skillsReadContent: (/** @type {any} */ filePath) => ipcRenderer.invoke("skills:read-content", filePath),
   skillsSetStatus: (/** @type {any} */ name, /** @type {any} */ status) => ipcRenderer.invoke("skills:set-status", name, status),
   skillsDelete: (/** @type {any} */ name) => ipcRenderer.invoke("skills:delete", name),
   skillsDetectPatterns: () => ipcRenderer.invoke("skills:detect-patterns"),
@@ -107,6 +108,12 @@ contextBridge.exposeInMainWorld("aideagent", {
   memoryUpdate: (/** @type {any} */ filename, /** @type {any} */ content, /** @type {any} */ name, /** @type {any} */ description, /** @type {any} */ type) => ipcRenderer.invoke("memory:update", { filename, content, name, description, type }),
   memoryDelete: (/** @type {any} */ filename) => ipcRenderer.invoke("memory:delete", filename),
   memoryPurgeByType: (/** @type {any} */ type) => ipcRenderer.invoke("memory:purge-by-type", type),
+  // Prompts (user-defined reusable prompts — Stage 2)
+  promptsList: () => ipcRenderer.invoke("prompts:list"),
+  promptsRead: (/** @type {any} */ id) => ipcRenderer.invoke("prompts:read", id),
+  promptsCreate: (/** @type {any} */ input) => ipcRenderer.invoke("prompts:create", input),
+  promptsUpdate: (/** @type {any} */ id, /** @type {any} */ input) => ipcRenderer.invoke("prompts:update", id, input),
+  promptsDelete: (/** @type {any} */ id) => ipcRenderer.invoke("prompts:delete", id),
   workspaceGet: () => ipcRenderer.invoke("workspace:get"),
   workspaceSet: (/** @type {any} */ path) => ipcRenderer.invoke("workspace:set", path),
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),

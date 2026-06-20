@@ -1324,6 +1324,414 @@ html, body {
   gap: 8px;
 }
 
+/* ── Prompts Settings Panel (Stage 2b — list + edit modal) ─
+   Layout: a single full-width column of card rows. Each row shows
+   drag handle + heart icon + title + actions. Editing opens a modal.
+
+   Modeled on 豆包's "自定义技能" layout — clean horizontal rows,
+   no left/right split, no inline editor. */
+.prompts-list-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.prompts-list-empty {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 48px 16px;
+  line-height: 1.6;
+}
+.prompts-list-empty-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.prompts-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.prompts-row:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.prompts-row-drag {
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -2px;
+  user-select: none;
+}
+.prompts-row-drag::before { content: "⠿"; }
+
+.prompts-row-heart {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s, transform 0.15s;
+}
+.prompts-row-heart:hover { color: #f87171; transform: scale(1.1); }
+.prompts-row-heart.active { color: #f43f5e; }
+.prompts-row-heart::before { content: "♡"; }
+.prompts-row-heart.active::before { content: "♥"; }
+
+.prompts-row-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+}
+
+.prompts-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.prompts-row-action {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+.prompts-row-action:hover {
+  color: var(--accent);
+  background: var(--accent-dim, rgba(129, 140, 248, 0.10));
+}
+.prompts-row-action.danger:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.10);
+}
+
+/* ── Prompts Edit Modal ──────────────────────────────────── */
+.prompts-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prompts-edit-overlay.hidden { display: none; }
+
+.prompts-edit-card {
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 92%;
+  max-width: 640px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.prompts-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.prompts-edit-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.prompts-edit-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.prompts-edit-close:hover { color: var(--text); }
+
+.prompts-edit-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prompts-edit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prompts-edit-row-body { flex: 1; min-height: 0; }
+
+.prompts-edit-label {
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary, #555);
+}
+
+.prompts-edit-input-wrap {
+  position: relative;
+}
+.prompts-edit-input-wrap .form-input {
+  width: 100%;
+  padding-right: 56px; /* leave space for counter */
+}
+.prompts-edit-counter {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+.prompts-edit-textarea {
+  width: 100%;
+  flex: 1;
+  min-height: 280px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.prompts-edit-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim, rgba(129, 140, 248, 0.18));
+}
+
+.prompts-edit-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 16px;
+}
+.prompts-edit-status.error { color: #ef4444; }
+.prompts-edit-status.ok { color: #16a34a; }
+
+.prompts-edit-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Prompts Import Modal (Stage 3) ────────────────────────
+   Two-column layout: searchable list on the left, preview on
+   the right. Single primary "import" button at bottom right. */
+.prompts-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prompts-import-overlay.hidden { display: none; }
+
+.prompts-import-card {
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 92%;
+  max-width: 760px;
+  height: 80vh;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.prompts-import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.prompts-import-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.prompts-import-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.prompts-import-close:hover { color: var(--text); }
+
+.prompts-import-search-row {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.prompts-import-search-row .form-input { width: 100%; }
+
+.prompts-import-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.prompts-import-list-col {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+.prompts-import-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 2px;
+}
+.prompts-import-empty {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 24px 12px;
+  line-height: 1.6;
+}
+
+.prompts-import-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.prompts-import-item:hover {
+  background: var(--bg-tertiary);
+}
+.prompts-import-item.active {
+  background: var(--accent-dim, rgba(129, 140, 248, 0.14));
+  border-color: var(--accent);
+}
+.prompts-import-item .prompts-row-title {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  cursor: pointer;
+}
+
+.prompts-import-preview-col {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  overflow: hidden;
+  position: relative;
+}
+.prompts-import-empty-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  pointer-events: none;
+  text-align: center;
+  padding: 24px;
+}
+.prompts-import-preview-title {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  margin-bottom: 10px;
+  word-break: break-word;
+  flex-shrink: 0;
+  display: none; /* shown by JS via removing inline display */
+}
+.prompts-import-preview-body {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.prompts-import-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.prompts-import-status {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.prompts-import-status.error { color: #ef4444; }
+
 /* ── Form card (create skill) ──────────────────────────── */
 .form-card {
   background: var(--bg-secondary);
@@ -1395,6 +1803,34 @@ html, body {
   justify-content: space-between;
   margin-bottom: 6px;
   gap: 8px;
+}
+
+/* ── Skill card actions (Stage 4 — import button + toggle) ── */
+.skill-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.skill-card-import {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.skill-card-import:hover:not(:disabled) {
+  background: var(--accent);
+  color: #ffffff;
+}
+.skill-card-import:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 .skill-card-name {
   font-weight: var(--fw-semibold);
@@ -2192,6 +2628,107 @@ html, body {
   flex-direction: column;
   align-items: center;
   padding: var(--space-sm) 0;
+  /* Anchor the #input-menu popover; the popover is positioned absolutely
+     relative to the input area so it never participates in the flex layout
+     (this is what caused the previous prompts-feature regression). */
+  position: relative;
+}
+
+/* ========================================
+   Input Menu Popover (Stage 1 — UI shell)
+   ========================================
+   Absolutely positioned above the input area. Anchored to the left so it
+   aligns with the upload button. NEVER becomes a flex child — it is a
+   sibling of #input-wrapper and positioned via `position: absolute`.
+
+   z-index sits above the input area + info bar but below modals/overlays
+   (skill-editor / settings modal all use higher z-index).
+   */
+.input-menu-popover {
+  position: absolute;
+  /* Anchor to the LEFT edge of #input-wrapper (which is centered
+     horizontally inside the chat area). This puts the popover directly
+     above the upload button. */
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(20, 24, 50, 0.10),
+    0 2px 4px rgba(20, 24, 50, 0.06);
+
+  /* fade + slide in */
+  transform-origin: bottom left;
+  animation: input-menu-popover-in 140ms var(--ease-out, ease-out);
+}
+
+@keyframes input-menu-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* a small caret pointing down at the upload button */
+.input-menu-popover::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+
+.input-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 120ms) ease-out;
+}
+
+.input-menu-item:hover {
+  background: var(--accent-dim, rgba(129, 140, 248, 0.10));
+}
+
+.input-menu-item:focus-visible {
+  outline: 2px solid var(--border-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.input-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.input-menu-item:hover svg {
+  color: var(--accent);
 }
 
 #input-wrapper {
@@ -2206,6 +2743,11 @@ html, body {
   border-radius: 16px;
   padding: 4px 6px 6px 4px;
   box-sizing: border-box;
+  /* Anchor the #input-menu popover; the popover sits just above the upload
+     button column (left edge of this wrapper), not at the far left of the
+     chat area. The popover is `position: absolute` so it never participates
+     in the flex layout. */
+  position: relative;
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);

@@ -8,9 +8,11 @@ import './modules/bg-settings.mjs';
 import './modules/workspace.mjs';
 import { initKnowledgeBase, loadKnowledgeBasePanel } from './modules/knowledge-base.mjs';
 import { initMemoryPanel } from './modules/memory-panel.mjs';
+import { initPromptsPanel } from './modules/prompts-settings.mjs';
+import { openPromptsImportModal } from './modules/prompts-modal.mjs';
 import { loadAgentName, loadUserName, applyAgentName, applyUserName, initAgentNameUI, initUserAvatarUI, loadUserAvatarSrc } from './modules/agent-name.mjs';
 import { sanitize, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, setStatus, loadReasoningEnabled, saveReasoningEnabled } from './modules/helpers.mjs';
-import { loadEnabledSkills } from './modules/skills-panel.mjs';
+import { loadEnabledSkills, loadAndRenderSkills } from './modules/skills-panel.mjs';
 import { switchSettingsTab, initSettingsTabs } from './modules/settings-tabs.mjs';
 import { createFilePreviews } from './modules/file-previews.mjs';
 import { initUpdateToast, getSkippedVersion, setSkippedVersion } from './modules/update-toast.mjs';
@@ -144,6 +146,103 @@ const filePreviews = createFilePreviews({
 const renderFilePreviews = filePreviews.renderFilePreviews;
 const updateSendButton = filePreviews.updateSendButton;
 const handleFileUpload = filePreviews.handleFileUpload;
+
+
+/* ── Input menu popover (Stage 1: UI shell only) ─────────────────
+   Replaces the upload button's direct → file picker click with a 3-option
+   menu: 上传文件 / 常用提示词 / 技能. Real handlers for "常用提示词" and
+   "技能" land in Stages 3 and 4; for now they log to the console so we
+   can verify the popover wiring without breaking anything.
+
+   IMPORTANT: the popover itself is absolutely positioned (CSS), so this
+   code only needs to toggle a `hidden` class on #input-menu. It must NOT
+   touch #input-wrapper or #prompt-input — that is what caused the
+   previous prompts-feature regression. */
+const inputMenu = $("#input-menu");
+const inputMenuItems = inputMenu ? inputMenu.querySelectorAll(".input-menu-item") : [];
+
+function isInputMenuOpen() {
+  return inputMenu && !inputMenu.classList.contains("hidden");
+}
+
+function openInputMenu() {
+  if (!inputMenu) return;
+  inputMenu.classList.remove("hidden");
+  uploadBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeInputMenu() {
+  if (!inputMenu) return;
+  inputMenu.classList.add("hidden");
+  uploadBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleInputMenu() {
+  if (isInputMenuOpen()) closeInputMenu();
+  else openInputMenu();
+}
+
+function handleInputMenuAction(action) {
+  closeInputMenu();
+  switch (action) {
+    case "upload":
+      // Preserve original behavior: trigger the hidden file input.
+      fileInput.click();
+      break;
+    case "prompts":
+      // Stage 3: open the prompts import modal (list + preview + insert).
+      openPromptsImportModal();
+      break;
+    case "skills":
+      // Stage 4: open settings and switch to the skills tab. The user picks
+      // a skill from the list and clicks its "导入" button to insert it
+      // into the chat input (handler lives in skills-panel.mjs).
+      settingsModal.classList.add("active");
+      switchSettingsTab("skills");
+      // Load the skill list if it hasn't been rendered yet
+      loadAndRenderSkills?.();
+      break;
+    default:
+      console.warn("[input-menu] unknown action:", action);
+  }
+}
+
+function initInputMenu() {
+  if (!uploadBtn || !inputMenu) return;
+
+  // Toggle on upload button click.
+  uploadBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleInputMenu();
+  });
+
+  // Each menu item dispatches to its action handler.
+  inputMenuItems.forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const action = item.getAttribute("data-action");
+      handleInputMenuAction(action);
+    });
+  });
+
+  // Outside-click and Escape both dismiss the popover.
+  document.addEventListener("click", (e) => {
+    if (!isInputMenuOpen()) return;
+    if (inputMenu.contains(e.target) || uploadBtn.contains(e.target)) return;
+    closeInputMenu();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isInputMenuOpen()) {
+      closeInputMenu();
+    }
+  });
+
+  // Close when window resizes (popover anchored to a button that moved).
+  window.addEventListener("resize", () => {
+    if (isInputMenuOpen()) closeInputMenu();
+  });
+}
 
 
 /* ── Update info bar (model name + reasoning state) ── */
@@ -1911,6 +2010,7 @@ window.addEventListener("focus", () => {
 
 /* ── Init ──────────────────────────────────────────────── */
 initSettingsTabs();
+initInputMenu();
 filePreviews.init();
 setupIPC();
 loadAvatar();
@@ -1952,6 +2052,7 @@ refreshSessionList();
 /* ── Knowledge Base (imported from modules/knowledge-base.mjs) ── */
 initKnowledgeBase();
 initMemoryPanel();
+initPromptsPanel();
 
 /* ── Update Toast (top-right slide-in notifications) ── */
 initUpdateToast();

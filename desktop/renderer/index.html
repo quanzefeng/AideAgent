@@ -116,6 +116,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             <span data-i18n="settings.memory">记忆</span>
           </div>
+          <div class="settings-tab" data-tab="prompts">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span data-i18n="settings.prompts">常用提示词</span>
+          </div>
           <div class="settings-tab" data-tab="knowledge-base">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
             <span data-i18n="settings.kb">知识库</span>
@@ -437,6 +441,21 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- 常用提示词 Panel (Stage 2b — list + edit modal) -->
+          <div class="settings-panel" id="panel-prompts">
+            <div class="section-header">
+              <div class="section-header-left">
+                <h3 class="section-title" data-i18n="prompts.title">常用提示词</h3>
+                <span class="section-hint" data-i18n="prompts.hint">点击输入框「+」按钮 → 常用提示词，选择后自动导入到对话框</span>
+              </div>
+              <div class="section-header-right">
+                <input type="text" id="prompts-search-input" class="form-input form-input-sm" data-i18n-placeholder="prompts.search_placeholder" placeholder="搜索提示词..." />
+                <button id="prompts-new-btn" class="btn primary btn-sm" data-i18n="prompts.new">＋ 新建</button>
+              </div>
+            </div>
+            <div id="prompts-list" class="prompts-list-cards"></div>
           </div>
 
           <!-- 知识库 Panel -->
@@ -793,8 +812,8 @@
         <div id="input-wrapper">
           <div class="input-row">
             <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.txt,.csv,.json,.md,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.doc,.docx" />
-            <button id="upload-btn" class="btn icon-btn" data-i18n-title="chat.upload" title="上传文件">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <button id="upload-btn" class="btn icon-btn" data-i18n-title="chat.upload" title="更多" aria-haspopup="menu" aria-expanded="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
             <textarea
               id="prompt-input"
@@ -846,6 +865,24 @@
               </label>
             </div>
           </div>
+
+          <!-- Input Menu Popover (Stage 1 — UI shell only, real handlers in Stage 2/3/4)
+               Anchored to #input-wrapper so it sits just above the upload button,
+               not at the left edge of the whole chat area. -->
+          <div id="input-menu" class="input-menu-popover hidden" role="menu" aria-label="输入菜单">
+            <button class="input-menu-item" data-action="upload" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span data-i18n="input.menu.upload">上传文件</span>
+            </button>
+            <button class="input-menu-item" data-action="prompts" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              <span data-i18n="input.menu.prompts">常用提示词</span>
+            </button>
+            <button class="input-menu-item" data-action="skills" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span data-i18n="input.menu.skills">技能</span>
+            </button>
+          </div>
         </div>
       </div>
     </main>
@@ -875,6 +912,63 @@
     <div class="skill-editor-footer">
       <button id="skill-editor-cancel" class="btn" data-i18n="common.cancel">取消</button>
       <button id="skill-editor-save" class="btn primary" data-i18n="common.save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Prompts Edit Modal (Stage 2b redesigned — list + edit modal pattern) -->
+<div id="prompts-edit-overlay" class="prompts-edit-overlay hidden">
+  <div class="prompts-edit-card">
+    <div class="prompts-edit-header">
+      <h3 id="prompts-edit-title" data-i18n="prompts.modal_title_edit">编辑提示词</h3>
+      <button id="prompts-edit-close" class="prompts-edit-close" aria-label="关闭">×</button>
+    </div>
+    <div class="prompts-edit-body">
+      <div class="prompts-edit-row">
+        <label class="prompts-edit-label" for="prompts-edit-title-input" data-i18n="prompts.field_title">标题 *</label>
+        <div class="prompts-edit-input-wrap">
+          <input type="text" id="prompts-edit-title-input" class="form-input" maxlength="100" data-i18n-placeholder="prompts.title_placeholder" placeholder="标题，如「写日报」" />
+          <span id="prompts-edit-title-counter" class="prompts-edit-counter">0/100</span>
+        </div>
+      </div>
+      <div class="prompts-edit-row prompts-edit-row-body">
+        <label class="prompts-edit-label" for="prompts-edit-body-input" data-i18n="prompts.field_body">提示词内容 *</label>
+        <textarea id="prompts-edit-body-input" class="prompts-edit-textarea" maxlength="16384" data-i18n-placeholder="prompts.body_placeholder" placeholder="提示词内容（支持 Markdown）..."></textarea>
+      </div>
+      <div id="prompts-edit-status" class="prompts-edit-status"></div>
+    </div>
+    <div class="prompts-edit-footer">
+      <button id="prompts-edit-cancel" class="btn" data-i18n="common.cancel">取消</button>
+      <button id="prompts-edit-save" class="btn primary" data-i18n="common.save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Prompts Import Modal (Stage 3 — searchable list + preview + import button) -->
+<div id="prompts-import-overlay" class="prompts-import-overlay hidden">
+  <div class="prompts-import-card">
+    <div class="prompts-import-header">
+      <h3 id="prompts-import-title" data-i18n="prompts.import_modal_title">选择提示词</h3>
+      <button id="prompts-import-close" class="prompts-import-close" aria-label="关闭">×</button>
+    </div>
+    <div class="prompts-import-search-row">
+      <input type="text" id="prompts-import-search" class="form-input" data-i18n-placeholder="prompts.import_search_placeholder" placeholder="搜索提示词..." />
+    </div>
+    <div class="prompts-import-body">
+      <div class="prompts-import-list-col">
+        <div id="prompts-import-list" class="prompts-import-list"></div>
+      </div>
+      <div class="prompts-import-preview-col">
+        <div id="prompts-import-preview-empty" class="prompts-import-empty-preview" data-i18n="prompts.import_select_hint">
+          ← 在左侧选择一个提示词查看预览
+        </div>
+        <div id="prompts-import-preview-title" class="prompts-import-preview-title"></div>
+        <textarea id="prompts-import-preview-body" class="prompts-import-preview-body" readonly data-i18n-placeholder="prompts.import_preview_placeholder" placeholder="（预览）"></textarea>
+      </div>
+    </div>
+    <div class="prompts-import-footer">
+      <span id="prompts-import-status" class="prompts-import-status"></span>
+      <button id="prompts-import-confirm" class="btn primary" disabled data-i18n="prompts.import_btn">导入到输入框</button>
     </div>
   </div>
 </div>

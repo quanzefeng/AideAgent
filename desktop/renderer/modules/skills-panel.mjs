@@ -66,6 +66,37 @@ function titleCaseRest(s) {
     .join(" ");
 }
 
+// ── Import skill into chat input (Stage 4) ──────────────────────
+
+/**
+ * Insert text at the current cursor position in #prompt-input,
+ * preserving any selection / surrounding text. Triggers an `input` event
+ * so auto-resize + char-counter pick up the change.
+ * @param {string} text
+ * @returns {boolean} true if inserted, false if input box not found
+ */
+function insertIntoPromptInput(text) {
+  const textarea = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("prompt-input"));
+  if (!textarea) return false;
+
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  const before = textarea.value.substring(0, start);
+  const after = textarea.value.substring(end);
+
+  textarea.value = before + text + after;
+
+  // Move cursor to end of inserted text
+  const newCursorPos = start + text.length;
+  textarea.setSelectionRange(newCursorPos, newCursorPos);
+
+  // Trigger auto-resize + char counter updates in app.js
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.focus();
+
+  return true;
+}
+
 // ── L3 Skills (scanned from .agents/.claude) ──
 
 /** Scan the local .agents/.claude folders for L3 skills and render the toggle list. */
@@ -116,10 +147,15 @@ export async function loadAndRenderSkills() {
             ${s.allowedTools && s.allowedTools.length > 0 ? `<span class="skill-card-tools">${s.allowedTools.length} ${t("skills.tools_count")}</span>` : ""}
           </div>
         </div>
-        <label class="skill-toggle">
-          <input type="checkbox" class="skill-toggle-input" data-skill="${sanitize(s.name)}" ${isOn ? "checked" : ""} />
-          <span class="skill-toggle-slider"></span>
-        </label>
+        <div class="skill-card-actions">
+          <button class="skill-card-import" data-skill="${sanitize(s.name)}" title="${t("skills.import_btn_title") || "导入到输入框"}">
+            ${t("skills.import_btn") || "📥 导入"}
+          </button>
+          <label class="skill-toggle">
+            <input type="checkbox" class="skill-toggle-input" data-skill="${sanitize(s.name)}" ${isOn ? "checked" : ""} />
+            <span class="skill-toggle-slider"></span>
+          </label>
+        </div>
       </div>`;
     }).join("");
 
@@ -132,6 +168,36 @@ export async function loadAndRenderSkills() {
         const name = btn.dataset.skill;
         if (!name) return;
         editSkillDisplayName(name, btn);
+      });
+    });
+
+    // Wire up the per-card "导入到输入框" buttons (Stage 4).
+    // Inserts the skill name (with a leading "/") at the chat input cursor
+    // position. The agent's `skill` tool sees this reference and loads
+    // the SKILL.md body itself — no need to dump the full markdown into
+    // the chat. Format: "/<skill_name>" (matches Anthropic's slash-
+    // command convention).
+    listEl.querySelectorAll(".skill-card-import").forEach((node) => {
+      const btn = /** @type {HTMLButtonElement} */ (node);
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const name = btn.dataset.skill;
+        if (!name) return;
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = t("skills.import_btn_loading") || "导入中...";
+        try {
+          const reference = `/${name}`;
+          const ok = insertIntoPromptInput(reference);
+          if (ok) {
+            btn.textContent = t("skills.import_btn_done") || "✅ 已导入";
+            setTimeout(() => { btn.textContent = original; }, 1500);
+          }
+        } catch (/** @type {any} */ e) {
+          alert((t("skills.import_failed") || "导入失败：") + (e?.message || String(e)));
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
 
