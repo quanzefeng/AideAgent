@@ -2192,7 +2192,6 @@ html, body {
   flex-direction: column;
   align-items: center;
   padding: var(--space-sm) 0;
-  border-top: 1px solid var(--border);
 }
 
 #input-wrapper {
