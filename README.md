@@ -1,385 +1,242 @@
-<div align="center">
+# AideAgent
 
-# 🤖 AideAgent
-
-### A local-first desktop AI assistant with RAG, Hooks, MCP, and WeChat bot — fully open-source, Apache-2.0.
-
-[![GitHub release](https://img.shields.io/github/v/release/quanzefeng/AideAgent?style=flat-square)](https://github.com/quanzefeng/AideAgent/releases)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Electron](https://img.shields.io/badge/Electron-40-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Node](https://img.shields.io/badge/Node-22-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#-download)
-
-</div>
+> 一个把 AI 装进你电脑里的桌面助手。不只是聊天，能直接动手帮你干活。
 
 ---
 
-## 👀 What is AideAgent?
+## 这是什么
 
-AideAgent is a **local-first desktop AI assistant** focused on privacy, deep extensibility, and zero vendor lock-in. It's **free and open-source (Apache-2.0)** — your data stays on your machine.
+AideAgent 是一个跑在你电脑本地（也支持云端模型）的 AI 桌面应用。它不只是一个聊天窗口——它能调用工具、能读你的笔记、能操控浏览器、能连你的微信。
 
-- 🛡️ **Your data never leaves your machine** — offline MiniLM-L6 embedding, OS-encrypted API keys, SSRF protection
-- ⚡ **Save 90% on API bills** — explicit Prompt Caching (Anthropic + DeepSeek) with live hit-rate display<sup>[1](#caching-benchmark)</sup>
-- 🧰 **34 built-in tools** — file/shell/git/GitHub/MCP/LSP/skill/kb, all in one binary
-- 🔌 **Plays nice with the ecosystem** — auto-detects Claude Code/Desktop MCP configs, access 350K+ skills via skills.sh
-- 💬 **WeChat bot** — talk to your agent from your phone
+如果你是那种"让 AI 替我干点活"的人，而不是"和 AI 聊聊天"的人——这个项目就是给你写的。
 
-> Built by one developer in 24 days. **17 releases. 199+ commits. 25+ test files. ~200MB desktop app.**
-
-<sup id="caching-benchmark"><b>[1]</b></sup> *Cache hit-rate benchmark: 90% saving measured on Anthropic Claude Sonnet 4.5 with a 50K-token multi-turn coding conversation, using explicit `cache_control` markers on system + tools + history (1-hour TTL). Methodology and reproduction scripts: [docs/prompt-caching.md](docs/prompt-caching.md).*
+![AideAgent 主对话界面](docs/screenshots/01-主对话界面.png)
 
 ---
 
-## 📸 Preview
+## 它解决的痛点
 
-<table>
-<tr>
-<td width="50%">
+现成的 AI 工具有点别扭：
 
-**Main Chat Interface**  
-Left sidebar with session list and working directory, streaming conversation in the center, 4 smart toggles at the bottom (Plan Mode / Knowledge Base / Web Search / Deep Reasoning)
+- **网页版对话**——聊完就没了，不能动手干别的。
+- **其他桌面 AI**——要么只能聊天，要么扩展性差，要么数据全在云上。
+- **Claude Code 类 CLI**——没图形界面，配置门槛高，小白劝退。
 
-![Main chat: left sidebar with sessions and working directory, center streaming conversation, bottom 4 toggle switches (Plan / KB / Web Search / Deep Reasoning)](docs/screenshots/01-main-chat.png)
+AideAgent 想把这几件事都做了：
 
-</td>
-<td width="50%">
-
-**MCP Servers (Tool Ecosystem)**  
-Built-in 4 MCP servers: WebSearch, SearXNG, Edge Browser, Computer-Use — each independently togglable with real-time connection status (purple topbar = MCP config page)
-
-![MCP Servers: built-in 4 MCP servers (WebSearch / SearXNG / Edge Browser / Computer-Use), each independently toggleable with real-time connection status indicator](docs/screenshots/02-knowledge-base-search.png)
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-**Knowledge Base Setup (Local RAG)**  
-Obsidian vault path picker / Embedding model selector / Test Search box / Index rebuild and clear — one-stop local RAG configuration
-
-![Knowledge base setup: Obsidian vault path picker, embedding model selector (MiniLM-L6 / Ollama), Test Search box, and Danger Zone (rebuild index / clear data)](docs/screenshots/03-features-overview.png)
-
-</td>
-<td width="50%">
-
-**Skill Ecosystem (Fine-Grained Control)**  
-Fine-grained per-skill toggles: Token Economy / API & Interface Design / Architecture Designer / Code Simplification / Self-Improving Agent — enable only what you need
-
-![Skill ecosystem: per-skill toggle list (Token Economy / API Design / Architecture / Code Simplification / Self-Improving / etc.), with master switch and curated catalog](docs/screenshots/04-tech-stack.png)
-
-</td>
-</tr>
-</table>
+- **能聊**（左下角输入框就是对话框）
+- **能干**（能调工具、能跑命令、能搜网页、能翻笔记）
+- **能连你**（能挂微信、能在本地跑模型、不上传你的数据）
+- **能扩展**（有 MCP 协议、有 Skills 系统，想加什么加什么）
 
 ---
 
-## ⚖️ AideAgent vs Other Tools
+## 它能干什么（一图一文，对应主界面那些开关）
 
-> Tired of paying $20/mo for tools that don't have RAG, hooks, or WeChat integration?
+主界面输入框下面的四个开关分别对应四种能力：
 
-| Feature | **AideAgent** | Claude Desktop | Cursor | Cline | Continue |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Price** | Free + OSS | $20/mo | $20/mo | Free + OSS | Free + OSS |
-| **Open Source** | ✅ Apache-2.0 | ❌ | ❌ | ✅ Apache-2.0 | ✅ Apache-2.0 |
-| **Local RAG / Knowledge Base** | ✅ Built-in hybrid | ❌ | ⚠️ Paid add-on | ❌ | ⚠️ Basic |
-| **Prompt Caching** | ✅ Explicit + visible | ✅ Built-in (hidden) | ⚠️ Black box | ❌ | ❌ |
-| **Hook System** | ✅ 3 events | ❌ | ❌ | ❌ | ❌ |
-| **MCP Support** | ✅ Auto-detect | ✅ | ⚠️ Limited | ✅ | ⚠️ Limited |
-| **LSP Integration** | ✅ Built-in | ❌ | ✅ | ❌ | ⚠️ Basic |
-| **WeChat Bot** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Self-Evolving Memory** | ✅ Auto | ❌ | ❌ | ❌ | ❌ |
-| **Auto-Compress & Continue** | ✅ Up to 5× | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ❌ |
-| **Skill Ecosystem** | ✅ 350K+ via skills.sh | ⚠️ Limited | ⚠️ Limited | ❌ | ⚠️ Limited |
-| **Offline Embedding Model** | ✅ Bundled | ❌ | ❌ | ❌ | ❌ |
-| **API Key Encryption** | ✅ OS-level | ✅ | ✅ | ✅ | ⚠️ Local file |
-| **Monthly Cost** | **$0 (free)** | $20 | $20 | $0 (free) | $0 (free) |
-| **Install Size** | **~200MB** | ~250MB | ~400MB | ~80MB | ~60MB |
-| **Platforms** | Win/Mac/Linux | Win/Mac | Win/Mac | VSCode | VSCode/JetBrains |
+### 1. 📋 Plan — 任务拆解与执行
 
-**Verdict:** If you need RAG, Hooks, and WeChat integration in a local-first desktop app — and you'd rather skip the $20/mo subscription — AideAgent is worth a look.
+勾上之后，AI 不会直接动手，会先把你的需求拆成步骤、走规划流程，然后再执行。适合"我要做个东西但不告诉你细节"的场景。
+
+### 2. 📚 KB — 知识库检索
+
+挂载你的 Obsidian 笔记（或者其他 Markdown 文件夹），AI 回答时会先去翻你的笔记，找到相关的内容再回。相当于给你的 AI 装了个本地 RAG。
+
+![知识库配置面板](docs/screenshots/04-知识库配置.png)
+
+### 3. 🌐 Web Search — 联网搜索
+
+需要查实时信息的时候勾上。内置了一个不依赖任何 API Key 的元搜索引擎（Bing + GitHub），也支持付费的 Tavily。
+
+### 4. 💡 Reasoning — 深度思考
+
+让模型多花点时间思考，回答更深入（前提是你用的模型支持）。
+
+输入框上面那四个按钮——**消息**、**工具**、**Skill**、**MCP**——是它的能力扩展层：
+
+- **工具**——内置工具（读文件、写文件、跑命令、抓网页等）
+- **Skill**——从 `.agents/skills/` 或 `.claude/skills/` 目录自动扫描到的技能（一次扫到 200+ 个）
+- **MCP**——通过 Model Context Protocol 接入的外部服务（Edge 浏览器、本地搜索、远程 API……）
 
 ---
 
-## 🚀 Quick Start (30 seconds)
+## 六大能力（按"能动手的程度"从轻到重）
 
-### Option 1: Download Pre-built Binary (Recommended)
+### 一、多模型——想用谁就用谁
 
-👉 **[Download for Windows / macOS / Linux →](https://github.com/quanzefeng/AideAgent/releases)**
+界面里点 **API Config** 可以切换模型，支持：
 
-No Node.js required. Double-click and go.
+- **DeepSeek**（国产，便宜好用）
+- **GLM-4**（智谱）
+- **Qwen / 通义千问**（阿里）
+- **Claude**（Anthropic 的官方和第三方中转）
+- **本地模型**——Ollama、LM Studio、llama.cpp server 都行
 
-### Option 2: Run from Source
+API Key 通过操作系统的密钥库（Windows DPAPI / macOS Keychain / Linux libsecret）加密存储，不会明文落盘。
+
+---
+
+### 二、知识库——AI 能读你的笔记
+
+把你的 Obsidian vault 路径告诉它，AI 回答时会先检索你的笔记。
+
+底层是 SQLite + FTS5 全文检索 + ONNX 跑的本地向量模型（`all-MiniLM-L6-v2`，384 维），两种结果用 RRF 融合。不需要联网，搜索全部本地完成。
+
+首次启动会自动下载模型文件（`postinstall` 钩子会跑，从 `hf-mirror.com` 或 `huggingface.co` 拉）。
+
+---
+
+### 三、Skills 体系——让 AI 学会干特定的事
+
+Skills 是放在 `.agents/skills/` 或 `.claude/skills/` 目录下的文件夹，每个里面有一个 SKILL.md 描述"我能干什么"。AI 在合适的时候会自动调用它们。
+
+![Skills 面板](docs/screenshots/03-技能总开关.png)
+
+- **本地 Skills**——自动扫描，每个独立开关（截图里看到 209 个 skills 都开着）
+- **Agent Skills**——自己创建的智能体技能
+- 编写一个 Skill 就是写个 Markdown 文件，门槛很低
+
+---
+
+### 四、MCP 生态——接入任何外部服务
+
+MCP（Model Context Protocol）是 Anthropic 推的协议，相当于 AI 应用的"USB 接口"。AideAgent 内置了几个一键启用的服务：
+
+![MCP 面板](docs/screenshots/02-MCP工具生态.png)
+
+- **Edge Browser**——通过 Playwright 操控 Edge，能截图、能填表单、能抓数据
+- **Computer Use**——通过系统可访问性 API 模拟鼠标键盘（默认关闭，慎开）
+- **Web Search**（内置）——免 Key 的元搜索
+- **filesystem**——受控的文件读写（限定在用户目录下）
+- **远程 MCP**——支持 HTTP 接入，可加自定义请求头
+
+也可以手动加任何 npx 能跑的 MCP server。
+
+---
+
+### 五、微信机器人——把 AI 接到你微信里
+
+应用启动后会尝试拉起微信 iLink Bot 桥接。扫码登录后：
+
+- 你在桌面端和 AI 聊的内容，可以自动同步到微信
+- 微信里发消息，AI 也回你
+
+API 配置会同步到微信端（同一个对话上下文）。这个功能在大陆地区尤其方便，不用开 VPN。
+
+> 实现细节在 `desktop/core/wechat-bridge.mjs`，扫码登录 → 轮询 → Bearer Token → 双向消息推送，整套流程都在里面。
+
+---
+
+### 六、扩展性与自动化——开发者向
+
+如果你是开发者，这几样东西够你玩很久：
+
+- **IPC 接口齐全**——所有功能都暴露成 IPC handler，可以自己写脚本调
+- **state 安全**——所有可调用的子命令都在 `GH_SAFE` 白名单里，不会乱跑 `rm -rf`
+- **测试覆盖**——Vitest 单测 + Playwright E2E（Electron 模式）
+- **类型检查**——`tsc --noEmit` 跑过整个项目（虽然代码是 JS，但有 JSDoc 类型注解）
+- **跨平台打包**——`electron-builder` 一键出 Windows NSIS / macOS DMG / Linux deb+AppImage
+- **自动更新**——`electron-updater` 从 GitHub Releases 拉新版本
+
+---
+
+## 项目骨架
+
+```
+AideAgent/
+├── desktop/                 # Electron 桌面应用
+│   ├── main.mjs             # 主进程入口
+│   ├── preload.cjs          # 预加载桥接（CJS）
+│   ├── core/                # 核心模块（IPC、工具执行、状态管理……）
+│   ├── renderer/            # 渲染层（vanilla JS，无框架）
+│   ├── mcp-manager.mjs      # MCP 协议管理
+│   ├── lsp-manager.mjs      # LSP 客户端（TS/JS）
+│   ├── session-db.mjs       # 会话存储（SQLite + FTS5）
+│   ├── knowledge-store.mjs  # 知识库（FTS5 + 向量检索）
+│   ├── memory-store.mjs     # 记忆存储
+│   ├── skills-store.mjs     # 技能目录
+│   ├── wechat-bridge.mjs    # 微信机器人桥接
+│   └── scripts/
+│       └── download-model.mjs  # 首次启动下载 ONNX 模型
+├── kb/                      # 默认知识库目录
+├── models/                  # 本地模型文件（运行期生成）
+└── docs/                    # 文档
+```
+
+技术栈一句话总结：**Electron 40 + 原生 JS（无前端框架）+ node:sqlite + ONNX Runtime + MCP**。
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 22.5+（因为用到了 `node:sqlite` 这个内置模块）
+- npm（项目带 lockfile）
+
+### 跑起来
 
 ```bash
-git clone https://github.com/quanzefeng/AideAgent.git
-cd AideAgent/desktop
-npm install        # postinstall auto-downloads MiniLM-L6 (~23MB)
+cd desktop
+npm install         # 会自动下载 embedding 模型（约 25MB）
 npm start
 ```
 
-### 3-Step Setup
+如果模型下载失败（网络问题），可以手动设环境变量重试：
 
-> ⚠️ **Before you start** — you'll need an API key from **one** of these providers (or use local Ollama, no key needed):
-> - 🇨🇳 **DeepSeek** → Sign up at [platform.deepseek.com](https://platform.deepseek.com) (cheapest, best for CN users)
-> - 🌐 **Anthropic Claude** → Sign up at [console.anthropic.com](https://console.anthropic.com)
-> - 🇨🇳 **Zhipu GLM** → Sign up at [open.bigmodel.cn](https://open.bigmodel.cn) (CN, GLM-4.6 coding plan)
-> - 🇨🇳 **Alibaba Qwen** → Sign up at [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com)
-> - 🏠 **Ollama / LM Studio / llama.cpp** → 100% local, zero API cost, no signup needed
-
-1. **Open Settings → API Config** → choose a provider (DeepSeek / Claude / GLM / Qwen / Ollama / ...)
-2. **Paste your API key** → saved with OS-level encryption (Windows DPAPI / macOS Keychain / Linux libsecret)
-3. **Start chatting** → Agent has 34 tools ready to go
-
-> 💡 **No API key?** Use Ollama / LM Studio / llama.cpp for fully local inference. Zero data leaves your machine.
-
----
-
-<div align="center">
-
-### ⭐ **If AideAgent saves you $20/mo, give it a star** — it helps others find it.
-
-[**⭐ Star**](https://github.com/quanzefeng/AideAgent) · [**🍴 Fork**](https://github.com/quanzefeng/AideAgent/fork) · [**👀 Watch**](https://github.com/quanzefeng/AideAgent/watchers)
-
-</div>
-
----
-
-## 🌟 Core Features
-
-### 🛡️ Local-First Privacy
-- **Offline MiniLM-L6** embedding model bundled (384-dim, ~23MB)
-- **OS-level encryption** for all API keys (Electron `safeStorage`)
-- **SSRF protection** — `web_fetch` blocks 127.0.0.1 / 192.168.* / 169.254.*
-- **Path traversal prevention** in KB writes and Hook scripts
-- **Command injection proof** — git/gh use array-based `spawn`, never shell strings
-- **XSS proof** — KB panel uses `textContent`, zero `innerHTML`
-- **Dangerous command detection** — `rm -rf /`, `format`, etc. require explicit confirmation
-
-### ⚡ Prompt Caching (Save 90% on API bills)
-- **Stable system prompt** — dynamic content (memory, KB, tasks) moved to user messages, system prompt never changes → always cacheable
-- **Lazy KB loading** — KB results injected only on first turn
-- **Anthropic explicit cache** — `cache_control` markers on system + tools + history, 1-hour TTL
-- **DeepSeek auto-cache** — message ordering optimized for maximum prefix match
-- **Live hit-rate display** — `💾 90% cached` shown after each reply with color coding (🟢≥80% / 🟡≥50% / 🔴<50%)
-
-### 🧰 34 Built-in Tools
-
-| Category | Tools |
-|---|---|
-| **Files & Code** | `file_read`, `file_write`, `file_edit`, `grep`, `glob`, `lsp` (go-to-def, references, hover) |
-| **Shell** | `bash` (cross-platform pwsh/bash, dangerous command detection, Hook interception) |
-| **Web** | `web_search` (Tavily + meta-search fallback), `web_fetch` (SSRF-protected) |
-| **Version Control** | `git_diff`, `git_commit`, `git_branch`, `gh_pr`, `gh_issue`, `gh_repo` |
-| **Knowledge** | `kb_search` (FTS5 + vector + RRF), `kb_write`, `kb_get_note`, `write_memory` |
-| **Tasks** | `TaskCreate`, `TaskUpdate`, `TaskList`, `TodoWrite`, `AskUserQuestion` |
-| **Skills** | `skill`, `invoke_skill`, `create_skill` (L2/L3 dual system) |
-| **Sub-Agent** | `Agent` (read-only parallel research) |
-
-### 🔌 MCP + Skill Ecosystem
-- **MCP** — stdio + HTTP transports, **auto-detects** Claude Code/Desktop/OpenCode configs
-- **350K+ skills** accessible via `npx skills add` from skills.sh (L3 system)
-- **L2 agent-created skills** — agent learns your workflow and creates reusable skills automatically
-- **Curator** auto-archives skills unused for 30+ days, detects duplicates
-
-### 🧠 Hybrid RAG (Obsidian-Native)
-- **FTS5** keyword search + **vector semantic** search (MiniLM-L6 or Ollama)
-- **RRF fusion** — merges both result sets for optimal relevance
-- **MRL compression** — auto-detects Matryoshka-capable models (e.g. qwen3-embedding), compresses 1024→384 dim losslessly
-- **Smart truncation** — auto-detects Ollama model context length
-- **Instant injection** — relevant notes auto-injected into system prompt
-
-### 🪝 Hook System (Programmable Agent Behavior)
-- **3 events** — `PreToolUse` / `PostToolUse` / `SessionEnd`
-- **JSON protocol** over stdin/stdout, cross-platform
-- **Safety guards** — `enabled` toggle, `tools` filter, path traversal protection, timeout fallback
-- **Built-in examples** — dangerous command interception, auto-formatting, session notifications
-
-### 💾 Self-Evolving Memory
-- **Post-session reflection** — agent analyzes recent exchanges, extracts PREFERENCE / DECISION / KNOWLEDGE
-- **Auto-save** to `USER.md` / `MEMORY.md` — zero user friction
-- **Semantic selection** — auto-picks most relevant memories per conversation
-- **Deduplication** — prevents saving redundant content
-
-### 🔄 Auto-Compress & Continue
-- **Context-aware trigger** at 90% token usage (256K window)
-- **LLM summarization** — preserves key decisions and file references
-- **Seamless resume** — "Auto-continued (N/5)" shown inline
-- **Up to 5× continuations** = 50 tool calls × 5 = 250 effective rounds
-
-### 📁 Project Context (AGENTS.md)
-- **Multi-standard** — reads `AGENTS.md` first, `CLAUDE.md` as fallback
-- **Two-level loading** — project root + `~/.aideagent/CLAUDE.md`
-- **Zero config** — auto-loaded if present
-
-### 💬 WeChat Bot
-- QR-code login to WeChat
-- Send messages to your agent from your phone
-- Full conversational capabilities, end-to-end
-
-### 🎨 UI / UX
-- Dark theme, streaming responses, expandable reasoning
-- LaTeX math + code syntax highlighting (highlight.js)
-- One-click Chinese/English UI switch
-- 12 settings panels (API / Avatar / Skills / Prompt / MCP / Social / Memory / KB / Skills / Font / Language / About)
-- Custom avatar and agent name
-
----
-
-## 🏗️ Architecture
-
-```
-desktop/
-├── main.mjs                 # App entry
-├── preload.cjs              # IPC bridge (~60 channels)
-├── core/
-│   ├── agent-loop.mjs       # Conversation loop + auto-continue + auto-review
-│   ├── tool-executor.mjs    # 34 tools + cross-platform shell
-│   ├── tool-definitions.mjs # Tool schemas
-│   ├── system-prompt.mjs    # Prompt builder + AGENTS.md loading
-│   ├── format-adapters.mjs  # OpenAI/Anthropic adapters + Prompt Caching
-│   ├── token-budget.mjs     # Token estimation + context compression
-│   ├── hook-manager.mjs     # Hook system
-│   ├── sub-agent.mjs        # Read-only sub-agents
-│   ├── state.mjs            # Shared state + platform detection
-│   ├── ipc-handlers.mjs     # IPC handlers (~80)
-│   ├── memory-selection.mjs # Semantic memory selection
-│   ├── skill-scanner.mjs    # L3 skill scanner
-│   └── workspace-config.mjs # Workspace persistence
-├── session-db.mjs           # Session DB (SQLite + FTS5)
-├── memory-store.mjs         # Memory store
-├── skills-store.mjs         # L2 skill store
-├── knowledge-store.mjs      # KB RAG (SQLite + FTS5 + vectors)
-├── mcp-manager.mjs          # MCP protocol (JSON-RPC 2.0)
-├── lsp-manager.mjs          # LSP client
-├── update-manager.mjs       # Auto-updater
-├── renderer/                # UI (vanilla JS, no framework bloat)
-│   ├── index.html
-│   ├── app.js
-│   ├── style.css
-│   ├── translations.js      # i18n (zh-CN + en)
-│   └── modules/
-├── test/                    # 25 Vitest test files
-├── models/                  # Bundled MiniLM-L6
-└── scripts/                 # Build scripts
-```
-
-**Stack:** Electron 40 · Node.js 22 · SQLite (FTS5 + vectors) · Vitest · Playwright · electron-builder
-
-**No TypeScript build step** — vanilla JS keeps startup fast and bundle small.
-
----
-
-## 🔬 Who's Using AideAgent?
-
-> _Be the first to star ⭐ the repo and open an issue to get featured here._
-
----
-
-## 📚 Documentation
-
-- 📖 **[User Guide](docs/user-guide.md)** — Detailed walkthrough of every feature
-- 🛠️ **[Developer Guide](docs/developer-guide.md)** — Architecture deep-dive, contributing
-- 🔌 **[MCP Setup](docs/mcp-setup.md)** — Connect external tool servers
-- 🪝 **[Hook Examples](docs/hook-examples.md)** — Pre/Post/SessionEnd recipes
-- 🎯 **[Prompt Caching](docs/prompt-caching.md)** — How the cache works + cost benchmarks
-- 🤖 **[Multi-Model Setup](docs/multi-model.md)** — DeepSeek, Claude, GLM, Qwen, Ollama, ...
-
----
-
-## 🗺️ Roadmap
-
-**Done ✅ (v1.0.x)**
-- ✅ v1.0.20 — 34 tools · 17 releases · 199+ commits · 25+ test files (2026-06-18)
-
-**Coming soon 🚧**
-- [ ] **v1.1** — Multi-modal vision input (image understanding)
-- [ ] **v1.2** — Plugin marketplace (community-driven L3 skills)
-- [ ] **v1.3** — Cross-device sync (E2E encrypted)
-- [ ] **v2.0** — Cloud-optional mode (for team collaboration)
-- [ ] **VSCode Extension** — same agent, in your editor
-- [ ] **Multi-Agent Collaboration** — orchestrate multiple agents on one task
-- [ ] **Voice Mode** — push-to-talk with Whisper integration
-- [ ] **Agent Marketplace** — share and install community-created skills
-
-See [open issues](https://github.com/quanzefeng/AideAgent/issues) for the full list.
-
----
-
-## 🙌 Support
-
-If AideAgent is useful to you, here are 3 ways to show support (it really helps the project grow):
-
-- ⭐ **[Star this repo](https://github.com/quanzefeng/AideAgent)** — 1 click, biggest impact
-- 🐛 **[Report a bug](../../issues/new?template=bug_report.md)** — even typos count
-- 💬 **[Join discussions](../../discussions)** — questions, ideas, showcase
-- 🐦 **Tag [@quanzefeng](https://github.com/quanzefeng)** when you share something you built with it
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
-
-**Quick start:**
 ```bash
-git clone https://github.com/quanzefeng/AideAgent.git
-cd AideAgent/desktop
-npm install
-npm run dev      # development mode with hot reload
-npm test         # run Vitest suite
-npm run lint
+# 国内镜像优先（在 download-model.mjs 里默认就是这个顺序）
+HF_ENDPOINT=https://hf-mirror.com npm install
 ```
 
-**Good first issues:** [good-first-issue label](https://github.com/quanzefeng/AideAgent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+### 打安装包
+
+```bash
+npm run dist:win     # Windows NSIS
+npm run dist:mac     # macOS DMG
+npm run dist:linux   # Linux deb + AppImage
+npm run dist:all     # 三平台一把梭
+```
+
+打好的包在 `desktop/release/` 下面。
+
+### 开发模式
+
+```bash
+npm run dev          # Electron + DevTools
+npm run test         # Vitest 单测
+npm run test:e2e     # Playwright E2E（Electron 模式）
+npm run lint         # ESLint
+npm run typecheck    # tsc --noEmit
+```
 
 ---
 
-## 📜 License
+## 几个贴心细节
 
-[Apache License 2.0](LICENSE) — free for commercial and personal use.
-
----
-
-## 📖 The Story
-
-AideAgent started on **May 23, 2026** as a weekend experiment to answer one question:
-
-> *"Can I build a privacy-first local AI assistant with RAG, Hooks, and WeChat — without the $20/mo subscription?"*
-
-**24 days later:** 17 releases · 199+ commits · 34 tools · 25+ tests · 0 contributors.
-
-Today, it's a small, honest open-source project — and it's yours to use, fork, or extend.
-
-— Built with ❤️ + coffee by [@quanzefeng](https://github.com/quanzefeng)
+- **数据本地化**——会话、笔记索引、技能、记忆全在 `~/.aideagent/`，不上云
+- **API Key 加密**——用操作系统的 Keychain，不写明文
+- **首次启动会自动迁移**——如果是从旧版本（`~/.goodagent/`）升上来的，配置会自动迁移
+- **CSP 严格**——渲染层有完整的 Content Security Policy
+- **MCP 配置兼容 Claude Code 格式**——可以直接复制 `.mcp.json` 过来用
 
 ---
 
-## 💖 Sponsorship
+## 联系方式 & 致谢
 
-If AideAgent saved you time or money, consider buying the author a coffee ☕
+仓库在 [github.com/quanzefeng/AideAgent](https://github.com/quanzefeng/AideAgent)。
 
-<div align="center">
-  <img src="assets/alipay-qr.jpg" width="200" alt="Alipay" />
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="assets/wechat-qr.jpg" width="200" alt="WeChat" />
-</div>
+如果你觉得这个项目有用，**点个 ⭐ Star** 是对作者最大的鼓励。
+
+提 Issue、提 PR 都欢迎。功能建议、bug 反馈、使用疑问——任何一种都好。
 
 ---
 
-## 📬 Contact
+## 写在最后
 
-- 💬 WeChat ID (not phone number): `q2993919594` — search & add in WeChat → Contacts → Add Contacts → WeChat ID
-- 📧 Email: `zefengquan5@gmail.com`
-- 🐙 GitHub: [@quanzefeng](https://github.com/quanzefeng)
+这个项目没有花哨的 roadmap，也没有"我们要做 AGI"的口号。它就是一群人觉得"AI 应该能帮我做点事"之后，写出来的一个小工具。
 
----
+如果你也是这么想的，欢迎来用，欢迎来改。
 
-<div align="center">
-
-### ⭐ **If this project helps you, please star it** — it helps more developers find it.
-
-[![Star AideAgent](https://img.shields.io/github/stars/quanzefeng/AideAgent?style=social)](https://github.com/quanzefeng/AideAgent)
-
-Made with ❤️ by one developer in 24 days.
-
-</div>
+如果这个 README 你看完了还不知道它能干什么——**装上玩两分钟就知道了**，别看文档了。

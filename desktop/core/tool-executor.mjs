@@ -54,6 +54,13 @@ function requestPermission(cmd) {
 // Windows: invokes pwsh / powershell.exe via -Command
 // POSIX:   invokes /bin/bash via -c
 // Resolves with { out, err, code } on success, { error } on spawn failure.
+//
+// Bounded buffer: stdout/stderr are capped at MAX_STREAM_BYTES (8 MiB) so a
+// runaway command (`cat huge.log`, `find /`, etc.) can't OOM the main
+// process before the 60s timeout fires. The MAX_OUTPUT (60KB) truncation
+// in the `bash` case happens AFTER this — without the cap here, we'd
+// buffer GBs of output in memory and only then slice 60KB off the front.
+const MAX_STREAM_BYTES = 8 * 1024 * 1024; // 8 MiB per stream
 function runShell(command, opts = {}) {
   return new Promise(resolve => {
     try {
@@ -62,11 +69,33 @@ function runShell(command, opts = {}) {
         cwd: getWorkspace(), shell: false, timeout: opts.timeout || 60000,
       });
       const chunks = { out: [], err: [] };
-      child.stdout.on("data", c => chunks.out.push(c));
-      child.stderr.on("data", c => chunks.err.push(c));
+      const sizes = { out: 0, err: 0 };
+      const dropped = { out: 0, err: 0 };
+      const onStream = (key) => (c) => {
+        if (sizes[key] < MAX_STREAM_BYTES) {
+          const room = MAX_STREAM_BYTES - sizes[key];
+          if (c.length <= room) {
+            chunks[key].push(c);
+            sizes[key] += c.length;
+          } else {
+            // Partial-write the last chunk that fits, drop the rest.
+            chunks[key].push(c.subarray(0, room));
+            sizes[key] = MAX_STREAM_BYTES;
+            dropped[key] += (c.length - room);
+          }
+        } else {
+          dropped[key] += c.length;
+        }
+      };
+      child.stdout.on("data", onStream("out"));
+      child.stderr.on("data", onStream("err"));
       child.on("close", code => {
-        const out = Buffer.concat(chunks.out).toString("utf-8");
-        const err = Buffer.concat(chunks.err).toString("utf-8");
+        let out = Buffer.concat(chunks.out).toString("utf-8");
+        let err = Buffer.concat(chunks.err).toString("utf-8");
+        // Mark truncated streams so callers / the LLM know the tail was
+        // dropped for memory reasons (NOT the per-tool MAX_OUTPUT cap).
+        if (dropped.out > 0) out += `\n...[stream truncated: dropped ${dropped.out} bytes after ${MAX_STREAM_BYTES}-byte cap to avoid OOM; use head=N/tail=N/offset=N to page through]`;
+        if (dropped.err > 0) err += `\n...[stderr truncated: dropped ${dropped.err} bytes after ${MAX_STREAM_BYTES}-byte cap]`;
         resolve({ out, err, code });
       });
       child.on("error", e => resolve({ error: e.message }));
@@ -75,6 +104,7 @@ function runShell(command, opts = {}) {
 }
 
 // Safe spawn: exe + args array, no shell interpolation → no injection
+// Same bounded-buffer protection as runShell.
 function runSpawnSafe(exe, args, opts = {}) {
   return new Promise(resolve => {
     try {
@@ -82,11 +112,30 @@ function runSpawnSafe(exe, args, opts = {}) {
         cwd: getWorkspace(), shell: false, timeout: opts.timeout || 60000,
       });
       const chunks = { out: [], err: [] };
-      child.stdout.on("data", c => chunks.out.push(c));
-      child.stderr.on("data", c => chunks.err.push(c));
+      const sizes = { out: 0, err: 0 };
+      const dropped = { out: 0, err: 0 };
+      const onStream = (key) => (c) => {
+        if (sizes[key] < MAX_STREAM_BYTES) {
+          const room = MAX_STREAM_BYTES - sizes[key];
+          if (c.length <= room) {
+            chunks[key].push(c);
+            sizes[key] += c.length;
+          } else {
+            chunks[key].push(c.subarray(0, room));
+            sizes[key] = MAX_STREAM_BYTES;
+            dropped[key] += (c.length - room);
+          }
+        } else {
+          dropped[key] += c.length;
+        }
+      };
+      child.stdout.on("data", onStream("out"));
+      child.stderr.on("data", onStream("err"));
       child.on("close", code => {
-        const out = Buffer.concat(chunks.out).toString("utf-8").trim();
-        const err = Buffer.concat(chunks.err).toString("utf-8").trim();
+        let out = Buffer.concat(chunks.out).toString("utf-8").trim();
+        let err = Buffer.concat(chunks.err).toString("utf-8").trim();
+        if (dropped.out > 0) out += `\n...[stream truncated: dropped ${dropped.out} bytes]`;
+        if (dropped.err > 0) err += `\n...[stderr truncated: dropped ${dropped.err} bytes]`;
         resolve({ out, err, code });
       });
       child.on("error", e => resolve({ error: e.message }));
@@ -1005,115 +1054,131 @@ export async function runTool(tc) {
       } catch (e) { return { error: e.message }; }
     }
     case "gh_pr": {
+      // P0 security fix: every branch now uses runSpawnSafe("gh", [...])
+      // with arg arrays instead of string interpolation. Previous impl built
+      // commands like `gh pr list --reviewer "${args.reviewer}"`, which let
+      // an LLM (or a malicious MCP tool call) inject shell metacharacters:
+      //   args.reviewer = '$(Remove-Item C:\\ -Recurse -Force)'
+      //   args.body     = 'foo" ; rm -rf / ; "'
+      // The earlier `--title`/`--body` paths in `create` were already safe;
+      // this normalizes the remaining read/write actions to the same pattern.
       try {
-        let cmd;
+        /** @type {string[]} */
+        let ghArgs;
         switch (args.action) {
           case "create": {
-            const ghArgs = ["pr", "create"];
-            if (args.title) ghArgs.push("--title", args.title);
-            if (args.body) ghArgs.push("--body", args.body);
-            if (args.base) ghArgs.push("--base", args.base);
-            if (args.head) ghArgs.push("--head", args.head);
+            ghArgs = ["pr", "create"];
+            if (args.title) ghArgs.push("--title", String(args.title));
+            if (args.body) ghArgs.push("--body", String(args.body));
+            if (args.base) ghArgs.push("--base", String(args.base));
+            if (args.head) ghArgs.push("--head", String(args.head));
             const r = await runSpawnSafe("gh", ghArgs);
             return { output: r.out || r.err, success: r.code === 0 };
           }
           case "view": {
-            cmd = args.pr ? `gh pr view ${args.pr}` : "gh pr view";
-            if (args.json) cmd += " --json number,title,state,author,createdAt,mergedAt,url,headRefName,baseRefName,body,reviewDecision,mergeable,labels,assignees,reviews";
+            ghArgs = ["pr", "view"];
+            if (args.pr) ghArgs.push(String(args.pr));
+            if (args.json) ghArgs.push("--json", "number,title,state,author,createdAt,mergedAt,url,headRefName,baseRefName,body,reviewDecision,mergeable,labels,assignees,reviews");
             break;
           }
           case "list": {
-            cmd = "gh pr list";
-            if (args.state) cmd += ` --state ${args.state}`;
-            if (args.limit) cmd += ` --limit ${args.limit}`;
-            if (args.reviewer) cmd += ` --reviewer "${args.reviewer}"`;
-            if (args.json) cmd += " --json number,title,state,author,createdAt,url,headRefName,baseRefName,reviewDecision,labels";
+            ghArgs = ["pr", "list"];
+            if (args.state) ghArgs.push("--state", String(args.state));
+            if (args.limit) ghArgs.push("--limit", String(args.limit));
+            if (args.reviewer) ghArgs.push("--reviewer", String(args.reviewer));
+            if (args.json) ghArgs.push("--json", "number,title,state,author,createdAt,url,headRefName,baseRefName,reviewDecision,labels");
             break;
           }
           case "diff": {
             if (!args.pr) return { error: "PR number or URL is required for diff" };
-            cmd = `gh pr diff ${args.pr}`;
+            ghArgs = ["pr", "diff", String(args.pr)];
             break;
           }
           case "merge": {
-            cmd = args.pr ? `gh pr merge ${args.pr} --merge` : "gh pr merge --merge";
+            ghArgs = args.pr ? ["pr", "merge", String(args.pr), "--merge"] : ["pr", "merge", "--merge"];
             break;
           }
           case "checkout": {
             if (!args.pr) return { error: "PR number or URL is required for checkout" };
-            cmd = `gh pr checkout ${args.pr}`;
+            ghArgs = ["pr", "checkout", String(args.pr)];
             break;
           }
           case "close": {
             if (!args.pr) return { error: "PR number or URL is required for close" };
-            cmd = `gh pr close ${args.pr}`;
+            ghArgs = ["pr", "close", String(args.pr)];
             break;
           }
           default: return { error: `Unknown gh_pr action: ${args.action}` };
         }
-        const r = await runShell(cmd);
+        const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
     case "gh_issue": {
+      // Same security fix as gh_pr — all branches use runSpawnSafe.
       try {
-        let cmd;
+        /** @type {string[]} */
+        let ghArgs;
         switch (args.action) {
           case "create": {
-            const ghArgs = ["issue", "create"];
-            if (args.title) ghArgs.push("--title", args.title);
-            if (args.body) ghArgs.push("--body", args.body);
+            ghArgs = ["issue", "create"];
+            if (args.title) ghArgs.push("--title", String(args.title));
+            if (args.body) ghArgs.push("--body", String(args.body));
             const r = await runSpawnSafe("gh", ghArgs);
             return { output: r.out || r.err, success: r.code === 0 };
           }
           case "view": {
-            cmd = args.issue ? `gh issue view ${args.issue}` : "gh issue view";
-            if (args.json) cmd += " --json number,title,state,author,createdAt,closedAt,url,body,labels,assignees,comments";
+            ghArgs = ["issue", "view"];
+            if (args.issue) ghArgs.push(String(args.issue));
+            if (args.json) ghArgs.push("--json", "number,title,state,author,createdAt,closedAt,url,body,labels,assignees,comments");
             break;
           }
           case "list": {
-            cmd = "gh issue list";
-            if (args.state) cmd += ` --state ${args.state}`;
-            if (args.limit) cmd += ` --limit ${args.limit}`;
-            if (args.label) cmd += ` --label "${args.label}"`;
-            if (args.assignee) cmd += ` --assignee "${args.assignee}"`;
-            if (args.json) cmd += " --json number,title,state,author,createdAt,url,labels,assignees";
+            ghArgs = ["issue", "list"];
+            if (args.state) ghArgs.push("--state", String(args.state));
+            if (args.limit) ghArgs.push("--limit", String(args.limit));
+            if (args.label) ghArgs.push("--label", String(args.label));
+            if (args.assignee) ghArgs.push("--assignee", String(args.assignee));
+            if (args.json) ghArgs.push("--json", "number,title,state,author,createdAt,url,labels,assignees");
             break;
           }
           case "close": {
             if (!args.issue) return { error: "Issue number or URL is required" };
-            cmd = `gh issue close ${args.issue}`;
+            ghArgs = ["issue", "close", String(args.issue)];
             break;
           }
           case "reopen": {
             if (!args.issue) return { error: "Issue number or URL is required" };
-            cmd = `gh issue reopen ${args.issue}`;
+            ghArgs = ["issue", "reopen", String(args.issue)];
             break;
           }
           case "comment": {
             if (!args.issue) return { error: "Issue number or URL is required" };
             if (!args.body) return { error: "Comment body is required" };
-            cmd = `gh issue comment ${args.issue} --body "${args.body.replace(/"/g, '\\"')}"`;
+            ghArgs = ["issue", "comment", String(args.issue), "--body", String(args.body)];
             break;
           }
           default: return { error: `Unknown gh_issue action: ${args.action}` };
         }
-        const r = await runShell(cmd);
+        const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
     case "gh_repo": {
+      // Same security fix — all branches use runSpawnSafe.
       try {
-        let cmd;
+        /** @type {string[]} */
+        let ghArgs;
         switch (args.action) {
           case "view": {
-            cmd = args.repo ? `gh repo view ${args.repo}` : "gh repo view";
+            ghArgs = ["repo", "view"];
+            if (args.repo) ghArgs.push(String(args.repo));
             break;
           }
           case "list": {
-            cmd = "gh repo list";
-            if (args.limit) cmd += ` --limit ${args.limit}`;
-            if (args.visibility) cmd += ` --visibility ${args.visibility}`;
+            ghArgs = ["repo", "list"];
+            if (args.limit) ghArgs.push("--limit", String(args.limit));
+            if (args.visibility) ghArgs.push("--visibility", String(args.visibility));
             break;
           }
           case "readme": {
@@ -1157,22 +1222,19 @@ export async function runTool(tc) {
           }
           case "clone": {
             if (!args.repo && !args.url) return { error: "Repository (owner/repo) or URL is required" };
-            const target = args.repo || args.url;
-            cmd = `gh repo clone ${target}`;
+            ghArgs = ["repo", "clone", String(args.repo || args.url)];
             break;
           }
           case "create": {
             if (!args.name) return { error: "Repository name is required" };
-            const parts = [`gh repo create "${args.name.replace(/"/g, '\\"')}"`];
-            if (args.description) parts.push(`--description "${args.description.replace(/"/g, '\\"')}"`);
-            if (args.private) parts.push("--private");
-            else parts.push("--public");
-            cmd = parts.join(" ");
+            ghArgs = ["repo", "create", String(args.name)];
+            if (args.description) ghArgs.push("--description", String(args.description));
+            ghArgs.push(args.private ? "--private" : "--public");
             break;
           }
           default: return { error: `Unknown gh_repo action: ${args.action}` };
         }
-        const r = await runShell(cmd);
+        const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e) { return { error: e.message }; }
     }
