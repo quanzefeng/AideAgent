@@ -83,6 +83,8 @@ const translations = {
     "provider.llamacpp": "llama.cpp（本地）",
     "provider.minimax": "MiniMax",
     "provider.claude": "Claude (Anthropic)",
+    "provider.opencode_go": "OpenCode Go (OpenAI)",
+    "provider.opencode_go_ant": "OpenCode Go (Anthropic)",
     "provider.lmstudio": "LM Studio（本地）",
     "provider.ollama": "Ollama（本地）",
 
@@ -481,6 +483,16 @@ const translations = {
     "model.claude_sonnet_4": "Claude Sonnet 4.6（均衡，推荐）",
     "model.claude_opus_4": "Claude Opus 4.6（旗舰）",
     "model.claude_haiku_4_5": "Claude Haiku 4.5（快速）",
+    "model.glm_5_1": "GLM-5.1（智谱旗舰，推荐）",
+    "model.glm_5_2": "GLM-5.2（智谱增强）",
+    "model.kimi_k2_6": "Kimi K2.6（月之暗面）",
+    "model.kimi_k2_7": "Kimi K2.7（月之暗面）",
+    "model.mimo_v2_5": "MiMo V2.5（小米）",
+    "model.mimo_v2_5_pro": "MiMo V2.5-Pro（小米旗舰）",
+    "model.minimax_m2_5": "MiniMax-M2.5（轻量）",
+    "model.minimax_m3": "MiniMax-M3（最新旗舰）",
+    "model.qwen3_6_plus": "Qwen3.6-Plus（通义）",
+    "model.qwen3_7_plus": "Qwen3.7-Plus（通义）",
 
     // ── Token Budget ──
     "budget.over_hard": "超过硬限制 {limit}，将被截断",
@@ -644,6 +656,8 @@ const translations = {
     "provider.llamacpp": "llama.cpp (Local)",
     "provider.minimax": "MiniMax",
     "provider.claude": "Claude (Anthropic)",
+    "provider.opencode_go": "OpenCode Go (OpenAI)",
+    "provider.opencode_go_ant": "OpenCode Go (Anthropic)",
     "provider.lmstudio": "LM Studio (Local)",
     "provider.ollama": "Ollama (Local)",
 
@@ -1042,6 +1056,16 @@ const translations = {
     "model.claude_sonnet_4": "Claude Sonnet 4.6 (Balanced, Recommended)",
     "model.claude_opus_4": "Claude Opus 4.6 (Flagship)",
     "model.claude_haiku_4_5": "Claude Haiku 4.5 (Fast)",
+    "model.glm_5_1": "GLM-5.1 (Zhipu Flagship, Recommended)",
+    "model.glm_5_2": "GLM-5.2 (Zhipu Enhanced)",
+    "model.kimi_k2_6": "Kimi K2.6 (Moonshot)",
+    "model.kimi_k2_7": "Kimi K2.7 (Moonshot)",
+    "model.mimo_v2_5": "MiMo V2.5 (Xiaomi)",
+    "model.mimo_v2_5_pro": "MiMo V2.5-Pro (Xiaomi Flagship)",
+    "model.minimax_m2_5": "MiniMax-M2.5 (Lightweight)",
+    "model.minimax_m3": "MiniMax-M3 (Latest Flagship)",
+    "model.qwen3_6_plus": "Qwen3.6-Plus (Tongyi)",
+    "model.qwen3_7_plus": "Qwen3.7-Plus (Tongyi)",
 
     // ── Token Budget ──
     "budget.over_hard": "Exceeds hard limit {limit}, will be truncated",
