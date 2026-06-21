@@ -65,13 +65,18 @@ The four buttons above the input box — **Messages**, **Tools**, **Skill**, **M
 
 ### 1. Multiple models — pick whoever you want
 
-Click **API Config** to switch models. Supported:
+Click **API Config** and you'll see 8 presets, ready to go:
 
-- **DeepSeek** (Chinese, cheap and good)
-- **GLM-4** (Zhipu)
-- **Qwen / Tongyi Qianwen** (Alibaba)
-- **Claude** (Anthropic official and third-party proxies)
-- **Local models** — Ollama, LM Studio, llama.cpp server all work
+- **DeepSeek** — V4-Flash / V4-Pro
+- **GLM (Zhipu)** — GLM-5.2 / GLM-4.7-Flash
+- **Qwen (Tongyi Qianwen, Alibaba)** — Qwen3.7-Max / Qwen-Plus
+- **Claude (Anthropic)** — Sonnet 4.6 / Opus 4.8 / Haiku 4.5
+- **MiniMax** — M3 / M3-Highspeed
+- **Ollama** — local, drop in any model you've pulled
+- **LM Studio** — local, with the GUI
+- **llama.cpp** — local, the server mode
+
+Both **OpenAI-compatible** and **Anthropic** API formats are supported, so you can swap in any third-party proxy or self-hosted endpoint that speaks the same language. Custom base URLs are also fine — just paste your own.
 
 API keys are encrypted by the operating system keychain (Windows DPAPI / macOS Keychain / Linux libsecret), never stored in plaintext.
 
