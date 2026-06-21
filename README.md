@@ -1,242 +1,251 @@
 # AideAgent
 
-> 一个把 AI 装进你电脑里的桌面助手。不只是聊天，能直接动手帮你干活。
+> A desktop assistant that puts AI on your machine. Not just chat — it actually does the work.
 
 ---
 
-## 这是什么
+## What this is
 
-AideAgent 是一个跑在你电脑本地（也支持云端模型）的 AI 桌面应用。它不只是一个聊天窗口——它能调用工具、能读你的笔记、能操控浏览器、能连你的微信。
+AideAgent is an AI desktop app that runs on your computer (cloud models are supported too). It's not a chat window — it can call tools, read your notes, drive a browser, and connect to your WeChat.
 
-如果你是那种"让 AI 替我干点活"的人，而不是"和 AI 聊聊天"的人——这个项目就是给你写的。
+If you're the kind of person who wants AI to *do things for you*, not just *talk to you* — this project is for you.
 
-![AideAgent 主对话界面](docs/screenshots/01-主对话界面.png)
-
----
-
-## 它解决的痛点
-
-现成的 AI 工具有点别扭：
-
-- **网页版对话**——聊完就没了，不能动手干别的。
-- **其他桌面 AI**——要么只能聊天，要么扩展性差，要么数据全在云上。
-- **Claude Code 类 CLI**——没图形界面，配置门槛高，小白劝退。
-
-AideAgent 想把这几件事都做了：
-
-- **能聊**（左下角输入框就是对话框）
-- **能干**（能调工具、能跑命令、能搜网页、能翻笔记）
-- **能连你**（能挂微信、能在本地跑模型、不上传你的数据）
-- **能扩展**（有 MCP 协议、有 Skills 系统，想加什么加什么）
+![AideAgent main chat](docs/screenshots/01-主对话界面.png)
 
 ---
 
-## 它能干什么（一图一文，对应主界面那些开关）
+## The problem it solves
 
-主界面输入框下面的四个开关分别对应四种能力：
+Off-the-shelf AI tools are awkward in their own ways:
 
-### 1. 📋 Plan — 任务拆解与执行
+- **Web-based chat** — the conversation ends, and the AI can't do anything else.
+- **Other desktop AI** — either chat-only, hard to extend, or your data lives in the cloud.
+- **CLI tools like Claude Code** — no GUI, high setup bar, brutal for non-developers.
 
-勾上之后，AI 不会直接动手，会先把你的需求拆成步骤、走规划流程，然后再执行。适合"我要做个东西但不告诉你细节"的场景。
+AideAgent tries to cover all three:
 
-### 2. 📚 KB — 知识库检索
-
-挂载你的 Obsidian 笔记（或者其他 Markdown 文件夹），AI 回答时会先去翻你的笔记，找到相关的内容再回。相当于给你的 AI 装了个本地 RAG。
-
-![知识库配置面板](docs/screenshots/04-知识库配置.png)
-
-### 3. 🌐 Web Search — 联网搜索
-
-需要查实时信息的时候勾上。内置了一个不依赖任何 API Key 的元搜索引擎（Bing + GitHub），也支持付费的 Tavily。
-
-### 4. 💡 Reasoning — 深度思考
-
-让模型多花点时间思考，回答更深入（前提是你用的模型支持）。
-
-输入框上面那四个按钮——**消息**、**工具**、**Skill**、**MCP**——是它的能力扩展层：
-
-- **工具**——内置工具（读文件、写文件、跑命令、抓网页等）
-- **Skill**——从 `.agents/skills/` 或 `.claude/skills/` 目录自动扫描到的技能（一次扫到 200+ 个）
-- **MCP**——通过 Model Context Protocol 接入的外部服务（Edge 浏览器、本地搜索、远程 API……）
+- **Chat** (the input box in the lower-left is the conversation)
+- **Act** (tools, commands, web search, notes search)
+- **Reach you** (WeChat bridge, local model support, your data stays on disk)
+- **Extend** (MCP protocol, Skills system, add whatever you want)
 
 ---
 
-## 六大能力（按"能动手的程度"从轻到重）
+## What it can do (one screenshot per capability, matching the toggles in the UI)
 
-### 一、多模型——想用谁就用谁
+The four toggles under the input box correspond to four capabilities:
 
-界面里点 **API Config** 可以切换模型，支持：
+### 1. 📋 Plan — break down and execute tasks
 
-- **DeepSeek**（国产，便宜好用）
-- **GLM-4**（智谱）
-- **Qwen / 通义千问**（阿里）
-- **Claude**（Anthropic 的官方和第三方中转）
-- **本地模型**——Ollama、LM Studio、llama.cpp server 都行
+When toggled, the AI won't just dive in. It plans first, then executes. For "I want to build something but I haven't thought through the details" situations.
 
-API Key 通过操作系统的密钥库（Windows DPAPI / macOS Keychain / Linux libsecret）加密存储，不会明文落盘。
+### 2. 📚 KB — knowledge base search
 
----
+Point it at your Obsidian vault (or any Markdown folder), and the AI will search your notes before answering. Think of it as local RAG glued onto your AI.
 
-### 二、知识库——AI 能读你的笔记
+![Knowledge base panel](docs/screenshots/04-知识库配置.png)
 
-把你的 Obsidian vault 路径告诉它，AI 回答时会先检索你的笔记。
+### 3. 🌐 Web Search — live web search
 
-底层是 SQLite + FTS5 全文检索 + ONNX 跑的本地向量模型（`all-MiniLM-L6-v2`，384 维），两种结果用 RRF 融合。不需要联网，搜索全部本地完成。
+Toggle it on when you need real-time info. A built-in meta-search engine (Bing + GitHub, no API key required), plus an optional paid Tavily integration.
 
-首次启动会自动下载模型文件（`postinstall` 钩子会跑，从 `hf-mirror.com` 或 `huggingface.co` 拉）。
+### 4. 💡 Reasoning — think deeper
 
----
+Lets the model spend more time thinking, for more thorough answers (only works if your model supports it).
 
-### 三、Skills 体系——让 AI 学会干特定的事
+The four buttons above the input box — **Messages**, **Tools**, **Skill**, **MCP** — are the extension layers:
 
-Skills 是放在 `.agents/skills/` 或 `.claude/skills/` 目录下的文件夹，每个里面有一个 SKILL.md 描述"我能干什么"。AI 在合适的时候会自动调用它们。
-
-![Skills 面板](docs/screenshots/03-技能总开关.png)
-
-- **本地 Skills**——自动扫描，每个独立开关（截图里看到 209 个 skills 都开着）
-- **Agent Skills**——自己创建的智能体技能
-- 编写一个 Skill 就是写个 Markdown 文件，门槛很低
+- **Tools** — built-in tools (read file, write file, run command, fetch web page, etc.)
+- **Skill** — auto-discovered from `.agents/skills/` or `.claude/skills/` directories (200+ found on a typical scan)
+- **MCP** — external services via Model Context Protocol (Edge browser, local search, remote APIs, …)
 
 ---
 
-### 四、MCP 生态——接入任何外部服务
+## Six capabilities (ordered from "lightest touch" to "deepest reach")
 
-MCP（Model Context Protocol）是 Anthropic 推的协议，相当于 AI 应用的"USB 接口"。AideAgent 内置了几个一键启用的服务：
+### 1. Multiple models — pick whoever you want
 
-![MCP 面板](docs/screenshots/02-MCP工具生态.png)
+Click **API Config** to switch models. Supported:
 
-- **Edge Browser**——通过 Playwright 操控 Edge，能截图、能填表单、能抓数据
-- **Computer Use**——通过系统可访问性 API 模拟鼠标键盘（默认关闭，慎开）
-- **Web Search**（内置）——免 Key 的元搜索
-- **filesystem**——受控的文件读写（限定在用户目录下）
-- **远程 MCP**——支持 HTTP 接入，可加自定义请求头
+- **DeepSeek** (Chinese, cheap and good)
+- **GLM-4** (Zhipu)
+- **Qwen / Tongyi Qianwen** (Alibaba)
+- **Claude** (Anthropic official and third-party proxies)
+- **Local models** — Ollama, LM Studio, llama.cpp server all work
 
-也可以手动加任何 npx 能跑的 MCP server。
-
----
-
-### 五、微信机器人——把 AI 接到你微信里
-
-应用启动后会尝试拉起微信 iLink Bot 桥接。扫码登录后：
-
-- 你在桌面端和 AI 聊的内容，可以自动同步到微信
-- 微信里发消息，AI 也回你
-
-API 配置会同步到微信端（同一个对话上下文）。这个功能在大陆地区尤其方便，不用开 VPN。
-
-> 实现细节在 `desktop/core/wechat-bridge.mjs`，扫码登录 → 轮询 → Bearer Token → 双向消息推送，整套流程都在里面。
+API keys are encrypted by the operating system keychain (Windows DPAPI / macOS Keychain / Linux libsecret), never stored in plaintext.
 
 ---
 
-### 六、扩展性与自动化——开发者向
+### 2. Knowledge base — AI reads your notes
 
-如果你是开发者，这几样东西够你玩很久：
+Tell it where your Obsidian vault lives, and the AI will search your notes before answering.
 
-- **IPC 接口齐全**——所有功能都暴露成 IPC handler，可以自己写脚本调
-- **state 安全**——所有可调用的子命令都在 `GH_SAFE` 白名单里，不会乱跑 `rm -rf`
-- **测试覆盖**——Vitest 单测 + Playwright E2E（Electron 模式）
-- **类型检查**——`tsc --noEmit` 跑过整个项目（虽然代码是 JS，但有 JSDoc 类型注解）
-- **跨平台打包**——`electron-builder` 一键出 Windows NSIS / macOS DMG / Linux deb+AppImage
-- **自动更新**——`electron-updater` 从 GitHub Releases 拉新版本
+Under the hood: SQLite + FTS5 full-text search + ONNX running a local embedding model (`all-MiniLM-L6-v2`, 384 dimensions), fused with RRF. Fully offline. Nothing leaves your machine.
+
+On first launch, model files download automatically (via a `postinstall` hook, pulling from `hf-mirror.com` or `huggingface.co`).
 
 ---
 
-## 项目骨架
+### 3. Skills system — teach AI to do specific things
+
+A Skill is a folder under `.agents/skills/` or `.claude/skills/` containing a SKILL.md that says "I can do X". The AI invokes the right one when it fits.
+
+![Skills panel](docs/screenshots/03-技能总开关.png)
+
+- **Local Skills** — auto-scanned, individually toggleable (the screenshot shows 209 skills enabled)
+- **Agent Skills** — skills you create yourself
+- Writing a Skill is just writing a Markdown file — low barrier
+
+---
+
+### 4. MCP ecosystem — plug in any external service
+
+MCP (Model Context Protocol) is Anthropic's protocol — think of it as a "USB port" for AI apps. AideAgent ships with several one-click services:
+
+![MCP panel](docs/screenshots/02-MCP工具生态.png)
+
+- **Edge Browser** — Playwright-driven Edge, can screenshot, fill forms, scrape data
+- **Computer Use** — simulates mouse and keyboard through system accessibility APIs (off by default, turn on with care)
+- **Web Search** (built-in) — keyless meta-search
+- **filesystem** — controlled file read/write, scoped to your user directory
+- **Remote MCP** — HTTP with custom headers, plug in whatever you want
+
+You can also add any MCP server that `npx` can run.
+
+---
+
+### 5. WeChat bot — bring AI into your WeChat
+
+On startup the app tries to launch the WeChat iLink Bot bridge. Scan to log in and you get:
+
+- Desktop chats with the AI auto-mirrored to WeChat
+- Messages you send in WeChat get replied to by the AI
+
+API config syncs to the WeChat side too (same conversation context).
+
+> Implementation lives in `desktop/core/wechat-bridge.mjs` — QR scan → polling → bearer token → bidirectional message push, all wired up.
+
+---
+
+### 6. Extensibility and automation — for developers
+
+If you're a developer, these will keep you busy for a while:
+
+- **Full IPC interface** — every feature exposed as an IPC handler, script it however you like
+- **Safe state** — every callable subcommand is gated by a `GH_SAFE` allowlist; no accidental `rm -rf`
+- **Test coverage** — Vitest unit tests + Playwright E2E (in Electron mode)
+- **Type checking** — `tsc --noEmit` passes across the whole project (JS source with JSDoc type annotations)
+- **Cross-platform packaging** — `electron-builder` produces Windows NSIS, macOS DMG, and Linux deb+AppImage in one shot
+- **Auto-update** — `electron-updater` pulls new versions from GitHub Releases
+
+---
+
+## Project layout
 
 ```
 AideAgent/
-├── desktop/                 # Electron 桌面应用
-│   ├── main.mjs             # 主进程入口
-│   ├── preload.cjs          # 预加载桥接（CJS）
-│   ├── core/                # 核心模块（IPC、工具执行、状态管理……）
-│   ├── renderer/            # 渲染层（vanilla JS，无框架）
-│   ├── mcp-manager.mjs      # MCP 协议管理
-│   ├── lsp-manager.mjs      # LSP 客户端（TS/JS）
-│   ├── session-db.mjs       # 会话存储（SQLite + FTS5）
-│   ├── knowledge-store.mjs  # 知识库（FTS5 + 向量检索）
-│   ├── memory-store.mjs     # 记忆存储
-│   ├── skills-store.mjs     # 技能目录
-│   ├── wechat-bridge.mjs    # 微信机器人桥接
+├── desktop/                       # Electron desktop app
+│   ├── main.mjs                   # main process entry
+│   ├── preload.cjs                # preload bridge (CJS)
+│   ├── core/                      # core modules (IPC, tool execution, state, ...)
+│   │   ├── wechat-bridge.mjs      # WeChat bot bridge
+│   │   ├── agent-loop.mjs
+│   │   ├── ipc-handlers.mjs
+│   │   ├── state.mjs
+│   │   ├── tool-executor.mjs
+│   │   └── ...
+│   ├── renderer/                  # renderer (vanilla JS, no framework)
+│   │   └── modules/
+│   ├── mcp-manager.mjs            # MCP protocol manager
+│   ├── lsp-manager.mjs            # LSP client (TS/JS)
+│   ├── session-db.mjs             # session storage (SQLite + FTS5)
+│   ├── knowledge-store.mjs        # knowledge base (FTS5 + vector)
+│   ├── memory-store.mjs           # memory storage
+│   ├── skills-store.mjs           # skills catalog
+│   ├── prompts-store.mjs          # prompts storage
+│   ├── update-manager.mjs         # auto-update manager
+│   ├── search-engine/             # meta-search engine (Bing + GitHub)
 │   └── scripts/
-│       └── download-model.mjs  # 首次启动下载 ONNX 模型
-├── kb/                      # 默认知识库目录
-├── models/                  # 本地模型文件（运行期生成）
-└── docs/                    # 文档
+│       └── download-model.mjs     # downloads ONNX model on first run
+├── kb/                            # default knowledge base directory
+├── models/                        # local model files (generated at runtime)
+└── docs/                          # documentation
 ```
 
-技术栈一句话总结：**Electron 40 + 原生 JS（无前端框架）+ node:sqlite + ONNX Runtime + MCP**。
+Tech stack, one line: **Electron 40 + vanilla JS (no frontend framework) + node:sqlite + ONNX Runtime + MCP**.
 
 ---
 
-## 快速开始
+## Quick start
 
-### 环境要求
+### Requirements
 
-- Node.js 22.5+（因为用到了 `node:sqlite` 这个内置模块）
-- npm（项目带 lockfile）
+- Node.js 22.5+ (because we use the built-in `node:sqlite` module)
+- npm (the project ships a lockfile)
 
-### 跑起来
+### Run it
 
 ```bash
 cd desktop
-npm install         # 会自动下载 embedding 模型（约 25MB）
+npm install         # automatically downloads the embedding model (~25MB)
 npm start
 ```
 
-如果模型下载失败（网络问题），可以手动设环境变量重试：
+If the model download fails (network issues), set an env var and retry:
 
 ```bash
-# 国内镜像优先（在 download-model.mjs 里默认就是这个顺序）
+# China mirror takes priority (default order in download-model.mjs)
 HF_ENDPOINT=https://hf-mirror.com npm install
 ```
 
-### 打安装包
+### Build installers
 
 ```bash
 npm run dist:win     # Windows NSIS
 npm run dist:mac     # macOS DMG
 npm run dist:linux   # Linux deb + AppImage
-npm run dist:all     # 三平台一把梭
+npm run dist:all     # all three platforms
 ```
 
-打好的包在 `desktop/release/` 下面。
+Built installers land in `desktop/release/`.
 
-### 开发模式
+### Development mode
 
 ```bash
 npm run dev          # Electron + DevTools
-npm run test         # Vitest 单测
-npm run test:e2e     # Playwright E2E（Electron 模式）
+npm run test         # Vitest unit tests
+npm run test:e2e     # Playwright E2E (Electron mode)
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
 ```
 
 ---
 
-## 几个贴心细节
+## Nice details
 
-- **数据本地化**——会话、笔记索引、技能、记忆全在 `~/.aideagent/`，不上云
-- **API Key 加密**——用操作系统的 Keychain，不写明文
-- **首次启动会自动迁移**——如果是从旧版本（`~/.goodagent/`）升上来的，配置会自动迁移
-- **CSP 严格**——渲染层有完整的 Content Security Policy
-- **MCP 配置兼容 Claude Code 格式**——可以直接复制 `.mcp.json` 过来用
-
----
-
-## 联系方式 & 致谢
-
-仓库在 [github.com/quanzefeng/AideAgent](https://github.com/quanzefeng/AideAgent)。
-
-如果你觉得这个项目有用，**点个 ⭐ Star** 是对作者最大的鼓励。
-
-提 Issue、提 PR 都欢迎。功能建议、bug 反馈、使用疑问——任何一种都好。
+- **Local-first data** — sessions, note indexes, skills, and memory all live in `~/.aideagent/`, never uploaded
+- **Encrypted API keys** — OS Keychain, never plaintext
+- **Auto-migration on first launch** — upgrading from an older version (`~/.goodagent/`)? Config migrates automatically
+- **Strict CSP** — the renderer ships with a complete Content Security Policy
+- **MCP config compatible with Claude Code format** — copy your existing `.mcp.json` over and it just works
 
 ---
 
-## 写在最后
+## Contact & thanks
 
-这个项目没有花哨的 roadmap，也没有"我们要做 AGI"的口号。它就是一群人觉得"AI 应该能帮我做点事"之后，写出来的一个小工具。
+The repo lives at [github.com/quanzefeng/AideAgent](https://github.com/quanzefeng/AideAgent).
 
-如果你也是这么想的，欢迎来用，欢迎来改。
+If you find this useful, **a ⭐ Star** is the biggest encouragement for the author.
 
-如果这个 README 你看完了还不知道它能干什么——**装上玩两分钟就知道了**，别看文档了。
+Issues, PRs — all welcome. Feature ideas, bug reports, usage questions — any of those.
+
+---
+
+## A final word
+
+This project doesn't have a fancy roadmap, and it doesn't claim to be "building AGI". It's just a small tool written by people who thought "AI should be able to actually help me do things".
+
+If you feel the same way, feel free to use it, and feel free to change it.
+
+If you've read this whole README and still don't know what it does — **install it and play with it for two minutes**. Skip the docs.
