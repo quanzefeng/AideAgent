@@ -3590,17 +3590,40 @@ html, body {
 .token-budget.danger { color: #ef4444; background: rgba(239,68,68,0.12); font-weight: var(--fw-semibold); }
 
 .context-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
   margin-left: 4px;
   white-space: nowrap;
-  transition: all 0.3s ease;
+  transition: color 0.2s ease;
 }
 .context-usage.hidden { display: none; }
+.context-usage-bar {
+  width: 72px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+.context-usage-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--fill, 0%);
+  background: currentColor;
+  border-radius: 3px;
+  transition: width 0.3s ease, background 0.2s ease;
+}
+.context-usage-text {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
 .context-usage.ok { color: var(--text-muted, #888); }
-.context-usage.warn { color: #f59e0b; background: rgba(245,158,11,0.1); }
-.context-usage.danger { color: #ef4444; background: rgba(239,68,68,0.12); }
+.context-usage.warn { color: #f59e0b; }
+.context-usage.danger { color: #ef4444; font-weight: var(--fw-semibold); }
 
 /* ── Skill Card Actions ── */
 #panel-agent-skills .btn-sm { font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid var(--border-color,#333); background:var(--bg-primary,#1a1a2e); color:var(--text-secondary,#aaa); cursor:pointer; white-space:nowrap; }

@@ -1701,17 +1701,17 @@ function setupIPC() {
       if (!el) return;
       el.classList.remove("hidden", "ok", "warn", "danger");
       if (data.usagePct >= 90) {
-        el.textContent = '⚠️ ' + t("context.label", {pct: data.usagePct});
         el.classList.add("danger");
       } else if (data.usagePct >= 80) {
-        el.textContent = '⚡ ' + t("context.label", {pct: data.usagePct});
         el.classList.add("warn");
       } else if (data.totalTokens > 5000) {
-        el.textContent = t("context.label", {pct: data.usagePct});
         el.classList.add("ok");
       } else {
         el.classList.add("hidden");
+        return;
       }
+      el.querySelector(".context-usage-bar").style.setProperty("--fill", data.usagePct + "%");
+      el.querySelector(".context-usage-text").textContent = data.usagePct + "%";
       el.title = `${data.totalTokens.toLocaleString()} / ${data.windowSize.toLocaleString()} tokens`;
     });
   } catch (e) { /* preload may not be updated yet */ }
