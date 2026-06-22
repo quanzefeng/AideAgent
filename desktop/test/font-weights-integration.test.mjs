@@ -105,9 +105,9 @@ beforeEach(() => {
 
 describe("Font weights integration (P3方案B v3: preview + explicit save)", () => {
   describe("Self-init populates inputs + applies CSS + disables Save", () => {
-    it("On import (empty localStorage), all 4 inputs get YaHei-aligned defaults {300/400/700/700}", () => {
+    it("On import (empty localStorage), all 4 inputs get YaHei-aligned defaults {400/400/700/700}", () => {
       expect(initInputValues).toEqual({
-        "fw-normal-input":   "300",
+        "fw-normal-input":   "400",
         "fw-medium-input":   "400",
         "fw-semibold-input": "700",
         "fw-bold-input":     "700",
@@ -184,19 +184,19 @@ describe("Font weights integration (P3方案B v3: preview + explicit save)", () 
   });
 
   describe("Reset button — restore YaHei-aligned defaults + persist", () => {
-    it("Click Reset → inputs show {300/400/700/700} + localStorage has same", () => {
+    it("Click Reset → inputs show {400/400/700/700} + localStorage has same", () => {
       // First, save a custom value
       fakeInputs["fw-normal-input"].value = "900";
       fakeInputs["fw-normal-input"].fire("input");
       fakeSaveBtn.fire("click");
       // Now reset
       fakeResetBtn.fire("click");
-      expect(fakeInputs["fw-normal-input"].value).toBe("300");
+      expect(fakeInputs["fw-normal-input"].value).toBe("400");
       expect(fakeInputs["fw-medium-input"].value).toBe("400");
       expect(fakeInputs["fw-semibold-input"].value).toBe("700");
       expect(fakeInputs["fw-bold-input"].value).toBe("700");
       const stored = JSON.parse(lsStore["AideAgent_font_weights"]);
-      expect(stored).toEqual({ normal: 300, medium: 400, semibold: 700, bold: 700 });
+      expect(stored).toEqual({ normal: 400, medium: 400, semibold: 700, bold: 700 });
     });
   });
 

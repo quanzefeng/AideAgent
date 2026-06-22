@@ -23,8 +23,12 @@ export function loadChatFont() {
 // We deliberately default semibold and bold to the SAME value (700)
 // because YaHei has no distinct "semibold" or "extra bold" — there's
 // only one bold weight. Showing different defaults would be misleading.
+// normal=400 (Regular) and medium=400 are also the same because YaHei
+// has no distinct Light weight on most Windows installs; the only
+// reason to have separate keys is so users can change ONE without
+// touching the other.
 const FW_DEFAULTS = Object.freeze({
-  normal:   300,
+  normal:   400,
   medium:   400,
   semibold: 700,
   bold:     700,

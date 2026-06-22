@@ -51,10 +51,11 @@ const { applyFontWeights, loadFontWeights, saveFontWeights, clampWeight } = awai
 // Constants from the module — derive defaults by reading with empty storage.
 // We can't import the internal FW_DEFAULTS constants because they aren't
 // exported; instead we verify them through observable behavior.
-// P3方案C: defaults match what Microsoft YaHei actually ships — 300 (Light,
-// Win11+ only), 400 (Regular), 700 (Bold). Semibold and bold default to the
-// same value (700) because YaHei has no distinct "semibold" weight.
-const FW_DEFAULTS = { normal: 300, medium: 400, semibold: 700, bold: 700 };
+// P3方案C: defaults match what Microsoft YaHei actually ships — 400 (Regular),
+// 700 (Bold). Semibold and bold default to the same value (700) because YaHei
+// has no distinct "semibold" weight. normal and medium both default to 400
+// because YaHei has no distinct Light weight on most Windows installs.
+const FW_DEFAULTS = { normal: 400, medium: 400, semibold: 700, bold: 700 };
 
 beforeEach(() => {
   lsStub.clear();
@@ -63,8 +64,8 @@ beforeEach(() => {
 
 describe("Font weights (P3方案B)", () => {
   describe("Defaults (P3方案C: match YaHei reality)", () => {
-    it("loadFontWeights() returns {normal:300, medium:400, semibold:700, bold:700}", () => {
-      expect(loadFontWeights()).toEqual({ normal: 300, medium: 400, semibold: 700, bold: 700 });
+    it("loadFontWeights() returns {normal:400, medium:400, semibold:700, bold:700}", () => {
+      expect(loadFontWeights()).toEqual({ normal: 400, medium: 400, semibold: 700, bold: 700 });
     });
   });
 
@@ -91,7 +92,7 @@ describe("Font weights (P3方案B)", () => {
     });
 
     it("falls back to per-key default for non-numeric values", () => {
-      expect(clampWeight("normal",   null)).toBe(300);
+      expect(clampWeight("normal",   null)).toBe(400);
       expect(clampWeight("medium",   undefined)).toBe(400);
       expect(clampWeight("semibold", NaN)).toBe(700);
       expect(clampWeight("bold",     Infinity)).toBe(700);   // Number.isFinite → default
@@ -131,7 +132,7 @@ describe("Font weights (P3方案B)", () => {
         bold: { x: 1 },
       });
       const w = loadFontWeights();
-      expect(w.normal).toBe(300);     // default
+      expect(w.normal).toBe(400);     // default
       expect(w.medium).toBe(400);     // valid
       expect(w.semibold).toBe(700);   // default (null → default)
       expect(w.bold).toBe(700);        // default (object → default)
@@ -173,9 +174,9 @@ describe("Font weights (P3方案B)", () => {
 
   describe("saveFontWeights", () => {
     it("persists JSON-serialized weights to localStorage", () => {
-      saveFontWeights({ normal: 300, medium: 400, semibold: 700, bold: 700 });
+      saveFontWeights({ normal: 400, medium: 400, semibold: 700, bold: 700 });
       const stored = JSON.parse(lsStore["AideAgent_font_weights"]);
-      expect(stored).toEqual({ normal: 300, medium: 400, semibold: 700, bold: 700 });
+      expect(stored).toEqual({ normal: 400, medium: 400, semibold: 700, bold: 700 });
     });
   });
 
