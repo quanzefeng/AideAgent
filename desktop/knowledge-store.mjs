@@ -200,7 +200,7 @@ export function getStatus() {
 // unchanged — external imports keep working.
 
 // Wave 1 — pure functions
-export { spaceCJK, sanitizeFtsTerm } from "./kb/text-utils.mjs";
+export { spaceCJK, sanitizeFtsTerm, sanitizeFtsQuery } from "./kb/text-utils.mjs";
 export { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.mjs";
 export { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.mjs";
 export { reciprocalRankFusion } from "./kb/rank-fusion.mjs";

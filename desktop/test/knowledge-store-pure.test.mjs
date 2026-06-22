@@ -21,6 +21,7 @@ import { tmpdir } from "os";
 import {
   spaceCJK,
   sanitizeFtsTerm,
+  sanitizeFtsQuery,
   stripMarkdown,
   splitIntoChunks,
   parseFrontMatter,
@@ -119,6 +120,54 @@ describe("sanitizeFtsTerm", () => {
     // The result is wrapped in "..." by ftsSearch(), and the original
     // metacharacters are gone, so FTS5 can't parse them as operators.
     expect(sanitized).not.toMatch(/["*()^:]/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// FTS5 query sanitization (high-level, multi-term)
+// ════════════════════════════════════════════════════════════════
+describe("sanitizeFtsQuery", () => {
+  it("splits on whitespace and quotes each term as a literal phrase", () => {
+    expect(sanitizeFtsQuery("hello world")).toBe('"hello" "world"');
+  });
+
+  it("strips FTS5 metacharacters per term before quoting", () => {
+    expect(sanitizeFtsQuery("code*")).toBe('"code"');
+    expect(sanitizeFtsQuery("path(test)")).toBe('"pathtest"');
+  });
+
+  it("spaces CJK per-character (matches the kb_fts indexing side)", () => {
+    expect(sanitizeFtsQuery("故宫博物院")).toBe('"故 宫 博 物 院"');
+    expect(sanitizeFtsQuery("opencode怎么用")).toBe('"opencode怎 么 用"');
+  });
+
+  it("drops standalone FTS5 boolean keywords (OR/AND/NOT/NEAR)", () => {
+    // A bare OR between terms must NOT survive as a quoted literal — that
+    // would force the document to also contain the word "OR", silently
+    // turning the user's OR intent into a stricter AND. Drop it so the
+    // remaining terms fall back to implicit-AND.
+    expect(sanitizeFtsQuery("a:b OR c")).toBe('"ab" "c"');
+    expect(sanitizeFtsQuery("error OR warning")).toBe('"error" "warning"');
+    expect(sanitizeFtsQuery("a AND b NOT c")).toBe('"a" "b" "c"');
+  });
+
+  it("does not drop keyword substrings (only exact-match tokens)", () => {
+    // "ORx" and lowercase "near" are not FTS5 operators; keep them.
+    expect(sanitizeFtsQuery("ORx")).toBe('"ORx"');
+    expect(sanitizeFtsQuery("near")).toBe('"near"');
+  });
+
+  it("returns '' when every term is stripped (caller treats as no-match)", () => {
+    expect(sanitizeFtsQuery("***")).toBe("");
+    expect(sanitizeFtsQuery("OR AND NOT")).toBe("");
+  });
+
+  it("returns '' for empty / null / non-string / whitespace-only input", () => {
+    expect(sanitizeFtsQuery("")).toBe("");
+    expect(sanitizeFtsQuery(null)).toBe("");
+    expect(sanitizeFtsQuery(undefined)).toBe("");
+    expect(sanitizeFtsQuery("   ")).toBe("");
+    expect(sanitizeFtsQuery(/** @type {any} */ (123))).toBe("");
   });
 });
 

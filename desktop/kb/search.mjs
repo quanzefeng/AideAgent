@@ -8,8 +8,8 @@
  *   4. "I don't know" gate (no results if neither list has confident matches)
  *   5. Optional LLM rerank of top-N
  *
- * FTS5 query strings are sanitized via sanitizeFtsTerm() to prevent
- * injection of FTS5 operators.
+ * FTS5 query strings are sanitized via sanitizeFtsQuery() to prevent
+ * injection of FTS5 operators and to space out CJK for unicode61.
  *
  * Thresholds (VECTOR_SIMILARITY_FLOOR, VECTOR_CONFIDENT_SIM, MIN_TOP_RRF_SCORE)
  * are derived empirically from the user's vault stats and documented inline.
@@ -19,7 +19,7 @@ import { getDb, hasFts5 } from "./db.mjs";
 import { getVault, getConfig } from "./config.mjs";
 import { embedText } from "./embedder.mjs";
 import { bufferToVector, cosineSimilarity } from "./vector-math.mjs";
-import { spaceCJK, sanitizeFtsTerm } from "./text-utils.mjs";
+import { spaceCJK, sanitizeFtsTerm, sanitizeFtsQuery } from "./text-utils.mjs";
 import { _logError } from "./log.mjs";
 
 // ── FTS Operations ────────────────────────────────────────
@@ -82,20 +82,14 @@ export function ftsSearch(query, limit) {
   const db = getDb();
   if (hasFts5()) {
     try {
-      const terms = query.split(/\s+/).filter(Boolean);
-      // Sanitize each term FIRST (strip FTS5 metacharacters like " * ( ) etc.),
-      // THEN space out CJK characters. The order matters: if we spaced first
-      // and sanitized second, the sanitizer would strip the spaces we just
-      // added (its regex rejects everything that isn't \w / CJK / dash, and
-      // space is none of those), collapsing the spaced query back to a single
-      // token that never matches the per-character FTS5 index. (P0 fix —
-      // empirically all 5 CJK tests returned 0 hits before this change.)
-      const spacedTerms = terms
-        .map(t => spaceCJK(sanitizeFtsTerm(t)))
-        .filter(t => t.length > 0)
-        .map(t => '"' + t + '"');
-      if (spacedTerms.length === 0) return [];
-      const matchExpr = spacedTerms.join(" ");
+      // Delegate to the shared sanitizer: splits on whitespace, strips
+      // FTS5 metacharacters, drops boolean keywords (OR/AND/NOT/NEAR),
+      // spaces CJK per-character (matches the indexing side's spaceCJK),
+      // and wraps each surviving term in double quotes as a literal
+      // phrase. Order (sanitize-then-space) is owned by the helper —
+      // see the P0 note in text-utils.mjs about why it must not flip.
+      const matchExpr = sanitizeFtsQuery(query);
+      if (!matchExpr) return [];
       return db.prepare(
         'SELECT rowid, chunk_id, heading, snippet(kb_fts, 2, \'<mark>\', \'</mark>\', \'…\', 256) as snippet FROM kb_fts WHERE kb_fts MATCH ? ORDER BY rank LIMIT ?'
       ).all(matchExpr, limit);
