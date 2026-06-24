@@ -1,4 +1,4 @@
-// @ts-nocheck — this 2872-line monolith will be split into focused modules
+﻿// @ts-nocheck — this 2872-line monolith will be split into focused modules
 // in the refactor step. Adding JSDoc here would be wasted effort.
 // @ts-nocheck — 这个 2872 行的单片文件会在重构步骤拆分为聚焦模块。
 //              在这里加 JSDoc 是浪费工作。
@@ -2689,6 +2689,13 @@ initUpdateToast();
       }
       // Update workspace
       updateWorkspaceDisplay();
+      // Re-render dynamic elements created after page load so they pick
+      // up the new locale (otherwise they keep showing the language that
+      // was active when they were first created).
+      if (typeof renderMode === "function") renderMode();  // OpenCode mode selector label
+      if (typeof applyOpencodeStatus === "function") applyOpencodeStatus(_opencodeStatus);  // Runtime badge
+      if (typeof switchInputBox === "function") switchInputBox(getCurrentRuntime());  // Runtime choice cards
+      if (typeof refreshSessionList === "function") refreshSessionList();  // Session list
     });
   }
   // Apply saved language on load

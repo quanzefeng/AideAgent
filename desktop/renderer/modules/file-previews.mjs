@@ -1,4 +1,4 @@
-/**
+﻿/**
  * File previews (input + chip rendering + send-button gating)
  * --------------------------------------------------------------------------
  * 负责：

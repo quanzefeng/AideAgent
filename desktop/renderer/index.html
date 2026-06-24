@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
@@ -69,11 +69,11 @@
   <div id="opencode-install-modal" class="modal">
     <div class="modal-content" style="max-width:520px;">
       <div class="modal-header">
-        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" id="opencode-install-title">⬡ OpenCode 未检测到</h2>
+        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" id="opencode-install-title" data-i18n="runtime.opencode.not_installed_title">⬡ OpenCode not detected</h2>
       </div>
       <div class="modal-body" id="opencode-install-body" style="font-size:14px;line-height:1.6;color:var(--text);">
-        <p style="margin:0 0 8px;color:var(--text-light);" id="opencode-install-desc">AideAgent 可以接管你本地的 OpenCode CLI，统一在这个界面里使用。</p>
-        <p style="margin:0 0 6px;color:var(--text-light);">安装方式（任选其一）：</p>
+        <p style="margin:0 0 8px;color:var(--text-light);" id="opencode-install-desc" data-i18n="runtime.opencode.not_installed_desc">AideAgent can drive your local OpenCode CLI from this same interface.</p>
+        <p style="margin:0 0 6px;color:var(--text-light);" data-i18n="runtime.opencode.install_ways">Install with any of:</p>
         <pre id="opencode-install-cmds" style="background:var(--bg-tertiary);padding:10px;border-radius:6px;font-family:var(--font-mono);font-size:12px;color:var(--text);overflow-x:auto;margin:0 0 4px;border:1px solid var(--border);">npm i -g opencode-ai@latest
 scoop install opencode
 brew install opencode</pre>
@@ -84,8 +84,8 @@ brew install opencode</pre>
         </details>
       </div>
       <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;">
-        <button id="opencode-install-redetect" class="btn">重新检测</button>
-        <button id="opencode-install-docs" class="btn primary">打开安装文档</button>
+        <button id="opencode-install-redetect" class="btn" data-i18n="runtime.opencode.redetect">Re-detect</button>
+        <button id="opencode-install-docs" class="btn primary" data-i18n="runtime.opencode.open_docs">Open Install Docs</button>
       </div>
     </div>
   </div>
@@ -287,7 +287,7 @@ brew install opencode</pre>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
                   <span data-i18n="skills.refresh">刷新</span>
                 </button>
-                <button id="skills-toggle-all-btn" class="btn btn-primary" title="一键开启 / 全部关闭" style="margin-left:auto;">
+                <button id="skills-toggle-all-btn" class="btn btn-primary" data-i18n-title="skills.enable_all_hint" title="Enable all / disable all" style="margin-left:auto;">
                   <svg id="skills-toggle-all-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>
                   <span id="skills-toggle-all-label" data-i18n="skills.toggle_all">一键开启</span>
                 </button>
@@ -758,8 +758,8 @@ brew install opencode</pre>
             <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
               <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">联系方式</div>
               <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
-                <p style="margin:0;">微信：q2993919594</p>
-                <p style="margin:0;">谷歌邮箱：zefengquan5@gmail.com</p>
+                <p style="margin:0;"><span data-i18n="about.contact_wechat_label">WeChat</span>：q2993919594</p>
+                <p style="margin:0;"><span data-i18n="about.contact_email_label">Google Email</span>：zefengquan5@gmail.com</p>
                 <p style="margin:0;">
                   GitHub：<a href="https://github.com/quanzefeng/AideAgent" style="color:var(--primary);text-decoration:none;" target="_blank">github.com/quanzefeng/AideAgent</a>
                 </p>
@@ -832,7 +832,7 @@ brew install opencode</pre>
             <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="AideAgent" />
           </div>
           <h1 data-i18n="chat.welcome_title">AideAgent</h1>
-          <p class="description">任何事都可以找 AideAgent</p>
+          <p class="description" data-i18n="chat.welcome_desc">Any task you need done, ask AideAgent</p>
           <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
             <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
               <span class="runtime-choice-icon runtime-choice-icon-aide">Ⓐ</span>
@@ -897,7 +897,7 @@ brew install opencode</pre>
                   <span class="toggle-slider"></span>
                 </div>
               </label>
-              <label class="reasoning-toggle" title="联网搜索：关闭后 agent 无法使用 web_search 和 web_fetch 工具">
+              <label class="reasoning-toggle" data-i18n-title="chat.web_search_hint" title="Web search: when disabled, agent cannot use web_search and web_fetch tools">
                 <span class="reasoning-toggle-label" data-i18n="chat.web_search">联网搜索</span>
                 <div class="toggle-switch toggle-switch-sm">
                   <input type="checkbox" id="web-search-toggle" checked />
@@ -959,7 +959,7 @@ brew install opencode</pre>
                  default | build | plan. Click the button to open the menu. -->
             <div class="mode-selector" id="opencode-mode-selector">
               <button type="button" id="opencode-mode-button" class="mode-button" aria-haspopup="listbox" aria-expanded="false">
-                <span id="opencode-mode-label">构建模式</span>
+                <span id="opencode-mode-label" data-i18n="opencode.mode.build">Build</span>
                 <svg class="mode-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               <ul id="opencode-mode-menu" class="mode-menu hidden" role="listbox">

@@ -1,4 +1,4 @@
-// @ts-check — JSDoc-typed skills panel (L3 + L2 + skill editor).
+﻿// @ts-check — JSDoc-typed skills panel (L3 + L2 + skill editor).
 // @ts-check — 带 JSDoc 类型注解的技能面板（L3 + L2 + 技能编辑器）。
 import { sanitize } from './helpers.mjs';
 

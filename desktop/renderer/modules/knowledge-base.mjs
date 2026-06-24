@@ -1,4 +1,4 @@
-// @ts-check — JSDoc-typed knowledge base panel loader.
+﻿// @ts-check — JSDoc-typed knowledge base panel loader.
 // @ts-check — 带 JSDoc 类型注解的知识库面板加载器。
 let _kbPanelLoaded = false;
 

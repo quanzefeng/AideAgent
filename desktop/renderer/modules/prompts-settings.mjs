@@ -1,4 +1,4 @@
-// @ts-check — JSDoc-typed prompts settings panel (list + edit modal).
+﻿// @ts-check — JSDoc-typed prompts settings panel (list + edit modal).
 // Layout modeled after 豆包's "自定义技能": clean list rows, editing
 // happens in a modal (not inline) to avoid the cramped two-pane layout.
 let _promptsPanelLoaded = false;
