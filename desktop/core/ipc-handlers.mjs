@@ -1,6 +1,6 @@
 // ── IPC Handlers — All ipcMain.handle registrations ──────────
 
-import { ipcMain, BrowserWindow, dialog, safeStorage } from "electron";
+import { ipcMain, BrowserWindow, dialog, safeStorage, shell } from "electron";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -12,6 +12,7 @@ import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
+import { detectOpencode } from "./opencode-detector.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -20,12 +21,14 @@ import {
   _subAgentCtrls as _subAgentCtrlsRaw, resetSurfacedMemories,
   getWorkspace, setWorkspace,
   getPlanMode, setPlanMode,
+  getCurrentRuntime, setCurrentRuntime,
   pendingPerms, _askResolvers,
   setLastApiConfig,
   sendToRenderer, getRendererBuffer, clearRendererBuffer,
 } from "./state.mjs";
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
 import { hasPersistedWorkspace } from "./workspace-config.mjs";
+import { setRendererSnapshot } from "./session-info.mjs";
 
 /** @type {Map<string, AbortController>} */
 const _subAgentCtrls = _subAgentCtrlsRaw;
@@ -40,16 +43,57 @@ function getHistoryTitle(history) {
 
 /** @param {string} id @param {Array<{role: string, content: string}>} history @param {string} title */
 async function saveSession(id, history, title) {
-  try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
+  // Helper invoked outside agentLoop's closure (e.g. by `session:reset`).
+  // Read the runtime from module state so OpenCode sessions get tagged
+  // correctly instead of being hardcoded to "aide".
+  try { await sessionDb.saveSession(id, history, title, getCurrentRuntime()); } catch { /* ignored */ }
 }
 
 export function registerIpcHandlers() {
-  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true }) => {
+  // Detect locally-installed opencode CLI for the runtime selector.
+  ipcMain.handle("agent:detect-opencode", async () => {
+    try { return await detectOpencode(); }
+    catch (/** @type {any} */ e) { return { installed: false, path: null, version: null, available: false, reason: "error", error: e.message }; }
+  });
+
+  // Open an external URL in the user's default browser (used by the opencode
+  // install-guide modal). Validated to http(s) AND restricted to an allow-list
+  // of trusted hosts so a compromised renderer (XSS, malicious skill output)
+  // can't use this bridge to launch phishing pages.
+  const OPEN_EXTERNAL_ALLOWED_HOSTS = new Set([
+    "opencode.ai",
+    "docs.opencode.ai",
+    "github.com",
+    "anthropic.com",
+  ]);
+  ipcMain.handle("shell:open-external", async (_event, url) => {
+    try {
+      const u = new URL(String(url));
+      if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, error: "protocol_not_allowed" };
+      if (!OPEN_EXTERNAL_ALLOWED_HOSTS.has(u.hostname)) return { ok: false, error: "host_not_allowed" };
+      await shell.openExternal(u.href);
+      return { ok: true };
+    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+  });
+
+  // Renderer pushes its localStorage snapshot here whenever an
+  // `AideAgent_*` key changes (auto-installed by `installLocalStorageHook`).
+  // Stored in module state — the `get_session_info` tool merges this with
+  // fresh file reads on each call. NOT an `ipcMain.handle` because the
+  // renderer doesn't need a reply — fire-and-forget.
+  ipcMain.on("session-info:update", (_event, snapshot) => {
+    if (snapshot && typeof snapshot === "object") {
+      setRendererSnapshot(snapshot);
+    }
+  });
+
+  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide" }) => {
     setPlanMode(!!pm);
+    setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
     console.log("[plan-mode] query:submit planMode =", getPlanMode(), "pm =", pm);
     if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
     sendToRenderer("stream:start", {});
-    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled); }
+    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime); }
     catch (/** @type {any} */ err) { sendToRenderer("stream:error", { message: err.message }); }
     sendToRenderer("stream:done", {});
   });
@@ -124,7 +168,7 @@ export function registerIpcHandlers() {
         } catch (e) { console.error("[session:load] task restore failed:", e?.message); }
         sendToRenderer("session:update", { sessionId: data.id });
       }
-      return { sessionId: data.id, title: data.title, history: /** @type {Array<{role: string, content: string}>} */ (data.history || []) };
+      return { sessionId: data.id, title: data.title, runtime: data.runtime || "aide", history: /** @type {Array<{role: string, content: string}>} */ (data.history || []) };
     }
     return null;
   });
@@ -580,8 +624,16 @@ export function registerIpcHandlers() {
     for (const p of [join(HOME, ".claude", ".mcp.json"), join(HOME, ".claude", "settings.json")]) {
       found.push(...readMcpServers(p, "Claude Code"));
     }
-    found.push(...readMcpServers(join(HOME, ".config", "opencode", "mcp.json"), "OpenCode"));
-    found.push(...readMcpServers(join(HOME, ".config", "opencode", "opencode.json"), "OpenCode", { keys: ["m"] }));
+    // OpenCode uses ~/.config/opencode on macOS/Linux but %APPDATA%/opencode on
+    // Windows. Probe both candidate directories so the "import from OpenCode"
+    // button works on every platform.
+    const opencodeConfigDirs = PLATFORM === "win32"
+      ? [join(process.env.APPDATA || join(HOME, "AppData", "Roaming"), "opencode")]
+      : [join(HOME, ".config", "opencode")];
+    for (const dir of opencodeConfigDirs) {
+      found.push(...readMcpServers(join(dir, "mcp.json"), "OpenCode"));
+      found.push(...readMcpServers(join(dir, "opencode.json"), "OpenCode", { keys: ["m"] }));
+    }
 
     // Claude Desktop config paths (cross-platform)
     const claudeConfigDir = PLATFORM === "darwin"

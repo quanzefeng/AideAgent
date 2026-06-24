@@ -5,7 +5,9 @@ contextBridge.exposeInMainWorld("aideagent", {
   version: process.versions.electron,
   respondPermission: (/** @type {any} */ id, /** @type {any} */ allow) => ipcRenderer.invoke("permission:respond", { id, allow }),
   onPermissionRequest: (/** @type {any} */ cb) => ipcRenderer.on("permission:request", (_event, d) => cb(d)),
-  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled }),
+  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled, /** @type {any} */ runtime) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime }),
+  detectOpencode: () => ipcRenderer.invoke("agent:detect-opencode"),
+  openExternal: (/** @type {any} */ url) => ipcRenderer.invoke("shell:open-external", url),
   setPlanMode: (/** @type {any} */ enabled) => ipcRenderer.invoke("plan-mode:set", enabled),
   getPlanMode: () => ipcRenderer.invoke("plan-mode:get"),
   abortQuery: () => ipcRenderer.invoke("query:abort"),
@@ -88,6 +90,12 @@ contextBridge.exposeInMainWorld("aideagent", {
   mcpQuickAddSearxng: (/** @type {any} */ url) => ipcRenderer.invoke("mcp:quick-add-searxng", url),
   mcpBuiltins: () => ipcRenderer.invoke("mcp:builtins"),
   mcpToggleBuiltin: (/** @type {any} */ name, /** @type {any} */ enabled) => ipcRenderer.invoke("mcp:toggle-builtin", { name, enabled }),
+  // Session info: renderer pushes its localStorage snapshot to main on
+  // every `AideAgent_*` setItem (auto-installed by `installLocalStorageHook`).
+  // Main merges this with file-based config (kb-config.json, mcp-servers.json,
+  // workspace-config.json, etc.) and returns the combined view when the AI
+  // calls the `get_session_info` tool.
+  sessionInfoUpdate: (/** @type {any} */ snapshot) => ipcRenderer.send("session-info:update", snapshot),
   downloadMarkdown: (/** @type {any} */ content) => ipcRenderer.invoke("dialog:download-markdown", content),
   // WeChat iLink Bridge
   wechatGetQrcode: () => ipcRenderer.invoke("wechat:get-qrcode"),

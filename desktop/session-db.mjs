@@ -47,9 +47,15 @@ class SessionDB {
         title TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        message_count INTEGER DEFAULT 0
+        message_count INTEGER DEFAULT 0,
+        runtime TEXT DEFAULT 'aide'
       )
     `);
+
+    // Migration: add runtime column if missing (existing DBs predate it)
+    try {
+      this.#ensureOpen().exec("ALTER TABLE sessions ADD COLUMN runtime TEXT DEFAULT 'aide'");
+    } catch { /* ignored */ } // column already exists
 
     this.#ensureOpen().exec(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -157,21 +163,30 @@ class SessionDB {
     return { id, title, createdAt: now, updatedAt: now, messageCount: 0 };
   }
 
-  /** @param {string} id @param {Array<{role:string,content:string,reasoning_content?:string,tool_calls?:Array<{id:string,type:string,function:{name:string,arguments:string}}>,timestamp?:string}>} history @param {string} [title] */
-  saveSession(id, history, title) {
+  /**
+   * @param {string} id
+   * @param {Array<{role:string,content:string,reasoning_content?:string,tool_calls?:Array<{id:string,type:string,function:{name:string,arguments:string}}>,timestamp?:string}>} history
+   * @param {string} [title]
+   * @param {"aide"|"opencode"} [runtime] normalized runtime tag. Callers are
+   *   responsible for normalizing (this layer only persists what it's given,
+   *   so we don't accidentally re-tag a session as "aide" if a bug passes
+   *   an unexpected value).
+   */
+  saveSession(id, history, title, runtime) {
     this.#ensureOpen();
     const now = new Date().toISOString();
+    const rt = runtime === "opencode" ? "opencode" : "aide";
 
     // Upsert session
     const existing = this.#ensureOpen().prepare("SELECT id FROM sessions WHERE id = ?").get(id);
     if (existing) {
       this.#ensureOpen().prepare(
-        "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?"
-      ).run(title || existing.title || "会话", now, id);
+        "UPDATE sessions SET title = ?, updated_at = ?, runtime = ? WHERE id = ?"
+      ).run(title || existing.title || "会话", now, rt, id);
     } else {
       this.#ensureOpen().prepare(
-        "INSERT INTO sessions(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)"
-      ).run(id, title || "会话", now, now);
+        "INSERT INTO sessions(id, title, created_at, updated_at, runtime) VALUES (?, ?, ?, ?, ?)"
+      ).run(id, title || "会话", now, now, rt);
     }
 
     // Clear old messages + FTS
@@ -206,7 +221,7 @@ class SessionDB {
   loadSession(id) {
     this.#ensureOpen();
     const s = this.#ensureOpen().prepare(
-      "SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?"
+      "SELECT id, title, created_at, updated_at, runtime FROM sessions WHERE id = ?"
     ).get(id);
     if (!s) return null;
 
@@ -219,6 +234,7 @@ class SessionDB {
       title: s.title,
       createdAt: s.created_at,
       updatedAt: s.updated_at,
+      runtime: s.runtime || "aide",
       history: msgs.map(m => ({
         id: m.id,
         role: m.role,

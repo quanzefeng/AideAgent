@@ -2215,6 +2215,178 @@ html, body {
 }
 
 /* ========================================
+   Runtime selector (welcome screen)
+   ======================================== */
+.runtime-choices {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.runtime-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md);
+  width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.runtime-choice:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+.runtime-choice.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.runtime-choice:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-rgb), 0 0 0 4px var(--accent-dim);
+}
+
+.runtime-choice-icon {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-full);
+  font-size: 18px; font-weight: var(--fw-semibold);
+  background: var(--bg-surface);
+  color: var(--text-light);
+}
+.runtime-choice.active .runtime-choice-icon {
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+}
+.runtime-choice-icon-opencode {
+  font-family: var(--font-sans);
+}
+
+.runtime-choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.runtime-choice-name {
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.runtime-choice-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runtime-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+.runtime-badge.ok {
+  color: var(--success);
+  background: rgba(22, 163, 74, 0.10);
+}
+.runtime-badge.missing {
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+.runtime-badge.detecting {
+  color: var(--text-light);
+  background: var(--bg-surface);
+}
+.runtime-badge-aide {
+  /* AideAgent is always "available" — use accent tint to match the active card */
+  color: var(--accent-hover);
+  background: var(--accent-dim);
+}
+
+/* ========================================
+   OpenCode input area (runtime switch)
+   ======================================== */
+#input-wrapper-opencode {
+  /* Mirror #input-wrapper's layout so switching inputs doesn't shift the
+     chat area. Must be a flex column container like #input-wrapper — without
+     `display: flex`, the wrapper collapses in the column-flex #input-area.
+     Visual values match #input-wrapper 1:1 so switching runtimes feels
+     identical: same border weight, same pill radius, same inner padding. */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--input-max-width);
+  margin: 0 auto;
+  background: var(--bg-card);
+  border: 1.8px solid var(--accent);
+  border-radius: 16px;
+  padding: 4px 6px 6px 4px;
+  box-sizing: border-box;
+  position: relative;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+#input-wrapper-opencode:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+#input-wrapper-opencode .input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
+}
+#input-wrapper-opencode textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  max-height: 200px;
+  min-height: 48px;
+  padding: 6px 4px;
+}
+#input-wrapper-opencode textarea::placeholder {
+  color: var(--text-muted);
+}
+#info-bar-opencode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+}
+.opencode-model-name {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+/* ========================================
    消息气泡
    ======================================== */
 .message {
@@ -2736,8 +2908,8 @@ html, body {
   flex-direction: column;
   width: 100%;
   max-width: var(--input-max-width);
-  background: #ffffff;
-  border: 1.8px solid #818cf8;
+  background: var(--bg-card);
+  border: 1.8px solid var(--accent);
   /* Override the default 6px so the input box has a ChatGPT-style pill feel
      without changing --radius-sm (which ~7 other elements still rely on). */
   border-radius: 16px;
@@ -2896,6 +3068,109 @@ html, body {
 .toggle-switch-sm input:focus-visible + .toggle-slider {
   outline: 2px solid var(--accent, #9178dc);
   outline-offset: 2px;
+}
+
+/* ========================================
+   Mode selector (OpenCode info-bar)
+   ----------------------------------------
+   Pill-shaped button that opens a popover menu
+   for picking one of three OpenCode modes:
+   default | build | plan. The selected option
+   shows a check mark in the menu and updates
+   the button label.
+   ======================================== */
+.mode-selector {
+  position: relative;
+  display: inline-block;
+}
+.mode-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--duration-fast, 120ms) var(--ease-out, ease),
+              border-color var(--duration-fast, 120ms) var(--ease-out, ease);
+  font-family: inherit;
+  line-height: 1.4;
+}
+.mode-button:hover {
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.04));
+  border-color: var(--border-hover, var(--accent, #9178dc));
+}
+.mode-button:focus-visible {
+  outline: 2px solid var(--accent, #9178dc);
+  outline-offset: 2px;
+}
+.mode-chevron {
+  transition: transform var(--duration-fast, 120ms) var(--ease-out, ease);
+  color: var(--text-muted);
+}
+.mode-selector.open .mode-chevron {
+  transform: rotate(180deg);
+}
+.mode-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 60;
+  min-width: 220px;
+  padding: 4px;
+  margin: 0;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+.mode-menu.hidden {
+  display: none;
+}
+.mode-menu li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  align-items: center;
+}
+.mode-menu li:hover {
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.05));
+}
+.mode-check {
+  grid-row: 1 / span 2;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--accent, #9178dc);
+}
+.mode-check::before {
+  content: "✓";
+  visibility: hidden;
+}
+.mode-menu li[aria-selected="true"] .mode-check::before {
+  visibility: visible;
+}
+.mode-title {
+  font-weight: 500;
+  color: var(--text);
+}
+.mode-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
 }
 
 /* ========================================

@@ -66,14 +66,11 @@ export function extractThinkBlocks(text) {
   return { cleanText, thinkText: blocks.join("\n\n") };
 }
 
-/**
- * @param {string} id
- * @param {Array<{role:string,content:any}>} history
- * @param {string} [title]
- */
-async function saveSession(id, history, title) {
-  try { await sessionDb.saveSession(id, history, title); } catch { /* ignored */ }
-}
+// Runtime of the active agentLoop call is captured as a closure-local variable
+// inside agentLoop so concurrent calls (or a runtime switch mid-flight) can't
+// race against each other on a module-level holder. Previous design used
+// `let _currentRuntime = "aide"` at module scope, which caused concurrent
+// queries to overwrite each other's persisted session runtime metadata.
 
 // ── Auto-review: extract learnings after each session ──
 /**
@@ -187,7 +184,19 @@ KNOWLEDGE: <内容>
  * @param {boolean} [webSearchEnabled]
  * @param {boolean} [silent]
  */
-export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false) {
+export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false, runtime = "aide") {
+  // Captured as closure-local: every saveSession call inside this agentLoop
+  // invocation writes the SAME runtime value, regardless of what a concurrent
+  // or later agentLoop call does to its own local copy.
+  const sessionRuntime = runtime === "opencode" ? "opencode" : "aide";
+  /**
+   * @param {string} id
+   * @param {Array<{role:string,content:any}>} history
+   * @param {string} title
+   */
+  const saveSession = async (id, history, title) => {
+    try { await sessionDb.saveSession(id, history, title, sessionRuntime); } catch { /* ignored */ }
+  };
   let abortCtrl = /** @type {AbortController | null} */ (getAbortCtrl());
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
@@ -204,8 +213,29 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // Save placeholder session to DB immediately so it appears in sidebar
   const placeholderTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
   const placeholderHistory = [{ role: "user", content: prompt || "" }];
-  await sessionDb.saveSession(/** @type {string} */ (sessionId), placeholderHistory, placeholderTitle);
+  await sessionDb.saveSession(/** @type {string} */ (sessionId), placeholderHistory, placeholderTitle, sessionRuntime);
   sdr("session:update", { sessionId });
+
+  // ── OpenCode runtime: delegate entirely to the local ACP client ──
+  // When runtime === "opencode", the user has chosen to drive a local
+  // `opencode acp` subprocess via the Agent Client Protocol. opencode handles
+  // its own model config, KB, skills, tools, and MCP — we just translate its
+  // session/update notifications into the renderer's stream:* channels and
+  // skip the cloud-API loop entirely. If the binary is missing or fails to
+  // start, surface that as a stream error and fall back gracefully.
+  if (sessionRuntime === "opencode") {
+    return await runOpencodeAcp({
+      prompt,
+      files,
+      silent,
+      sessionId,
+      sessionRuntime,
+      saveSession,
+      sdr,
+      isPlanMode,
+      signal,
+    });
+  }
 
   // ── Build user message with optional file attachments ──
   let userMessage;
@@ -622,7 +652,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
                   tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0 ? m.tool_calls : undefined,
                 };
               });
-            await sessionDb.saveSession(sessionId, histSnapshot, getHistoryTitle(histSnapshot));
+            await sessionDb.saveSession(sessionId, histSnapshot, getHistoryTitle(histSnapshot), sessionRuntime);
             sessionDb.saveTurnProgress(sessionId, {
               currentTurn: turns,
               maxTurns: MAX_TURNS,
@@ -817,7 +847,8 @@ ${convText}
         sessionDb.saveSession(
           compressedId,
           [{ role: "user", content: `## 📋 对话摘要\n\n${summary}` }, ...recent],
-          getHistoryTitle(recent)
+          getHistoryTitle(recent),
+          sessionRuntime
         );
         sessionDb.updateTitle(parentId, getHistoryTitle(recent));
         recent.unshift({ role: "user", content: `## 📋 对话摘要\n\n${summary}` });
@@ -862,4 +893,289 @@ ${convText}
 export function resetPromptCache() {
   _sysPromptCache = null;
   _contextBlockBaseCache = null;
+}
+
+/**
+ * Drive a single prompt turn through the local OpenCode ACP subprocess.
+ * Skips the cloud-API loop entirely; opencode handles model, KB, skills, tools,
+ * MCP on its side. We translate `session/update` notifications into the same
+ * `stream:*` channels the renderer already knows.
+ *
+ * @param {object} args
+ * @param {string} args.prompt
+ * @param {Array<any>} [args.files]
+ * @param {boolean} args.silent
+ * @param {string} args.sessionId
+ * @param {"aide"|"opencode"} args.sessionRuntime
+ * @param {(id: string, history: Array<any>, title: string) => Promise<void>} args.saveSession
+ * @param {(channel: string, data: any) => void} args.sdr
+ * @param {AbortSignal} [args.signal]
+ * @returns {Promise<{ text: string }>}
+ */
+async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false }) {
+  const { OpencodeAcpClient } = await import("./opencode-acp-client.mjs");
+  const { detectOpencode } = await import("./opencode-detector.mjs");
+
+  // 1. Locate the opencode binary. If it's not installed, surface as a stream
+  // error so the renderer's onStreamError handler can show a friendly message
+  // and the user can install via the existing install-guide modal.
+  const detection = await detectOpencode();
+  if (!detection.installed || !detection.path) {
+    sdr("stream:error", { message: "opencode 未检测到，请先安装 OpenCode CLI（参考上方安装提示）" });
+    return { text: "" };
+  }
+  if (!detection.available) {
+    sdr("stream:error", { message: `opencode 二进制无法执行 (version=${detection.version}, reason=${detection.reason})` });
+    return { text: "" };
+  }
+
+  // 2. Build the ACP prompt. We send a content-block array (per ACP v1 spec):
+  //    - text block for the user's prompt text (optionally with file contents
+  //      inlined as `--- File: name ---\n...\n--- End ---` so opencode doesn't
+  //      need to call file_read to access the data)
+  //    - image blocks for images (if agent advertises `image` capability)
+  //
+  // Why inline text instead of using `resource` or `resource_link`?
+  // Empirical testing with opencode v1.17.9 + Ollama shows:
+  //   - `{type:"resource", text:...}` (embedded text) works syntactically but
+  //     the model often only emits `agent_thought_chunk` and no visible text.
+  //   - `{type:"resource_link", uri:"file://..."}` causes opencode to short-
+  //     circuit the turn with `end_turn` and zero chunks (likely because
+  //     reading an outside-cwd temp file requires a `permission:request` that
+  //     we don't surface to the user).
+  //   - Inlining text into the prompt works reliably with both cloud and local
+  //     models — matches what the AideAgent runtime does (see core/agent-
+  //     loop.mjs lines 240-262 in the cloud code path).
+  const promptBlocks = [];
+  let inlineText = String(prompt || "");
+  // Plan mode: prepend a directive telling opencode to only plan, not execute.
+  // We append the directive LAST so the user's actual question stays first;
+  // this matches how Claude Code's own plan mode injects instructions.
+  if (isPlanMode) {
+    inlineText +=
+      "\n\n[系统提示：当前处于计划模式。请仅输出可执行的实施计划，"
+      + "不要调用任何会修改文件或执行命令的工具。"
+      + "等待用户确认后再开始动手。]";
+  }
+  // File handling strategy:
+  //   - Text files (.md/.txt/.js/.json/...) → inline into the prompt text.
+  //     Reliable across cloud + local models; matches the AideAgent runtime.
+  //   - Binary files (PDF/ZIP/.exe/UTF-8-invalid) + images → defer to
+  //     `client.buildFileBlocks()` after `start()`, which uses {type:"image"}
+  //     blocks for images (when agent supports it) or writes a temp file and
+  //     emits a resource_link (when it doesn't). The temp dir is cleaned up
+  //     in the finally block below via `client.cleanupFileBlocks()`.
+  //   - Anything `buildFileBlocks` drops (e.g. empty payload, temp write
+  //     failure) is surfaced to the user via `stream:error` so silent drops
+  //     can't happen.
+  /** @type {Array<{name:string,type:string,dataUrl:string,size?:number}>} */
+  const binaryFiles = [];
+  if (Array.isArray(files) && files.length > 0) {
+    for (const file of files) {
+      const mime = file.type || "application/octet-stream";
+      const dataUrl = file.dataUrl || "";
+      const commaIdx = dataUrl.indexOf(",");
+      const base64Payload = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : "";
+      if (!base64Payload) continue;
+      // Images and anything that fails UTF-8 decoding go through
+      // buildFileBlocks (image blocks + resource_link fallback). Text
+      // files stay inline.
+      if (mime.startsWith("image/")) {
+        binaryFiles.push({ name: file.name, type: mime, dataUrl, size: file.size });
+        continue;
+      }
+      let text;
+      try {
+        text = Buffer.from(base64Payload, "base64").toString("utf-8");
+        // Detect replacement chars from invalid UTF-8 — treat as binary.
+        // toString("utf-8") doesn't throw on bad bytes; it emits U+FFFD.
+        // A file with >1% replacement chars is almost certainly binary.
+        if (text.length > 0) {
+          const fffd = (text.match(/\uFFFD/g) || []).length;
+          if (fffd / text.length > 0.01) {
+            binaryFiles.push({ name: file.name, type: mime, dataUrl, size: file.size });
+            continue;
+          }
+        }
+      } catch {
+        binaryFiles.push({ name: file.name, type: mime, dataUrl, size: file.size });
+        continue;
+      }
+      const MAX_INLINE = 50 * 1024;
+      if (text.length > MAX_INLINE) {
+        text = text.slice(0, MAX_INLINE) + `\n\n…(truncated, ${text.length - MAX_INLINE} more bytes)`;
+      }
+      inlineText += `\n\n--- File: ${file.name} ---\n${text}\n--- End of ${file.name} ---`;
+    }
+  }
+  if (inlineText) promptBlocks.push({ type: "text", text: inlineText });
+
+  // 3. Spawn + initialize the ACP client.
+  const client = new OpencodeAcpClient({
+    binPath: detection.path,
+    cwd: getWorkspace() || process.cwd(),
+    clientInfo: { name: "AideAgent", version: "1.0.0" },
+  });
+
+  // 4. Wire event translators. We accumulate text + reasoning so we can
+  //    persist them into the session DB the same way the cloud path does.
+  //    `allHistory` captures the full conversation including tool calls so
+  //    session reload shows the complete chain — not just first+last message.
+  let allText = "";
+  let allReasoning = "";
+  /** @type {Array<{role:string, content:string, tool_name?:string, tool_args?:string, tool_result?:string}>} */
+  const allHistory = [];
+  /** @type {Array<{id:string,name:string,args?:any,result?:any}>} */
+  const toolCalls = [];
+  let aborted = false;
+  let authFailed = false;
+
+  client.on("text-chunk", (chunk) => {
+    if (aborted) return;
+    allText += chunk;
+    sdr("stream:chunk", { text: chunk });
+  });
+  client.on("reasoning-chunk", (chunk) => {
+    if (aborted) return;
+    allReasoning += chunk;
+    sdr("stream:reasoning", { text: chunk });
+  });
+  client.on("tool-start", (e) => {
+    if (aborted) return;
+    toolCalls.push({ id: e.toolCallId || String(toolCalls.length), name: e.name, args: e.args });
+    sdr("tool:start", { name: e.name, args: e.args || {} });
+  });
+  client.on("tool-result", (e) => {
+    if (aborted) return;
+    // Attach the result to the most recent tool-start with the same name
+    // (toolCallId would be more precise, but the ACP client's tool-result
+    // event carries it — we match by name as a fallback).
+    const last = [...toolCalls].reverse().find((t) => t.name === e.name && !t.result);
+    if (last) last.result = e.result;
+    else toolCalls.push({ id: String(toolCalls.length), name: e.name, result: e.result });
+    sdr("tool:result", { name: e.name, result: e.result });
+  });
+  client.on("auth-required", (e) => {
+    // opencode needs `opencode auth login` run in a terminal. Surface a
+    // clear, actionable error instead of letting the session fail with a
+    // cryptic "opencode exited" a few seconds later.
+    authFailed = true;
+    sdr("stream:error", {
+      message: `OpenCode 需要登录后才能使用。请在终端运行：opencode auth login（认证方式：${(e.authMethods || []).map((m) => m.id).join(", ")}）`,
+    });
+  });
+  client.on("permission-request", (e) => {
+    // Auto-approved by the ACP client (see _onMessage in
+    // opencode-acp-client.mjs). Forward to the UI for visibility only —
+    // the response has already been sent back to the agent so the turn
+    // keeps moving. A future iteration can surface an interactive approve/
+    // deny dialog instead of auto-approving.
+    if (aborted) return;
+    sdr("permission:request", {
+      id: e.id,
+      toolCallId: e.toolCallId,
+      kind: e.kind || "",
+      title: e.title || "",
+      options: e.options || [],
+      approved: e.approved || "",
+    });
+  });
+
+  // 5. Hook abort signal → cancel the ACP turn.
+  const onAbort = () => {
+    aborted = true;
+    try { client.cancel(); } catch { /* ignore */ }
+  };
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  // 6. Drive the prompt turn.
+  // `persistSession` gates the finally-block save: we want to save on the
+  // success path AND on the error path (so partial responses survive a
+  // subprocess crash), but NOT on user-initiated abort (the user chose to
+  // discard). Default true; abort paths flip it to false before returning.
+  // `fileTempDir` tracks any temp directory created by buildFileBlocks so
+  // the finally block can clean it up on every exit path.
+  let persistSession = true;
+  let fileTempDir = null;
+  try {
+    await client.start();
+    sdr("session:update", { sessionId });
+
+    // After start() the agent has advertised its prompt capabilities via
+    // `initialize`. Now we can route binaryFiles (images + non-text
+    // attachments) through buildFileBlocks, which uses {type:"image"} when
+    // the agent supports it or writes a temp file + resource_link otherwise.
+    // Any file buildFileBlocks drops (e.g. empty payload) is surfaced to
+    // the user — no silent drops.
+    if (binaryFiles.length > 0) {
+      const { blocks, tempDir, dropped } = client.buildFileBlocks(binaryFiles);
+      fileTempDir = tempDir;
+      for (const b of blocks) promptBlocks.push(b);
+      for (const d of dropped) {
+        sdr("stream:error", {
+          message: `附件 "${d.name}" 未发送：${d.reason}`,
+          nonFatal: true,
+        });
+      }
+    }
+
+    const { stopReason } = await client.sendPrompt(promptBlocks);
+    if (stopReason === "cancelled" || aborted) {
+      hookManager.fire("SessionEnd", { sessionId, aborted: true }).catch(() => {});
+      persistSession = false;  // user-cancelled → don't persist the half-response
+      return { text: allText, aborted: true };
+    }
+    hookManager.fire("SessionEnd", { sessionId, aborted: false }).catch(() => {});
+  } catch (err) {
+    if (err.name === "AbortError" || aborted) {
+      hookManager.fire("SessionEnd", { sessionId, aborted: true }).catch(() => {});
+      persistSession = false;  // user-aborted → don't persist
+      return { text: allText, aborted: true };
+    }
+    sdr("stream:error", { message: err.message || String(err) });
+    // Keep persistSession = true — partial text from a crashed session is
+    // still worth saving so the user doesn't lose everything on reload.
+    return { text: allText };
+  } finally {
+    if (signal) signal.removeEventListener("abort", onAbort);
+    try { await client.stop(); } catch { /* ignore */ }
+    // Clean up any temp dir created by buildFileBlocks (resource_link
+    // fallback for binary files). Safe to call with null.
+    try { client.cleanupFileBlocks(fileTempDir); } catch { /* ignore */ }
+    // Persist to session DB so reload shows the same conversation. This runs
+    // on every exit path where persistSession is true (success + error).
+    // Abort paths set persistSession = false above to skip saving.
+    if (persistSession) {
+      try {
+        const finalTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
+        // Build a full history: user message + each tool call as a separate
+        // entry + final assistant response. This preserves the complete chain
+        // of thought on session reload instead of just first+last.
+        const history = [{ role: "user", content: prompt || "" }];
+        for (const tc of toolCalls) {
+          const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
+          const resultStr = tc.result != null
+            ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
+            : "";
+          history.push({
+            role: "tool",
+            content: resultStr,
+            tool_name: tc.name,
+            tool_args: argsStr,
+          });
+        }
+        history.push({
+          role: "assistant",
+          content: allText || "",
+          reasoning_content: allReasoning || undefined,
+        });
+        await saveSession(sessionId, history, finalTitle);
+      } catch { /* don't let a save failure mask the real return */ }
+    }
+  }
+
+  return { text: allText || "(no text response)" };
 }

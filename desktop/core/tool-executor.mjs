@@ -499,6 +499,17 @@ export async function runTool(tc) {
         };
       } catch (e) { return { error: e.message }; }
     }
+    case "get_session_info": {
+      // P3: Authoritative AideAgent session configuration for the LLM.
+      // Combines the latest renderer-pushed localStorage snapshot with
+      // fresh file reads (kb-config.json, mcp-servers.json,
+      // workspace-config.json, ~/.aideagent/skills/, ~/.aideagent/memory/).
+      // Optional `keys` arg filters top-level sections for narrow questions.
+      try {
+        const { getSessionInfo } = await import("./session-info.mjs");
+        return getSessionInfo(args || {});
+      } catch (e) { return { error: e.message }; }
+    }
     case "list_tools": {
       // P2-4: Authoritative tools inventory for the LLM.
       // The LLM already sees tool defs in its own context, but this tool
@@ -538,6 +549,7 @@ export async function runTool(tc) {
             "kb_search", "kb_write", "kb_get_note",
             "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
             "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
+            "get_session_info",
           ]);
           if (KNOWN_BUILTINS.has(n)) builtins.add(n);
         }

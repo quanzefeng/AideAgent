@@ -536,6 +536,36 @@ const translations = {
     "chat.task_progress": "当前任务进度",
     "chat.context_usage": "上下文使用量",
 
+    // ── Runtime Selector ──
+    "runtime.choose": "选择一个 Agent 开始",
+    "runtime.aide": "AideAgent",
+    "runtime.aide.desc": "使用当前 API 配置",
+    "runtime.opencode": "OpenCode",
+    "runtime.opencode.desc": "本地 OpenCode CLI",
+    "runtime.detected": "已检测",
+    "runtime.not_installed": "未安装",
+    "runtime.detecting": "检测中…",
+    "runtime.version_bad": "版本过低",
+    "runtime.opencode.not_installed_title": "OpenCode 未检测到",
+    "runtime.opencode.not_installed_desc": "AideAgent 可以接管你本地的 OpenCode CLI，统一在这个界面里使用。",
+    "runtime.opencode.install_ways": "安装方式（任选其一）：",
+    "runtime.opencode.redetect": "重新检测",
+    "runtime.opencode.open_docs": "打开安装文档",
+    "runtime.opencode.handshake_failed": "OpenCode 连接失败，已切回 AideAgent",
+    "runtime.opencode.fallback_not_installed": "OpenCode 未安装，已自动切回 AideAgent。",
+    "runtime.opencode.fallback_version_bad": "OpenCode 版本无法读取，已自动切回 AideAgent。",
+    "runtime.opencode.searched_paths_title": "已搜索的路径（点开查看）",
+    "runtime.opencode.searched_paths_hint": "如果你的 opencode 不在上述路径，请把 <你的路径>/opencode 加到 PATH，然后点「重新检测」。",
+    "runtime.opencode.no_paths_searched": "（无路径信息）",
+
+    // ── OpenCode Mode Selector ──
+    "opencode.mode.default": "授权模式",
+    "opencode.mode.build": "构建模式",
+    "opencode.mode.plan": "计划模式",
+    "opencode.mode.desc.default": "自动批准所有操作",
+    "opencode.mode.desc.build": "正常执行，可修改文件",
+    "opencode.mode.desc.plan": "只输出计划，不修改文件",
+
     // ── Additional Sidebar Keys ──
     "sidebar.switch_workspace": "点击切换工作区间",
 
@@ -1108,6 +1138,36 @@ const translations = {
     "chat.welcome_title": "AideAgent",
     "chat.task_progress": "Task Progress",
     "chat.context_usage": "Context Usage",
+
+    // ── Runtime Selector ──
+    "runtime.choose": "Choose an Agent to start",
+    "runtime.aide": "AideAgent",
+    "runtime.aide.desc": "Uses current API config",
+    "runtime.opencode": "OpenCode",
+    "runtime.opencode.desc": "Local OpenCode CLI",
+    "runtime.detected": "detected",
+    "runtime.not_installed": "not installed",
+    "runtime.detecting": "detecting…",
+    "runtime.version_bad": "version too old",
+    "runtime.opencode.not_installed_title": "OpenCode not detected",
+    "runtime.opencode.not_installed_desc": "AideAgent can drive your local OpenCode CLI from this same interface.",
+    "runtime.opencode.install_ways": "Install with any of:",
+    "runtime.opencode.redetect": "Re-detect",
+    "runtime.opencode.open_docs": "Open install docs",
+    "runtime.opencode.handshake_failed": "OpenCode connection failed, switched back to AideAgent",
+    "runtime.opencode.fallback_not_installed": "OpenCode not installed — automatically switched back to AideAgent.",
+    "runtime.opencode.fallback_version_bad": "OpenCode version unreadable — automatically switched back to AideAgent.",
+    "runtime.opencode.searched_paths_title": "Searched paths (click to expand)",
+    "runtime.opencode.searched_paths_hint": "If opencode isn't in any of these paths, add <your-path>/opencode to PATH and click \"Re-detect\".",
+    "runtime.opencode.no_paths_searched": "(no path info available)",
+
+    // ── OpenCode Mode Selector ──
+    "opencode.mode.default": "Auto-approve",
+    "opencode.mode.build": "Build",
+    "opencode.mode.plan": "Plan",
+    "opencode.mode.desc.default": "Auto-approve all operations",
+    "opencode.mode.desc.build": "Normal execution, can modify files",
+    "opencode.mode.desc.plan": "Output plan only, no file changes",
 
     // ── Additional Sidebar Keys ──
     "sidebar.switch_workspace": "Click to switch workspace",

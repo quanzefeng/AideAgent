@@ -541,7 +541,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "gh_repo",
-      description: "GitHub repository info via `gh` CLI. View repo details, list user repos, view README, clone, or create new repo.\n\nUSE for: GitHub repo lookup, listing the user's repos, or creating a new GitHub repo.\n\nDO NOT use for: cloning via local protocol (use `bash git clone`); non-GitHub operations.",
+      description: "GitHub repository info via `gh` CLI. View repo details, list user repos, view README, clone, or create new repo.\n\nUSE for: GitHub repo lookup, listing the user's repos, or creating a new GitHub repository.\n\nDO NOT use for: cloning via local protocol (use `bash git clone`); non-GitHub operations.",
       parameters: {
         type: "object", properties: {
           action: {
@@ -550,7 +550,7 @@ export const TOOL_DEFS = [
             description: "Repo action",
           },
           repo: { type: "string", description: "Repository (owner/repo format, for view/clone)" },
-          url: { type: "string", description: "URL to clone (for clone)" },
+          url: { type: "string", description: "URL to clone (for view/clone)" },
           name: { type: "string", description: "Repo name (for create)" },
           description: { type: "string", description: "Repo description (for create)" },
           private: { type: "boolean", description: "Make repo private (for create, default false)" },
@@ -558,6 +558,23 @@ export const TOOL_DEFS = [
           limit: { type: "number", description: "Max repos to list (default 20)" },
         },
         required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_session_info",
+      description: "Return the current AideAgent session configuration. AUTHORITATIVE source for \"what model am I using\", \"what's my theme\", \"what KB do I have\", \"what MCP servers are configured\", etc.\n\nUSE for: any user question about their own AideAgent setup — model, provider, API URL, theme, language, font, agent name, knowledge base path, workspace directory, MCP server list, skills inventory, memory files, system prompt profile, runtime selection (aide vs opencode). Combines localStorage state (model, theme, language, etc.) with file-based config (kb-config.json, mcp-servers.json, workspace-config.json, ~/.aideagent/skills/, ~/.aideagent/memory/).\n\nDO NOT use for: reading file contents (use `file_read`); searching code (use `grep`); general questions where the user is asking what YOU can do as a model (answer directly from your system prompt instead). API key values are NEVER returned — only whether a key is configured.\n\n**Filtering:** Pass `keys: [\"api\", \"workspace\"]` to return only those sections — keeps output small for narrow questions. Available keys: `runtime`, `api`, `appearance`, `identity`, `toggles`, `workspace`, `kb`, `mcp`, `system_prompt`, `memory`, `skills`, `paths`, `app`.",
+      parameters: {
+        type: "object",
+        properties: {
+          keys: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional: only return these top-level sections. Omit for the full snapshot. Valid keys: runtime, api, appearance, identity, toggles, workspace, kb, mcp, system_prompt, memory, skills, paths, app.",
+          },
+        },
       },
     },
   },

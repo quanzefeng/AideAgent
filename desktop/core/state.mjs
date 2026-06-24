@@ -145,6 +145,16 @@ export let planMode = false;
 export function setPlanMode(v) { planMode = v; }
 export function getPlanMode() { return planMode; }
 
+// ── Current Runtime ─────────────────────────────────────────
+// Tracks which runtime ("aide" | "opencode") is active for the in-flight
+// session. Set by `query:submit` so that downstream helpers (e.g. the
+// `session:reset` saveSession helper in ipc-handlers.mjs) can persist the
+// session with the correct runtime tag instead of hardcoding "aide".
+// Default "aide" preserves behavior for legacy code paths that never set it.
+export let currentRuntime = "aide";
+export function setCurrentRuntime(rt) { currentRuntime = rt === "opencode" ? "opencode" : "aide"; }
+export function getCurrentRuntime() { return currentRuntime; }
+
 export const PLAN_MODE_READONLY = new Set([
   "file_read", "view_image", "grep", "glob", "web_search", "web_fetch",
   "Agent", "AskUserQuestion", "TaskList", "TodoWrite", "write_memory", "kb_write",

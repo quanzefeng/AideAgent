@@ -62,6 +62,34 @@
     </div>
   </div>
 
+  <!-- OpenCode Install Guide Modal — shown when the user picks OpenCode but
+       the local CLI isn't detected. Independent of #ask-modal / #confirm-modal
+       so it has its own button wiring without colliding with the AskUserQuestion
+       submit button. -->
+  <div id="opencode-install-modal" class="modal">
+    <div class="modal-content" style="max-width:520px;">
+      <div class="modal-header">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text-primary);" id="opencode-install-title">⬡ OpenCode 未检测到</h2>
+      </div>
+      <div class="modal-body" id="opencode-install-body" style="font-size:14px;line-height:1.6;color:var(--text);">
+        <p style="margin:0 0 8px;color:var(--text-light);" id="opencode-install-desc">AideAgent 可以接管你本地的 OpenCode CLI，统一在这个界面里使用。</p>
+        <p style="margin:0 0 6px;color:var(--text-light);">安装方式（任选其一）：</p>
+        <pre id="opencode-install-cmds" style="background:var(--bg-tertiary);padding:10px;border-radius:6px;font-family:var(--font-mono);font-size:12px;color:var(--text);overflow-x:auto;margin:0 0 4px;border:1px solid var(--border);">npm i -g opencode-ai@latest
+scoop install opencode
+brew install opencode</pre>
+        <details style="margin:8px 0 0;">
+          <summary style="cursor:pointer;color:var(--text-light);font-size:12px;" data-i18n="runtime.opencode.searched_paths_title">已搜索的路径（点开查看）</summary>
+          <pre id="opencode-install-tried-paths" style="background:var(--bg-tertiary);padding:8px;border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);overflow-x:auto;margin:6px 0 0;border:1px solid var(--border);max-height:140px;overflow-y:auto;"></pre>
+          <p style="margin:6px 0 0;font-size:11px;color:var(--text-light);" data-i18n="runtime.opencode.searched_paths_hint">如果你的 opencode 不在上述路径，请把 `&lt;你的路径&gt;/opencode` 加到 PATH，然后点「重新检测」。</p>
+        </details>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;">
+        <button id="opencode-install-redetect" class="btn">重新检测</button>
+        <button id="opencode-install-docs" class="btn primary">打开安装文档</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Workspace First-Pick Modal (shown on first launch / missing config) -->
   <div id="workspace-first-pick-modal" class="modal">
     <div class="modal-content" style="max-width:480px;">
@@ -805,13 +833,31 @@
           </div>
           <h1 data-i18n="chat.welcome_title">AideAgent</h1>
           <p class="description">任何事都可以找 AideAgent</p>
+          <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
+            <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
+              <span class="runtime-choice-icon runtime-choice-icon-aide">Ⓐ</span>
+              <span class="runtime-choice-body">
+                <span class="runtime-choice-name" data-i18n="runtime.aide">AideAgent</span>
+                <span class="runtime-choice-desc" data-i18n="runtime.aide.desc">使用当前 API 配置</span>
+              </span>
+              <span class="runtime-badge runtime-badge-aide" data-i18n="runtime.detected">已检测</span>
+            </button>
+            <button class="runtime-choice" data-runtime="opencode" role="tab" aria-selected="false" type="button">
+              <span class="runtime-choice-icon runtime-choice-icon-opencode">⬡</span>
+              <span class="runtime-choice-body">
+                <span class="runtime-choice-name" data-i18n="runtime.opencode">OpenCode</span>
+                <span class="runtime-choice-desc" data-i18n="runtime.opencode.desc">本地 OpenCode CLI</span>
+              </span>
+              <span class="runtime-badge" id="opencode-status-badge" data-i18n="runtime.detecting">检测中…</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- Input Area -->
       <div id="input-area">
         <div id="file-preview-area" class="hidden"></div>
-        <div id="input-wrapper">
+        <div id="input-wrapper" data-runtime="aide">
           <div class="input-row">
             <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.txt,.csv,.json,.md,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.doc,.docx" />
             <button id="upload-btn" class="btn icon-btn" data-i18n-title="chat.upload" title="更多" aria-haspopup="menu" aria-expanded="false">
@@ -886,7 +932,57 @@
             </button>
           </div>
         </div>
-      </div>
+
+        <div id="input-wrapper-opencode" class="hidden" data-runtime="opencode">
+          <div class="input-row">
+            <input type="file" id="file-input-opencode" multiple hidden accept="image/*,.pdf,.txt,.csv,.json,.md,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.doc,.docx" />
+            <button id="upload-btn-opencode" class="btn icon-btn" data-i18n-title="chat.upload" title="上传文件" aria-haspopup="menu" aria-expanded="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <textarea
+              id="prompt-input-opencode"
+              placeholder="向 OpenCode 提问..."
+              rows="1"
+            ></textarea>
+            <div id="input-actions-opencode">
+              <button id="send-btn-opencode" class="btn icon-btn" data-i18n-title="chat.send" title="发送" disabled>
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5L14.5 8L1.5 14.5V9.5L10 8L1.5 6.5V1.5Z"/></svg>
+              </button>
+              <button id="stop-btn-opencode" class="btn icon-btn hidden" data-i18n-title="chat.stop" title="停止">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="info-bar-opencode">
+            <span id="opencode-model-name" class="opencode-model-name">OpenCode</span>
+            <!-- OpenCode mode selector — dropdown with 3 options:
+                 default | build | plan. Click the button to open the menu. -->
+            <div class="mode-selector" id="opencode-mode-selector">
+              <button type="button" id="opencode-mode-button" class="mode-button" aria-haspopup="listbox" aria-expanded="false">
+                <span id="opencode-mode-label">构建模式</span>
+                <svg class="mode-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <ul id="opencode-mode-menu" class="mode-menu hidden" role="listbox">
+                <li role="option" data-mode="default">
+                  <span class="mode-check"></span>
+                  <span class="mode-title" data-i18n="opencode.mode.default">授权模式</span>
+                  <span class="mode-desc" data-i18n="opencode.mode.desc.default">自动批准所有操作</span>
+                </li>
+                <li role="option" data-mode="build">
+                  <span class="mode-check"></span>
+                  <span class="mode-title" data-i18n="opencode.mode.build">构建模式</span>
+                  <span class="mode-desc" data-i18n="opencode.mode.desc.build">正常执行，可修改文件</span>
+                </li>
+                <li role="option" data-mode="plan">
+                  <span class="mode-check"></span>
+                  <span class="mode-title" data-i18n="opencode.mode.plan">计划模式</span>
+                  <span class="mode-desc" data-i18n="opencode.mode.desc.plan">只输出计划，不修改文件</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        </div>
     </main>
   </div>
 

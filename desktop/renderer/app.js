@@ -19,6 +19,8 @@ import { initUpdateToast, getSkippedVersion, setSkippedVersion } from './modules
 import { createPromptStore } from './modules/prompt-store.mjs';
 import { createMcpPanel } from './modules/mcp.mjs';
 import { createWechatPanel } from './modules/wechat.mjs';
+import { initRuntimeSelector, rebindRuntimeCards, getCurrentRuntime, setRuntime } from './modules/runtime-selector.mjs';
+import { installLocalStorageHook, pushSessionInfo } from './modules/session-info.mjs';
 
 /* ── Configure marked.js ──────────────────────────────── */
 marked.setOptions({
@@ -44,18 +46,22 @@ const STORAGE_KEYS = {
   REASONING_ENABLED: "AideAgent_reasoning_enabled",
 };
 
+// Provider presets store i18n KEYS in `name` rather than translated strings,
+// so the labels can be re-translated when the user switches languages. The
+// sole consumer (`updateInfoBar` / settings panel) calls `t(preset.name)` at
+// read time. Model labels in `models[].label` follow the same convention.
 const PROVIDER_PRESETS = {
-  "":        { name: t("provider.custom"),     url: "",                              model: "",                                   models: [], format: "openai" },
-  deepseek:  { name: t("provider.deepseek"),   url: "https://api.deepseek.com",      model: "deepseek-v4-flash",                  models: [{id:"deepseek-v4-flash",label:t("model.deepseek_v4_flash")},{id:"deepseek-v4-pro",label:t("model.deepseek_v4_pro")}], format: "openai" },
-  glm:       { name: t("provider.glm"),        url: "https://open.bigmodel.cn/api/paas/v4", model: "GLM-4.7-Flash",                  models: [{id:"GLM-4.7-Flash",label:t("model.glm_4_7_flash")},{id:"GLM-4-Plus",label:t("model.glm_4_plus")},{id:"GLM-4-Air",label:t("model.glm_4_air")}], format: "openai" },
-  qwen:      { name: t("provider.qwen"),       url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",          models: [{id:"qwen3.7-max",label:t("model.qwen3_7_max")},{id:"qwen-plus",label:t("model.qwen_plus")},{id:"qwen-turbo",label:t("model.qwen_turbo")}], format: "openai" },
-  llamacpp:  { name: t("provider.llamacpp"),   url: "http://127.0.0.1:8080/v1",       model: "",                                   models: [], format: "openai" },
-  minimax:   { name: t("provider.minimax"),    url: "https://api.minimaxi.com/anthropic",  model: "MiniMax-M2.7",                       models: [{id:"MiniMax-M2.7",label:t("model.minimax_m2_7")},{id:"MiniMax-M2.7-highspeed",label:t("model.minimax_m2_7_highspeed")}], format: "anthropic" },
-  claude:    { name: t("provider.claude"),      url: "https://api.anthropic.com",     model: "claude-sonnet-4-20250514",            models: [{id:"claude-sonnet-4-20250514",label:t("model.claude_sonnet_4")},{id:"claude-opus-4-20250514",label:t("model.claude_opus_4")},{id:"claude-haiku-4.5-20250514",label:t("model.claude_haiku_4_5")}], format: "anthropic" },
-  "opencode-go":     { name: t("provider.opencode_go"),     url: "https://opencode.ai/zen/go/v1", model: "glm-5.1",       models: [{id:"glm-5.1",label:t("model.glm_5_1")},{id:"glm-5.2",label:t("model.glm_5_2")},{id:"kimi-k2.6",label:t("model.kimi_k2_6")},{id:"kimi-k2.7",label:t("model.kimi_k2_7")},{id:"deepseek-v4-pro",label:t("model.deepseek_v4_pro")},{id:"deepseek-v4-flash",label:t("model.deepseek_v4_flash")},{id:"mimo-v2.5",label:t("model.mimo_v2_5")},{id:"mimo-v2.5-pro",label:t("model.mimo_v2_5_pro")}], format: "openai" },
-  "opencode-go-ant": { name: t("provider.opencode_go_ant"), url: "https://opencode.ai/zen/go/v1", model: "minimax-m2.7",  models: [{id:"minimax-m2.5",label:t("model.minimax_m2_5")},{id:"minimax-m2.7",label:t("model.minimax_m2_7")},{id:"minimax-m3",label:t("model.minimax_m3")},{id:"qwen3.6-plus",label:t("model.qwen3_6_plus")},{id:"qwen3.7-plus",label:t("model.qwen3_7_plus")},{id:"qwen3.7-max",label:t("model.qwen3_7_max")}], format: "anthropic" },
-  lmstudio:  { name: t("provider.lmstudio"),   url: "http://localhost:1234/v1",      model: "",                                   models: [], format: "openai" },
-  ollama:    { name: t("provider.ollama"),      url: "http://localhost:11434/v1",     model: "",                                   models: [], format: "openai" },
+  "":        { name: "provider.custom",     url: "",                              model: "",                                   models: [], format: "openai" },
+  deepseek:  { name: "provider.deepseek",   url: "https://api.deepseek.com",      model: "deepseek-v4-flash",                  models: [{id:"deepseek-v4-flash",label:"model.deepseek_v4_flash"},{id:"deepseek-v4-pro",label:"model.deepseek_v4_pro"}], format: "openai" },
+  glm:       { name: "provider.glm",        url: "https://open.bigmodel.cn/api/paas/v4", model: "GLM-4.7-Flash",                  models: [{id:"GLM-4.7-Flash",label:"model.glm_4_7_flash"},{id:"GLM-4-Plus",label:"model.glm_4_plus"},{id:"GLM-4-Air",label:"model.glm_4_air"}], format: "openai" },
+  qwen:      { name: "provider.qwen",       url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",          models: [{id:"qwen3.7-max",label:"model.qwen3_7_max"},{id:"qwen-plus",label:"model.qwen_plus"},{id:"qwen-turbo",label:"model.qwen_turbo"}], format: "openai" },
+  llamacpp:  { name: "provider.llamacpp",   url: "http://127.0.0.1:8080/v1",       model: "",                                   models: [], format: "openai" },
+  minimax:   { name: "provider.minimax",    url: "https://api.minimaxi.com/anthropic",  model: "MiniMax-M2.7",                       models: [{id:"MiniMax-M2.7",label:"model.minimax_m2_7"},{id:"MiniMax-M2.7-highspeed",label:"model.minimax_m2_7_highspeed"}], format: "anthropic" },
+  claude:    { name: "provider.claude",      url: "https://api.anthropic.com",     model: "claude-sonnet-4-20250514",            models: [{id:"claude-sonnet-4-20250514",label:"model.claude_sonnet_4"},{id:"claude-opus-4-20250514",label:"model.claude_opus_4"},{id:"claude-haiku-4.5-20250514",label:"model.claude_haiku_4_5"}], format: "anthropic" },
+  "opencode-go":     { name: "provider.opencode_go",     url: "https://opencode.ai/zen/go/v1", model: "glm-5.1",       models: [{id:"glm-5.1",label:"model.glm_5_1"},{id:"glm-5.2",label:"model.glm_5_2"},{id:"kimi-k2.6",label:"model.kimi_k2_6"},{id:"kimi-k2.7",label:"model.kimi_k2_7"},{id:"deepseek-v4-pro",label:"model.deepseek_v4_pro"},{id:"deepseek-v4-flash",label:"model.deepseek_v4_flash"},{id:"mimo-v2.5",label:"model.mimo_v2_5"},{id:"mimo-v2.5-pro",label:"model.mimo_v2_5_pro"}], format: "openai" },
+  "opencode-go-ant": { name: "provider.opencode_go_ant", url: "https://opencode.ai/zen/go/v1", model: "minimax-m2.7",  models: [{id:"minimax-m2.5",label:"model.minimax_m2_5"},{id:"minimax-m2.7",label:"model.minimax_m2_7"},{id:"minimax-m3",label:"model.minimax_m3"},{id:"qwen3.6-plus",label:"model.qwen3_6_plus"},{id:"qwen3.7-plus",label:"model.qwen3_7_plus"},{id:"qwen3.7-max",label:"model.qwen3_7_max"}], format: "anthropic" },
+  lmstudio:  { name: "provider.lmstudio",   url: "http://localhost:1234/v1",      model: "",                                   models: [], format: "openai" },
+  ollama:    { name: "provider.ollama",      url: "http://localhost:11434/v1",     model: "",                                   models: [], format: "openai" },
 };
 
 /* ── State ────────────────────────────────────────────── */
@@ -90,8 +96,48 @@ const infoModelName = $("#info-model-name");
 const taskIndicator = $("#task-indicator");
 const reasoningCheckbox = $("#reasoning-checkbox");
 const planModeCheckbox = $("#plan-mode-checkbox");
+// OpenCode uses a 3-mode dropdown (default / build / plan) instead of a
+// single plan-mode toggle. The active mode is stored in `ocMode`.
+const opencodeModeButton = $("#opencode-mode-button");
+const opencodeModeMenu = $("#opencode-mode-menu");
+const opencodeModeLabel = $("#opencode-mode-label");
+// Persist the OpenCode mode across sessions so the user doesn't have to
+// re-pick "计划模式" every time they restart the app. localStorage key
+// follows the existing `AideAgent_*` convention.
+const OC_MODE_KEY = "AideAgent_oc_mode";
+let ocMode = (() => {
+  const saved = (() => { try { return localStorage.getItem(OC_MODE_KEY); } catch { return null; } })();
+  return saved === "default" || saved === "build" || saved === "plan" ? saved : "build";
+})();
 const sessionDisplay = $("#session-display");
 const cwdDisplay = $("#cwd-display");
+
+// Active input elements for the current runtime. When runtime = opencode,
+// the bottom input box is #input-wrapper-opencode and its textarea/buttons
+// have separate ids. These getters route submit/stop/key handling to whichever
+// box is visible so the rest of submitQuery can stay runtime-agnostic.
+const ocPromptInput = () => /** @type {HTMLTextAreaElement|null} */ (document.getElementById("prompt-input-opencode"));
+const ocSendBtn = () => document.getElementById("send-btn-opencode");
+const ocStopBtn = () => document.getElementById("stop-btn-opencode");
+/** @returns {HTMLTextAreaElement} */
+function activePromptInput() {
+  return getCurrentRuntime() === "opencode" ? (ocPromptInput() || promptInput) : promptInput;
+}
+function activeSendBtn() {
+  return getCurrentRuntime() === "opencode" ? (ocSendBtn() || sendBtn) : sendBtn;
+}
+function activeStopBtn() {
+  return getCurrentRuntime() === "opencode" ? (ocStopBtn() || stopBtn) : stopBtn;
+}
+/**
+ * Whether the currently-visible runtime is in plan mode.
+ * - AideAgent: read from its dedicated #plan-mode-checkbox.
+ * - OpenCode: read from `ocMode` (the dropdown selection).
+ */
+function activePlanModeEnabled() {
+  if (getCurrentRuntime() === "opencode") return ocMode === "plan";
+  return planModeCheckbox?.checked ?? false;
+}
 const newChatBtn = $("#new-chat");
 const permModal = $("#perm-modal");
 const permCommand = $("#perm-command");
@@ -120,6 +166,12 @@ const welcomeAvatar = $("#welcome-avatar");
 const uploadBtn = $("#upload-btn");
 const fileInput = $("#file-input");
 const filePreviewArea = $("#file-preview-area");
+// OpenCode-mode equivalents (mirror the aide DOM structure so the same
+// file-previews UI can be reused by both runtimes). The state and
+// #file-preview-area are SHARED — the user sees the same chip list
+// regardless of which input box is active.
+const ocUploadBtn = $("#upload-btn-opencode");
+const ocFileInput = $("#file-input-opencode");
 const AVATAR_KEY = "AideAgent_avatar";
 const USER_AVATAR_KEY = "AideAgent_user_avatar";
 const FONT_KEY = "AideAgent_font";
@@ -146,8 +198,35 @@ const filePreviews = createFilePreviews({
   formatFileSize,
 });
 const renderFilePreviews = filePreviews.renderFilePreviews;
-const updateSendButton = filePreviews.updateSendButton;
+const aideUpdateSendButton = filePreviews.updateSendButton;
 const handleFileUpload = filePreviews.handleFileUpload;
+// Composite: re-evaluates BOTH the aide and OpenCode send buttons in one
+// call. Kept under the legacy name `updateSendButton` so the existing
+// callsites don't need to be touched, and so that mutations to
+// `state.attachedFiles` always keep both runtimes' UI in sync.
+const updateSendButton = () => {
+  aideUpdateSendButton();
+  if (typeof ocUpdateSendButton === "function") ocUpdateSendButton();
+};
+
+// OpenCode-mode file previews: second instance sharing `state` and the
+// shared #file-preview-area. Renders the same chips; gates the OpenCode
+// send button via its own updateSendButton closure (since the send button
+// is a different DOM element). Init() below wires #file-input-opencode
+// to the file picker.
+const ocFilePreviews = createFilePreviews({
+  state,
+  filePreviewArea,
+  fileInput: ocFileInput,
+  uploadBtn: ocUploadBtn,
+  sendBtn: ocSendBtn(),
+  promptInput: ocPromptInput() || promptInput,
+  MAX_FILE_SIZE,
+  onError: (msg) => addErrorMessage(t(msg)),
+  formatFileSize,
+});
+const ocUpdateSendButton = ocFilePreviews.updateSendButton;
+const ocHandleFileUpload = ocFilePreviews.handleFileUpload;
 
 
 /* ── Input menu popover (Stage 1: UI shell only) ─────────────────
@@ -218,16 +297,255 @@ function initInputMenu() {
     toggleInputMenu();
   });
 
-  // Each menu item dispatches to its action handler.
-  inputMenuItems.forEach((item) => {
-    item.addEventListener("click", (e) => {
+  // Outside-click + Escape + window resize all dismiss the popover.
+  initInputMenuOutsideListeners();
+}
+
+/**
+ * Wire up the OpenCode 3-mode dropdown (default / build / plan).
+ * - Click the button → toggle the menu open/closed.
+ * - Click an option → set ocMode, update the button label, close the menu.
+ * - Click outside → close the menu.
+ * - Keyboard: Escape closes the menu.
+ */
+function initOpencodeModeSelector() {
+  const selector = $("#opencode-mode-selector");
+  if (!selector || !opencodeModeButton || !opencodeModeMenu) return;
+
+  // Apply the current ocMode to the DOM (label, aria-selected on options).
+  // Labels go through the i18n layer so English-locale users see English.
+  function renderMode() {
+    const labels = {
+      default: t("opencode.mode.default"),
+      build: t("opencode.mode.build"),
+      plan: t("opencode.mode.plan"),
+    };
+    if (opencodeModeLabel) opencodeModeLabel.textContent = labels[ocMode] || labels.build;
+    opencodeModeMenu.querySelectorAll("li[data-mode]").forEach((li) => {
+      li.setAttribute("aria-selected", li.getAttribute("data-mode") === ocMode ? "true" : "false");
+    });
+  }
+  renderMode();
+
+  function open() {
+    selector.classList.add("open");
+    opencodeModeMenu.classList.remove("hidden");
+    opencodeModeButton.setAttribute("aria-expanded", "true");
+  }
+  function close() {
+    selector.classList.remove("open");
+    opencodeModeMenu.classList.add("hidden");
+    opencodeModeButton.setAttribute("aria-expanded", "false");
+  }
+  function isOpen() {
+    return !opencodeModeMenu.classList.contains("hidden");
+  }
+
+  opencodeModeButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isOpen()) close();
+    else open();
+  });
+
+  opencodeModeMenu.querySelectorAll("li[data-mode]").forEach((li) => {
+    li.addEventListener("click", (e) => {
       e.stopPropagation();
-      const action = item.getAttribute("data-action");
-      handleInputMenuAction(action);
+      const next = li.getAttribute("data-mode");
+      if (next === "default" || next === "build" || next === "plan") {
+        ocMode = next;
+        // Persist so the choice survives app restart.
+        try { localStorage.setItem(OC_MODE_KEY, next); } catch { /* ignore */ }
+        renderMode();
+      }
+      close();
     });
   });
 
-  // Outside-click and Escape both dismiss the popover.
+  // Click anywhere outside closes the menu.
+  document.addEventListener("click", (e) => {
+    if (isOpen() && !selector.contains(e.target)) close();
+  });
+
+// Escape closes the menu.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isOpen()) {
+      close();
+      opencodeModeButton.focus();
+    }
+  });
+}
+
+/**
+ * OpenCode model picker — sibling of the mode selector. Shows the
+ * currently-selected model in the button label; clicking opens a list of
+ * `opencode models` (provider/model pairs). Selection is persisted to
+ * localStorage and forwarded to the IPC on every submit (when runtime is
+ * opencode). The choice takes effect on the NEXT query because opencode
+ * binds the model at spawn time via --model (ACP v1 has no setModel).
+ */
+function initOpencodeModelSelector() {
+  const selector = $("#opencode-model-selector");
+  if (!selector || !opencodeModelButton || !opencodeModelMenu) return;
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderButton() {
+    if (!opencodeModelName) return;
+    let label;
+    if (!ocModelId) label = t("opencode.model.unset");
+    else {
+      const found = ocAvailableModels.find((m) => m.id === ocModelId);
+      label = (found && found.name) || ocModelId;
+    }
+    opencodeModelName.textContent = label;
+  }
+
+  function renderList() {
+    const li = (id, name, desc, isUnset) => {
+      const checked = (id || "") === (ocModelId || "") ? "true" : "false";
+      const safeId = (id || "").replace(/"/g, "&quot;");
+      return `<li role="option" data-model-id="${safeId}" aria-selected="${checked}"${isUnset ? ' data-unset="true"' : ""}><span class="mode-check"></span><span class="mode-title">${escapeHtml(name)}</span><span class="mode-desc">${escapeHtml(desc || "")}</span></li>`;
+    };
+    const items = [];
+    items.push(li("", t("opencode.model.unset"), t("opencode.model.unset_desc"), true));
+    for (const m of ocAvailableModels) items.push(li(m.id, m.name || m.id, m.id));
+    if (ocAvailableModels.length === 0) {
+      items.length = 0;
+      items.push(li("", t("opencode.model.empty"), t("opencode.model.empty_desc"), true));
+    }
+    opencodeModelMenu.innerHTML = items.join("");
+  }
+
+  function open() {
+    selector.classList.add("open");
+    opencodeModelMenu.classList.remove("hidden");
+    opencodeModelButton.setAttribute("aria-expanded", "true");
+  }
+  function close() {
+    selector.classList.remove("open");
+    opencodeModelMenu.classList.add("hidden");
+    opencodeModelButton.setAttribute("aria-expanded", "false");
+  }
+  function isOpen() {
+    return !opencodeModelMenu.classList.contains("hidden");
+  }
+
+  renderButton();
+  renderList();
+
+  opencodeModelButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isOpen()) close();
+    else open();
+  });
+
+  // Delegate clicks on list items so re-rendering doesn't require
+  // re-binding.
+  opencodeModelMenu.addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-model-id]");
+    if (!li || li.getAttribute("aria-disabled") === "true") return;
+    e.stopPropagation();
+    const raw = li.getAttribute("data-model-id") || "";
+    ocModelId = raw || null;
+    try {
+      if (ocModelId) localStorage.setItem(OC_MODEL_KEY, ocModelId);
+      else localStorage.removeItem(OC_MODEL_KEY);
+    } catch { /* ignore */ }
+    opencodeModelMenu.querySelectorAll("li[data-model-id]").forEach((el) => {
+      el.setAttribute("aria-selected", (el.getAttribute("data-model-id") || "") === (ocModelId || "") ? "true" : "false");
+    });
+    renderButton();
+    close();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (isOpen() && !selector.contains(e.target)) close();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isOpen()) {
+      close();
+      opencodeModelButton.focus();
+    }
+  });
+
+  // Load the list lazily so the dropdown is populated as soon as opencode
+  // is detected. Safe to call repeatedly; the IPC just re-spawns the
+  // one-shot CLI.
+  refreshOpencodeModels();
+}
+
+/**
+ * Reload `opencode models` and refresh the model picker UI. Used by
+ * initOpencodeModelSelector() on init, and could be called from a "refresh"
+ * button later if we add one.
+ */
+async function refreshOpencodeModels() {
+  if (!window.aideagent?.listOpencodeModels) return;
+  try {
+    const list = await window.aideagent.listOpencodeModels();
+    if (Array.isArray(list)) {
+      ocAvailableModels = list;
+      ocAvailableModelIds.clear();
+      for (const m of list) if (m && m.id) ocAvailableModelIds.add(m.id);
+      // If the persisted selection isn't in the list anymore, drop it
+      // so the dropdown shows the unset entry (less surprising than a
+      // ghost selection).
+      if (ocModelId && !ocAvailableModelIds.has(ocModelId)) {
+        ocModelId = null;
+        try { localStorage.removeItem(OC_MODEL_KEY); } catch { /* ignore */ }
+      }
+      // Re-render the picker (the selector might not be visible yet, but
+      // this updates the label + aria-selected for when it is).
+      const menu = document.getElementById("opencode-model-menu-list");
+      const name = document.getElementById("opencode-model-name");
+      if (menu && name) {
+        const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const li = (id, n, d, isUnset) => {
+          const checked = (id || "") === (ocModelId || "") ? "true" : "false";
+          const safeId = (id || "").replace(/"/g, "&quot;");
+          return `<li role="option" data-model-id="${safeId}" aria-selected="${checked}"${isUnset ? ' data-unset="true"' : ""}><span class="mode-check"></span><span class="mode-title">${esc(n)}</span><span class="mode-desc">${esc(d || "")}</span></li>`;
+        };
+        const items = [li("", t("opencode.model.unset"), t("opencode.model.unset_desc"), true)];
+        for (const m of ocAvailableModels) items.push(li(m.id, m.name || m.id, m.id));
+        if (ocAvailableModels.length === 0) items.length = 0, items.push(li("", t("opencode.model.empty"), t("opencode.model.empty_desc"), true));
+        menu.innerHTML = items.join("");
+        const found = ocAvailableModels.find((m) => m.id === ocModelId);
+        name.textContent = (found && found.name) || ocModelId || t("opencode.model.unset");
+      }
+    }
+  } catch (err) {
+    console.error("[opencode] listOpencodeModels failed:", err.message);
+  }
+}
+
+// Expose for the runtime selector (which lives in a separate module and
+// calls back into here when the user switches to OpenCode).
+window.refreshOpencodeModels = refreshOpencodeModels;
+
+/**
+ * Listen for the per-query model announcement so the button label
+ * reflects what opencode actually accepted. Called from setupIPC() after
+ * the renderer IPC bridge is wired.
+ */
+function wireOpencodeModelsStreamListener() {
+  if (!window.aideagent?.onOpencodeModels) return;
+  window.aideagent.onOpencodeModels((data) => {
+    if (!data || !Array.isArray(data.models)) return;
+    ocAvailableModels = data.models;
+    ocAvailableModelIds.clear();
+    for (const m of data.models) if (m && m.id) ocAvailableModelIds.add(m.id);
+    if (data.currentModelId && typeof data.currentModelId === "string") {
+      ocModelId = data.currentModelId;
+      try { localStorage.setItem(OC_MODEL_KEY, ocModelId); } catch { /* ignore */ }
+    }
+  });
+}
+
+// Outside-click and Escape both dismiss the popover.
+function initInputMenuOutsideListeners() {
   document.addEventListener("click", (e) => {
     if (!isInputMenuOpen()) return;
     if (inputMenu.contains(e.target) || uploadBtn.contains(e.target)) return;
@@ -251,9 +569,10 @@ function initInputMenu() {
 function updateInfoBar() {
   if (!infoModelName) return;
   const cfg = loadApiConfig();
-  // Show model name (or provider label if no model)
+  // Show model name (or provider label if no model). preset.name is an i18n
+  // KEY — translate it here so language switches are reflected immediately.
   const preset = cfg.provider ? PROVIDER_PRESETS[cfg.provider] : null;
-  const label = preset?.name || cfg.apiUrl?.replace(/https?:\/\//, "").split("/")[0] || "";
+  const label = preset ? t(preset.name) : (cfg.apiUrl?.replace(/https?:\/\//, "").split("/")[0] || "");
   const model = cfg.model || "";
   infoModelName.textContent = model ? `${label} · ${model}` : label;
 }
@@ -552,6 +871,24 @@ function showWelcome() {
       </div>
       <h1>${agentName}</h1>
       <p class="description">${t("chat.welcome_desc", { name: agentName })}</p>
+      <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
+        <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
+          <span class="runtime-choice-icon runtime-choice-icon-aide">Ⓐ</span>
+          <span class="runtime-choice-body">
+            <span class="runtime-choice-name">${t("runtime.aide")}</span>
+            <span class="runtime-choice-desc">${t("runtime.aide.desc")}</span>
+          </span>
+          <span class="runtime-badge runtime-badge-aide">${t("runtime.detected")}</span>
+        </button>
+        <button class="runtime-choice" data-runtime="opencode" role="tab" aria-selected="false" type="button">
+          <span class="runtime-choice-icon runtime-choice-icon-opencode">⬡</span>
+          <span class="runtime-choice-body">
+            <span class="runtime-choice-name">${t("runtime.opencode")}</span>
+            <span class="runtime-choice-desc">${t("runtime.opencode.desc")}</span>
+          </span>
+          <span class="runtime-badge" id="opencode-status-badge">${t("runtime.detecting")}</span>
+        </button>
+      </div>
     </div>
   `;
   // Re-apply avatar after DOM replacement (DEFAULT_AVATAR fallback if none saved)
@@ -561,6 +898,11 @@ function showWelcome() {
   if (wa) wa.src = src;
   const sp = document.getElementById("settings-preview");
   if (sp) sp.src = src;
+  // Re-bind the runtime cards' click events and re-apply visual state.
+  // showWelcome destroys the old DOM, so the listeners that initRuntimeSelector
+  // attached on first paint are gone. rebindRuntimeCards is the cheap
+  // (no re-detection) refresh path — see runtime-selector.mjs.
+  rebindRuntimeCards();
 }
 
 /* ── Settings Persistence ─────────────────────────────── */
@@ -645,7 +987,8 @@ function populateModelDropdown(preset, selectedModel) {
     preset.models.forEach(m => {
       const opt = document.createElement("option");
       opt.value = m.id;
-      opt.textContent = m.label;
+      // m.label is an i18n KEY — translate at render time.
+      opt.textContent = t(m.label);
       if (m.id === selectedModel) opt.selected = true;
       settingsModel.appendChild(opt);
     });
@@ -905,14 +1248,15 @@ async function fetchModels() {
 const _queryQueue = [];
 
 async function submitQuery() {
-  const text = promptInput.value.trim();
+  const input = activePromptInput();
+  const text = input.value.trim();
   const files = state.attachedFiles;
   if ((!text && files.length === 0)) return;
   if (state.isStreaming) {
     // Queue the message for later
     _queryQueue.push({ text, files: [...files] });
-    promptInput.value = "";
-    autoResize(promptInput);
+    input.value = "";
+    autoResize(input);
     state.attachedFiles = [];
     renderFilePreviews();
     updateSendButton();
@@ -920,8 +1264,10 @@ async function submitQuery() {
     return;
   }
 
+  const runtime = getCurrentRuntime();
   const cfg = loadApiConfig();
-  if (!cfg.apiUrl) {
+  // opencode uses the local CLI's own model config — it doesn't need an API URL.
+  if (runtime !== "opencode" && !cfg.apiUrl) {
     addErrorMessage(t("api.config_first"));
     return;
   }
@@ -933,8 +1279,8 @@ async function submitQuery() {
   }
 
   // Clear input and files
-  promptInput.value = "";
-  autoResize(promptInput);
+  input.value = "";
+  autoResize(input);
   state.attachedFiles = [];
   renderFilePreviews();
   updateSendButton();
@@ -978,8 +1324,8 @@ async function submitQuery() {
   updateAssistantContent(state.currentAssistantMsg, "");
 
   // Toggle buttons
-  sendBtn.classList.add("hidden");
-  stopBtn.classList.remove("hidden");
+  activeSendBtn().classList.add("hidden");
+  activeStopBtn().classList.remove("hidden");
   setStatus(t("status.thinking"));
 
   // Build file attachments for the API
@@ -996,7 +1342,7 @@ async function submitQuery() {
     const agentName = loadAgentName();
     const kbEnabled = document.getElementById("kb-toggle")?.checked || false;
     const webSearchEnabled = document.getElementById("web-search-toggle")?.checked ?? true;
-    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, planModeCheckbox.checked, webSearchEnabled);
+    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime());
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -1012,9 +1358,16 @@ function abortQuery() {
 
 function stopQuery() {
   state.isStreaming = false;
-  sendBtn.classList.remove("hidden");
-  stopBtn.classList.add("hidden");
-  sendBtn.disabled = false;
+  // Restore both runtime's send/stop buttons — stopQuery can fire after a
+  // runtime switch, so be defensive and reset whichever pair exists.
+  for (const sb of [sendBtn, ocSendBtn()]) {
+    if (!sb) continue;
+    sb.classList.remove("hidden");
+    if (sb !== ocSendBtn()) sb.disabled = false;
+  }
+  for (const sb of [stopBtn, ocStopBtn()]) {
+    if (sb) sb.classList.add("hidden");
+  }
   setStatus(t("status.ready"));
 }
 
@@ -1023,8 +1376,11 @@ function processQueryQueue() {
   const next = _queryQueue.shift();
   // Restore queued files to state
   state.attachedFiles = next.files || [];
-  // Set prompt and submit
-  promptInput.value = next.text;
+  // Set prompt and submit. Use activePromptInput() so the queued text lands
+  // in the currently-visible input (OpenCode's textarea when runtime is
+  // opencode, AideAgent's otherwise). Writing to the hidden one would make
+  // the queued query invisible to the user.
+  activePromptInput().value = next.text;
   submitQuery();
 }
 
@@ -1046,10 +1402,15 @@ function resetChat() {
     if (sessionDisplay) sessionDisplay.textContent = "—";
     renderFilePreviews();
     updateSendButton();
+    // Clear BOTH input boxes — switching runtimes after reset shouldn't
+    // show leftover text in the now-visible one. Focus the active one so
+    // the user can start typing immediately in the runtime they're on.
     promptInput.value = "";
+    const ocIn = ocPromptInput();
+    if (ocIn) ocIn.value = "";
     setStatus(t("status.ready"));
     refreshSessionList();
-    requestAnimationFrame(() => promptInput.focus());
+    requestAnimationFrame(() => activePromptInput().focus());
     return;
   }
   window.aideagent.resetSession();
@@ -1074,10 +1435,13 @@ function resetChat() {
   renderFilePreviews();
   updateSendButton();
   showWelcome();
+  // Same dual-clear + active-focus as the streaming branch above.
   promptInput.value = "";
+  const ocIn2 = ocPromptInput();
+  if (ocIn2) ocIn2.value = "";
   setStatus(t("status.ready"));
   refreshSessionList();
-  requestAnimationFrame(() => promptInput.focus());
+  requestAnimationFrame(() => activePromptInput().focus());
 }
 
 /* ── Session List ──────────────────────────────────────────── */
@@ -1200,6 +1564,9 @@ function loadChat(sessionId) {
     sendBtn.disabled = false;
     promptInput.value = "";
     setStatus(t("status.ready"));
+
+    // Restore the runtime this session was started with (session-level binding).
+    if (data.runtime) setRuntime(data.runtime, false, true);
 
     rebuildMessages(data);
     if (sessionDisplay) sessionDisplay.textContent = data.sessionId || "—";
@@ -2001,6 +2368,37 @@ promptInput.addEventListener("keydown", (e) => {
 
 sendBtn.addEventListener("click", submitQuery);
 stopBtn.addEventListener("click", abortQuery);
+
+// OpenCode input box — mirrors the bindings above for its own textarea/buttons.
+// File uploads are now enabled for OpenCode too: the ocUploadBtn directly
+// triggers the hidden ocFileInput (no popover — OpenCode doesn't use the
+// prompts/skills popover). The ocFilePreviews instance shares state and
+// #file-preview-area with the aide instance, so chips render in the same
+// location. Send button is enabled when there is text OR attached files.
+const ocInput = ocPromptInput();
+if (ocInput) {
+  const ocSend = ocSendBtn();
+  const ocStop = ocStopBtn();
+  const syncOcSend = () => {
+    if (ocSend) {
+      ocSend.disabled = !ocInput.value.trim() && state.attachedFiles.length === 0;
+    }
+  };
+  ocInput.addEventListener("input", () => { autoResize(ocInput); syncOcSend(); });
+  ocInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (ocSend && !ocSend.disabled) submitQuery();
+    }
+  });
+  if (ocSend) ocSend.addEventListener("click", submitQuery);
+  if (ocStop) ocStop.addEventListener("click", abortQuery);
+  // Upload button directly opens the file picker (no popover for OpenCode).
+  if (ocUploadBtn && ocFileInput) {
+    ocUploadBtn.addEventListener("click", () => ocFileInput.click());
+  }
+  syncOcSend();
+}
 newChatBtn.addEventListener("click", resetChat);
 
 // Auto-focus input when window regains focus (fixes Electron focus loss after confirm() / alt-tab)
@@ -2014,13 +2412,22 @@ window.addEventListener("focus", () => {
 initSettingsTabs();
 initInputMenu();
 filePreviews.init();
+if (ocFileInput) ocFilePreviews.init();
+initOpencodeModeSelector();
 setupIPC();
 loadAvatar();
 initAgentNameUI();
 applyAgentName(loadAgentName());
 initUserAvatarUI();
 applyUserName(loadUserName());
+initRuntimeSelector();
 updateConfigBanner();
+// Session info: wrap localStorage.setItem so any write to an
+// `AideAgent_*` key auto-pushes the snapshot to main. After install,
+// do an initial push so the main process has the current state before
+// the AI makes its first `get_session_info` call.
+installLocalStorageHook();
+pushSessionInfo();
 
 // Load encrypted API keys then apply config
 initApiKeys().then(() => {
