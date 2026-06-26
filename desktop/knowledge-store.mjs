@@ -65,7 +65,7 @@ export function startWatcher() {
     try {
       const db = getDb();
       const vault = getVault();
-      const files = scanVault(vault, vault);
+      const files = await scanVault(vault, vault);
       let updated = 0;
       for (const file of files) {
         const row = db.prepare("SELECT mtime_ms FROM kb_notes WHERE rel_path = ?").get(file.relPath);

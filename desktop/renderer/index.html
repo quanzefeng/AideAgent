@@ -543,6 +543,40 @@ brew install opencode</pre>
                   </div>
                 </div>
               </div>
+
+              <!-- File format toggles -->
+              <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+                <div style="font-size:13px;font-weight:var(--fw-semibold);color:var(--text-primary);margin-bottom:8px;" data-i18n="kb.formats.title">文件格式</div>
+                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                  <span class="reasoning-toggle-label" data-i18n="kb.formats.docx">Word 文档 (.docx)</span>
+                  <div class="toggle-switch toggle-switch-sm">
+                    <input type="checkbox" id="kb-format-docx" />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                  <span class="reasoning-toggle-label" data-i18n="kb.formats.pptx">PowerPoint 演示 (.pptx)</span>
+                  <div class="toggle-switch toggle-switch-sm">
+                    <input type="checkbox" id="kb-format-pptx" />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                  <span class="reasoning-toggle-label" data-i18n="kb.formats.csv">CSV 表格 (.csv)</span>
+                  <div class="toggle-switch toggle-switch-sm">
+                    <input type="checkbox" id="kb-format-csv" />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                  <span class="reasoning-toggle-label" data-i18n="kb.formats.xlsx">Excel 表格 (.xlsx)</span>
+                  <div class="toggle-switch toggle-switch-sm">
+                    <input type="checkbox" id="kb-format-xlsx" />
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" data-i18n="kb.formats.hint">开启后，重建索引时将扫描这些格式</div>
+              </div>
             </div>
           </div>
 

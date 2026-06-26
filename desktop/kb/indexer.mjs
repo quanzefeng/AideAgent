@@ -19,15 +19,18 @@
  * for the atomic-replace improvement.)
  */
 
-import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, readdirSync } from "fs";
-import { join, basename, relative, extname } from "path";
+import { existsSync, statSync } from "fs";
+import { join, basename } from "path";
 import { getDb } from "./db.mjs";
 import { getVault, getEffectiveMaxBodyChars } from "./config.mjs";
 import { _logError } from "./log.mjs";
 import { embedText, embedBatch, getEmbeddingDim } from "./embedder.mjs";
 import { vectorToBuffer } from "./vector-math.mjs";
-import { stripNoteBody, stripMarkdown, splitIntoChunks, extractTitle, extractTags } from "./markdown.mjs";
+import { stripMarkdown, splitIntoChunks } from "./markdown.mjs";
 import { ftsInsertChunk, ftsInsertChunkNew } from "./search.mjs";
+import { isEnabledExt } from "./formats.mjs";
+import { getExtractor } from "./extractors/index.mjs";
+import { scanVault } from "./vault-scanner.mjs";
 
 /**
  * Re-index a single file from the vault (called by watcher on change).
@@ -38,16 +41,16 @@ import { ftsInsertChunk, ftsInsertChunkNew } from "./search.mjs";
 export async function reindexSingleFile(relPath) {
   const _vaultPath = getVault();
   if (!_vaultPath) return;
-  if (!relPath.endsWith(".md")) return;
+  if (!isEnabledExt(relPath)) return;
   const fullPath = join(_vaultPath, relPath);
   if (!existsSync(fullPath)) return;
 
+  const extractor = await getExtractor(fullPath);
+  if (!extractor) return;
+
   try {
-    const content = readFileSync(fullPath, "utf-8");
+    const { title, tags, body } = await extractor.extract(fullPath);
     const stat = statSync(fullPath);
-    const title = extractTitle(content, basename(relPath));
-    const tags = extractTags(content);
-    const body = stripNoteBody(content);
 
     const db = getDb();
     const existing = db.prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(relPath);
@@ -67,7 +70,7 @@ export async function reindexSingleFile(relPath) {
       ).run(relPath, basename(relPath), title, JSON.stringify(tags), body.length, stat.mtimeMs, new Date().toISOString(), new Date().toISOString());
       const newNoteId = Number(result.lastInsertRowid);
       // Re-chunk the new note
-      const chunks = splitIntoChunks(body, title);
+      const chunks = extractor.chunkText(body, title);
       if (chunks.length === 0) chunks.push({ heading: title, content: stripMarkdown(body) || "" });
       const max = getEffectiveMaxBodyChars();
       for (let ci = 0; ci < chunks.length; ci++) {
@@ -228,7 +231,7 @@ export async function rebuildIndex(progressCb) {
 
   // From here on, we MUST release the lock. try/finally ensures it.
   try {
-    const notes = scanVaultInline(_vaultPath, _vaultPath);
+    const notes = await scanVault(_vaultPath, _vaultPath);
 
     // ── Phase 2: Pass 1 — fill shadow tables ──────────────────────────
     /**
@@ -242,7 +245,10 @@ export async function rebuildIndex(progressCb) {
         ).run(note.relPath, note.filename, note.title, JSON.stringify(note.tags), note.wordCount, note.mtimeMs, new Date().toISOString(), new Date().toISOString());
         const noteId = Number(result.lastInsertRowid);
 
-        const chunks = splitIntoChunks(note.body, note.title);
+        const noteExtractor = await getExtractor(note.relPath);
+        const chunks = noteExtractor
+          ? noteExtractor.chunkText(note.body, note.title)
+          : splitIntoChunks(note.body, note.title);
         if (chunks.length === 0) {
           chunks.push({ heading: note.title, content: stripMarkdown(note.body) || "" });
         }
@@ -354,39 +360,4 @@ export async function rebuildIndex(progressCb) {
       console.warn("[kb] failed to release rebuild_lock:", e.message);
     }
   }
-}
-
-// Local inline copy of scanVault logic. We can't import from kb/vault-scanner
-// here without creating a cycle, and the version we need is trivial — just
-// walk the directory for .md files and extract their metadata. (kb/notes.mjs
-// uses the same metadata shape.)
-function scanVaultInline(dir, baseDir) {
-  /** @type {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
-  const results = [];
-  if (!existsSync(dir)) return results;
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      // Skip known-noisy directories (keep in sync with kb/vault-scanner.mjs)
-      if ([".obsidian","node_modules",".git",".trash",".vscode",".idea"].includes(entry.name)) continue;
-      results.push(...scanVaultInline(fullPath, baseDir));
-    } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
-      try {
-        const stat = statSync(fullPath);
-        const content = readFileSync(fullPath, "utf-8");
-        const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
-        const title = extractTitle(content, entry.name);
-        const tags = extractTags(content);
-        const body = stripNoteBody(content);
-        results.push({
-          relPath, filename: entry.name, title, tags, body,
-          wordCount: body.length, mtimeMs: stat.mtimeMs,
-        });
-      } catch (/** @type {any} */ e) {
-        console.warn(`[kb] Skipping ${fullPath}: ${e.message}`);
-      }
-    }
-  }
-  return results;
 }

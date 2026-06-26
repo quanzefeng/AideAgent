@@ -28,7 +28,7 @@ if (!existsSync(DATA_DIR)) {
 // ── Module state ─────────────────────────────────────────
 
 let _vaultPath = "";
-/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} */
+/** @type {{embeddingProvider:string, ollamaEmbedModel:string, maxNotes:number, maxChars:number, maxBodyChars:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number, enabledFormats?:Record<string,boolean>}} */
 let _config = {
   embeddingProvider: "local",
   ollamaEmbedModel: "nomic-embed-text",
@@ -40,6 +40,15 @@ let _config = {
   rerankEnabled: true,
   rerankModel: "gemma4:e4b",
   rerankTopN: 15,
+  // Per-format enable/disable. Markdown is always ON (enforced in formats.mjs).
+  // Defaults match the v1.27 design decision: Office formats ON, data/PDF OFF.
+  enabledFormats: {
+    docx: true,
+    pptx: true,
+    csv: false,
+    xlsx: false,
+    pdf: false,
+  },
 };
 // maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
 let _autoDetectedMaxBodyChars = 0;
@@ -88,7 +97,7 @@ export function setVault(path) {
   return { ok: true, vault: _vaultPath };
 }
 
-/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number}} cfg */
+/** @param {{embeddingProvider?:string, ollamaEmbedModel?:string, maxNotes?:number, maxChars?:number, maxBodyChars?:number, queryRewriteModel?:string, queryRewriteEnabled?:boolean, rerankEnabled?:boolean, rerankModel?:string, rerankTopN?:number, enabledFormats?:Record<string,boolean>}} cfg */
 export function setConfig(cfg) {
   if (cfg.embeddingProvider) _config.embeddingProvider = cfg.embeddingProvider;
   if (cfg.ollamaEmbedModel && cfg.ollamaEmbedModel !== _config.ollamaEmbedModel) {
@@ -117,6 +126,11 @@ export function setConfig(cfg) {
   if (cfg.queryRewriteEnabled !== undefined) _config.queryRewriteEnabled = Boolean(cfg.queryRewriteEnabled);
   if (cfg.rerankEnabled !== undefined) _config.rerankEnabled = Boolean(cfg.rerankEnabled);
   if (cfg.rerankTopN !== undefined) _config.rerankTopN = Math.max(5, Math.min(50, parseInt(String(cfg.rerankTopN)) || 20));
+  // Merge enabledFormats updates — only override keys that are explicitly set,
+  // so a partial update (e.g. {docx: false}) doesn't wipe the other toggles.
+  if (cfg.enabledFormats && typeof cfg.enabledFormats === "object") {
+    _config.enabledFormats = { ..._config.enabledFormats, ...cfg.enabledFormats };
+  }
   saveConfig();
   return { ok: true, config: _config };
 }

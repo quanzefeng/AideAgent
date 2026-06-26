@@ -7,6 +7,7 @@ import { join } from "node:path";
 import mcpManager from "./mcp-manager.mjs";
 import sessionDb from "./session-db.mjs";
 import * as skills from "./skills-store.mjs";
+import * as kb from "./knowledge-store.mjs";
 
 import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.mjs";
 import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
@@ -156,6 +157,58 @@ app.whenReady().then(async () => {
 
   try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch { /* ignored */ }
   try { skills.reindexSkills(); } catch (/** @type {any} */ e) { console.error("[skills-store] reindex:", e.message); }
+
+  // ── KB startup sync ──────────────────────────────────────────
+  // Scan vault and reindex any new/changed files since last shutdown.
+  // Without this, files dropped into the vault while the app was closed
+  // (or files the fs.watch watcher missed) would never get indexed until
+  // the user manually clicks "重建索引". This is a lightweight mtime diff,
+  // NOT a full rebuild — only changed files get re-extracted + re-embedded.
+  if (!isTestMode) {
+    try {
+      const vault = kb.getVault();
+      if (vault) {
+        // Start the watcher first so future changes are caught live.
+        kb.startWatcher().catch((e) => console.error("[kb] watcher start:", e.message));
+        // Then do a one-time sync to catch anything that changed while offline.
+        // Run async — don't block app startup on KB indexing.
+        (async () => {
+          try {
+            const { scanVault } = await import("./kb/vault-scanner.mjs");
+            const { reindexSingleFile } = await import("./kb/indexer.mjs");
+            const { getDb } = await import("./kb/db.mjs");
+            const db = getDb();
+            const files = await scanVault(vault, vault);
+            let newCount = 0, updatedCount = 0;
+            for (const file of files) {
+              const row = db.prepare("SELECT mtime_ms FROM kb_notes WHERE rel_path = ?").get(file.relPath);
+              if (!row) { await reindexSingleFile(file.relPath); newCount++; }
+              else if (Number(row.mtime_ms) !== file.mtimeMs) { await reindexSingleFile(file.relPath); updatedCount++; }
+            }
+            // Remove notes whose files no longer exist
+            const indexed = db.prepare("SELECT rel_path FROM kb_notes").all();
+            const existingPaths = new Set(files.map((f) => f.relPath));
+            for (const row of indexed) {
+              if (!existingPaths.has(String(row.rel_path))) {
+                const nr = db.prepare("SELECT id FROM kb_notes WHERE rel_path = ?").get(String(row.rel_path));
+                if (nr) {
+                  db.prepare("DELETE FROM kb_chunks WHERE note_id = ?").run(Number(nr.id));
+                  db.prepare("DELETE FROM kb_notes WHERE rel_path = ?").run(String(row.rel_path));
+                }
+              }
+            }
+            if (newCount > 0 || updatedCount > 0) {
+              console.log(`[kb-startup] synced: ${newCount} new, ${updatedCount} updated`);
+            }
+          } catch (/** @type {any} */ e) {
+            console.error("[kb-startup] sync error:", e.message);
+          }
+        })();
+      }
+    } catch (/** @type {any} */ e) {
+      console.error("[kb-startup] init error:", e.message);
+    }
+  }
 
   const CURATOR_INTERVAL = 6 * 60 * 60 * 1000;
   setInterval(() => {

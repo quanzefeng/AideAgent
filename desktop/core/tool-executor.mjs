@@ -638,7 +638,7 @@ export async function runTool(tc) {
             warning: "No knowledge base vault configured. User must set one in Settings → 知识库 before KB tools can be used.",
           };
         }
-        const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(500, Math.floor(args.limit))) : 50;
+        const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(500, Math.floor(args.limit))) : 200;
         const offset = Number.isFinite(args.offset) ? Math.max(0, Math.floor(args.offset)) : 0;
         const result = kb.listNotes(offset, limit);
         const byPath = {};

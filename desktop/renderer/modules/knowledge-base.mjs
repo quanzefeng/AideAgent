@@ -83,6 +83,18 @@ export async function loadKnowledgeBasePanel() {
         ? t("kb.indexed").replace("{count}", String(status.noteCount)).replace("{embedded}", String(status.embeddedCount))
         : t("kb.not_indexed");
     }
+
+    // Format toggles
+    const formatDefaults = { docx: true, pptx: true, csv: false, xlsx: false };
+    const enabledFormats = cfg.enabledFormats ? { ...formatDefaults, ...cfg.enabledFormats } : formatDefaults;
+    for (const [fmt, def] of Object.entries(formatDefaults)) {
+      const cb = /** @type {HTMLInputElement | null} */ (document.getElementById(`kb-format-${fmt}`));
+      if (!cb) continue;
+      cb.checked = enabledFormats[fmt];
+      cb.addEventListener("change", async () => {
+        await window.aideagent.kbSetConfig({ enabledFormats: { [fmt]: cb.checked } });
+      });
+    }
   } catch {}
 
   pickBtn?.addEventListener("click", async () => {

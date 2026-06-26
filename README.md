@@ -121,13 +121,23 @@ API keys are encrypted by the operating system keychain (Windows DPAPI / macOS K
 
 ---
 
-### 2. Knowledge base — AI reads your notes
+### 2. Knowledge base — AI reads your notes and documents
 
-Tell it where your Obsidian vault lives, and the AI will search your notes before answering.
+Point it at your Obsidian vault (or any folder), and the AI will search your notes before answering.
+
+Supported file formats (toggleable in Settings → Knowledge Base):
+- **Markdown** — `.md` / `.mdown` / `.mkd` / `.mkdn` / `.markdown` (always on)
+- **Word** — `.docx` (default on, parsed via `mammoth`)
+- **PowerPoint** — `.pptx` (default on, parsed via direct OOXML XML extraction)
+- **CSV** — `.csv` (default off, plain-text row extraction)
+- **Excel** — `.xlsx` (default off, planned for v1.28)
+- **PDF** — `.pdf` (planned for v1.28, pending extraction-quality validation)
 
 Under the hood: SQLite + FTS5 full-text search + ONNX running a local embedding model (`all-MiniLM-L6-v2`, 384 dimensions), fused with RRF. Fully offline. Nothing leaves your machine.
 
 On first launch, model files download automatically (via a `postinstall` hook, pulling from `hf-mirror.com` or `huggingface.co`).
+
+The extractor architecture is pluggable — each format lives in `desktop/kb/extractors/` and implements a standard `{ extract, chunkText }` interface. Adding a new format is one file + one registry entry.
 
 ---
 
@@ -202,6 +212,19 @@ AideAgent/
 │   │   ├── tool-executor.mjs
 │   │   ├── tool-definitions.mjs
 │   │   ├── wechat-bridge.mjs
+│   │   └── ...
+│   ├── kb/                           # knowledge base (FTS5 + vector + format extractors)
+│   │   ├── vault-scanner.mjs         # recursive vault scan (format-aware)
+│   │   ├── indexer.mjs               # full rebuild + single-file reindex
+│   │   ├── search.mjs                # hybrid RAG: FTS5 + vector + RRF + LLM rerank
+│   │   ├── markdown.mjs              # Markdown parsing + heading-based chunking
+│   │   ├── formats.mjs               # extension → extractor registry + enable/disable
+│   │   ├── extractors/               # per-format text extractors (pluggable)
+│   │   │   ├── index.mjs             # extractor dispatch
+│   │   │   ├── markdown.mjs          # .md adapter (wraps kb/markdown.mjs)
+│   │   │   ├── docx.mjs              # .docx via mammoth
+│   │   │   ├── pptx.mjs              # .pptx via OOXML ZIP parsing
+│   │   │   └── chunk-utils.mjs       # paragraph-based chunking for non-Markdown
 │   │   └── ...
 │   ├── renderer/                     # renderer (vanilla JS, no framework)
 │   │   ├── app.js                    # main entry (orchestrates modules)

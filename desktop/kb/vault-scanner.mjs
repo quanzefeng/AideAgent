@@ -13,10 +13,11 @@
  * a pure string prefix check would miss.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync, realpathSync } from "fs";
-import { join, relative, extname, basename, dirname } from "path";
+import { existsSync, readdirSync, statSync, realpathSync } from "fs";
+import { join, relative, basename, dirname } from "path";
 import { getVault } from "./config.mjs";
-import { extractTitle, extractTags, stripNoteBody } from "./markdown.mjs";
+import { isEnabledExt } from "./formats.mjs";
+import { getExtractor } from "./extractors/index.mjs";
 
 // Directories that should NEVER be indexed. These pollute search results
 // with unrelated content (e.g. .opencode/node_modules/zod/README.md
@@ -107,8 +108,8 @@ export function isSafeVaultPath(relPath) {
   return norm(realTarget).startsWith(norm(realVault) + "/") || norm(realTarget) === norm(realVault);
 }
 
-/** @param {string} dir @param {string} baseDir @returns {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
-export function scanVault(dir, baseDir) {
+/** @param {string} dir @param {string} baseDir @returns {Promise<Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>>} */
+export async function scanVault(dir, baseDir) {
   /** @type {Array<{relPath:string, filename:string, title:string, tags:string[], body:string, wordCount:number, mtimeMs:number}>} */
   const results = [];
   if (!existsSync(dir)) return results;
@@ -118,17 +119,15 @@ export function scanVault(dir, baseDir) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (skipDirs.has(entry.name)) continue;
-      results.push(...scanVault(fullPath, baseDir));
-    } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".md") {
+      const subResults = await scanVault(fullPath, baseDir);
+      results.push(...subResults);
+    } else if (entry.isFile() && isEnabledExt(entry.name)) {
       try {
         const stat = statSync(fullPath);
-        const content = readFileSync(fullPath, "utf-8");
+        const extractor = await getExtractor(fullPath);
+        if (!extractor) continue;
+        const { title, tags, body } = await extractor.extract(fullPath);
         const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
-        const title = extractTitle(content, entry.name);
-        /** @type {string[]} */
-        const tags = extractTags(content);
-        // Strip frontmatter and markdown for body (single source of truth)
-        const body = stripNoteBody(content);
         results.push({
           relPath,
           filename: entry.name,
