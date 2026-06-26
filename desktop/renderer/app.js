@@ -229,11 +229,14 @@ const ocUpdateSendButton = ocFilePreviews.updateSendButton;
 const ocHandleFileUpload = ocFilePreviews.handleFileUpload;
 
 
-/* ── Input menu popover (Stage 1: UI shell only) ─────────────────
+/* ── Input menu popover ──────────────────────────────────
    Replaces the upload button's direct → file picker click with a 3-option
-   menu: 上传文件 / 常用提示词 / 技能. Real handlers for "常用提示词" and
-   "技能" land in Stages 3 and 4; for now they log to the console so we
-   can verify the popover wiring without breaking anything.
+   menu: 上传文件 / 常用提示词 / 技能. Each item routes through
+   handleInputMenuAction(action), which closes the popover first, then
+   dispatches to the right handler:
+     upload  → fileInput.click()                (file picker)
+     prompts → openPromptsImportModal()          (prompt library modal)
+     skills  → settings + skills tab + render    (skills catalog)
 
    IMPORTANT: the popover itself is absolutely positioned (CSS), so this
    code only needs to toggle a `hidden` class on #input-menu. It must NOT
@@ -295,6 +298,18 @@ function initInputMenu() {
   uploadBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleInputMenu();
+  });
+
+  // Wire each popover item to handleInputMenuAction(...). Without this loop
+  // the items render and the popover opens, but clicking them does nothing —
+  // `inputMenuItems` is collected (line 243) but never iterated, and
+  // `handleInputMenuAction` is defined but never called.
+  inputMenuItems.forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const action = item.getAttribute("data-action");
+      handleInputMenuAction(action);
+    });
   });
 
   // Outside-click + Escape + window resize all dismiss the popover.
