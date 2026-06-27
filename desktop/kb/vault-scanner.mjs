@@ -122,6 +122,11 @@ export async function scanVault(dir, baseDir) {
       const subResults = await scanVault(fullPath, baseDir);
       results.push(...subResults);
     } else if (entry.isFile() && isEnabledExt(entry.name)) {
+      // Skip Office/WPS temporary lock files (~$prefix). These are created
+      // when a .docx/.xlsx/.pptx is open in Word/Excel/WPS and contain
+      // zero useful text — indexing them pollutes search results with
+      // empty-body notes titled "~$filename".
+      if (entry.name.startsWith("~$")) continue;
       try {
         const stat = statSync(fullPath);
         const extractor = await getExtractor(fullPath);

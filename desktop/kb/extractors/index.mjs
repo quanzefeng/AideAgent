@@ -19,6 +19,8 @@ import { extname } from "node:path";
 import * as markdownExtractor from "./markdown.mjs";
 import * as docxExtractor from "./docx.mjs";
 import * as pptxExtractor from "./pptx.mjs";
+import * as csvExtractor from "./csv.mjs";
+import * as xlsxExtractor from "./xlsx.mjs";
 
 // ── Extractor interface (JSDoc) ──────────────────────────────────
 /**
@@ -40,7 +42,9 @@ const EXTRACTORS = {
   markdown: markdownExtractor,
   docx: docxExtractor,
   pptx: pptxExtractor,
-  // csv, xlsx, pdf will be added in later phases.
+  csv: csvExtractor,
+  xlsx: xlsxExtractor,
+  // pdf will be added after spike validation.
 };
 
 /**

@@ -129,8 +129,8 @@ Supported file formats (toggleable in Settings → Knowledge Base):
 - **Markdown** — `.md` / `.mdown` / `.mkd` / `.mkdn` / `.markdown` (always on)
 - **Word** — `.docx` (default on, parsed via `mammoth`)
 - **PowerPoint** — `.pptx` (default on, parsed via direct OOXML XML extraction)
-- **CSV** — `.csv` (default off, plain-text row extraction)
-- **Excel** — `.xlsx` (default off, planned for v1.28)
+- **CSV / TSV** — `.csv` / `.tsv` (default off, each row → "column: value" sentence)
+- **Excel** — `.xlsx` (default off, parsed via SheetJS, multi-sheet support)
 - **PDF** — `.pdf` (planned for v1.28, pending extraction-quality validation)
 
 Under the hood: SQLite + FTS5 full-text search + ONNX running a local embedding model (`all-MiniLM-L6-v2`, 384 dimensions), fused with RRF. Fully offline. Nothing leaves your machine.
@@ -224,6 +224,8 @@ AideAgent/
 │   │   │   ├── markdown.mjs          # .md adapter (wraps kb/markdown.mjs)
 │   │   │   ├── docx.mjs              # .docx via mammoth
 │   │   │   ├── pptx.mjs              # .pptx via OOXML ZIP parsing
+│   │   │   ├── csv.mjs               # .csv/.tsv → "col: val" sentences
+│   │   │   ├── xlsx.mjs              # .xlsx via SheetJS (multi-sheet)
 │   │   │   └── chunk-utils.mjs       # paragraph-based chunking for non-Markdown
 │   │   └── ...
 │   ├── renderer/                     # renderer (vanilla JS, no framework)

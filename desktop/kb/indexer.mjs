@@ -42,6 +42,9 @@ export async function reindexSingleFile(relPath) {
   const _vaultPath = getVault();
   if (!_vaultPath) return;
   if (!isEnabledExt(relPath)) return;
+  // Skip Office/WPS temporary lock files (~$prefix). See vault-scanner.mjs
+  // for the same guard — applies to both scan and single-file reindex paths.
+  if (relPath.startsWith("~$") || relPath.includes("/~$")) return;
   const fullPath = join(_vaultPath, relPath);
   if (!existsSync(fullPath)) return;
 
