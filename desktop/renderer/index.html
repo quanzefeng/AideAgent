@@ -535,9 +535,9 @@ brew install opencode</pre>
                   <input type="number" id="kb-max-chars" class="form-input" value="1000" min="100" max="10000" style="width:80px;" />
                 </div>
                 <div class="form-row">
-                  <label class="form-label" data-i18n="kb.max_body_chars">嵌入最大字符数 (0=自动)</label>
+                  <label class="form-label" data-i18n="kb.max_body_chars">嵌入最大字符数 (0=自动检测)</label>
                   <div style="display:flex;gap:8px;align-items:center;">
-                    <input type="number" id="kb-max-body-chars" class="form-input" value="0" min="0" max="100000" style="width:100px;" />
+                    <input type="number" id="kb-max-body-chars" class="form-input" value="10000" min="0" max="100000" style="width:100px;" />
                     <button id="kb-max-body-chars-save-btn" class="btn" data-i18n="common.save">保存</button>
                     <span id="kb-auto-detected-chars" style="font-size:12px;color:var(--text-muted);"></span>
                   </div>

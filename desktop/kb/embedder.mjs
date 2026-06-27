@@ -122,13 +122,21 @@ async function getEmbedder() {
         _embedder = { type: "ollama", model: ollamaModel };
         _embedderReady = true;
         console.log("[kb] Using Ollama embedder:", ollamaModel);
-        // Auto-detect model context length (only if user hasn't overridden)
-        if (getConfig().maxBodyChars === 0) {
-          const ctx = await detectModelContext(ollamaModel);
-          // 85% of context to leave tokenization headroom; assumes ~1.2 tok/char
-          const auto = Math.floor(ctx * 0.85);
-          _setAutoDetectedMaxBodyChars(auto);
-          console.log(`[kb] Auto-detected max body chars: ${auto} (model context: ${ctx})`);
+
+        // Detect model context once. We use it in two places:
+        //   1. If user set maxBodyChars=0 → auto-fill from 85% of context
+        //   2. Always → clamp the user-set value if it exceeds the model's
+        //      safe context (85%). This protects small models like
+        //      mxbai-embed (512 tok → ~435 chars) from getting hit with a
+        //      10000-char input that would crash the embedder.
+        const ctx = await detectModelContext(ollamaModel);
+        const safeLimit = Math.floor(ctx * 0.85);
+        const userMax = getConfig().maxBodyChars;
+        if (userMax === 0) {
+          _setAutoDetectedMaxBodyChars(safeLimit);
+          console.log(`[kb] Auto-detected max body chars: ${safeLimit} (model context: ${ctx})`);
+        } else if (userMax > safeLimit) {
+          console.warn(`[kb] maxBodyChars=${userMax} exceeds ${ollamaModel} safe context (${safeLimit}). Will clamp at runtime.`);
         }
         return _embedder;
       } catch (/** @type {any} */ e) {

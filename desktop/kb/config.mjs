@@ -34,7 +34,12 @@ let _config = {
   ollamaEmbedModel: "nomic-embed-text",
   maxNotes: 20,
   maxChars: 20000,
-  maxBodyChars: 0,
+  // Per-chunk embedding length. 10000 chars is a generous default that
+  // fits most embedding models' context windows (nomic-embed 8K,
+  // mxbai-embed 2K, qwen3-embed 32K). If the chosen embedder's context
+  // is smaller than this, the embedder clamps at runtime — see
+  // kb/embedder.mjs `clampToModelContext`.
+  maxBodyChars: 10000,
   queryRewriteModel: "qwen3.5:9b",
   queryRewriteEnabled: true,
   rerankEnabled: true,
@@ -50,7 +55,8 @@ let _config = {
     pdf: false,
   },
 };
-// maxBodyChars: 0 = auto-detect from Ollama model context, >0 = user override
+// Effective max body chars used at embedding time. Equals the user-set
+// maxBodyChars when >0, otherwise the auto-detected value (or 1500 fallback).
 let _autoDetectedMaxBodyChars = 0;
 
 // ── Persistence ──────────────────────────────────────────
@@ -136,7 +142,15 @@ export function setConfig(cfg) {
 }
 
 export function getEffectiveMaxBodyChars() {
-  if (_config.maxBodyChars > 0) return _config.maxBodyChars;
+  // If user set an explicit value, clamp it to the detected model context
+  // so the embedder never receives input larger than its safe limit
+  // (the embedder itself doesn't truncate, so passing too much crashes it).
+  if (_config.maxBodyChars > 0) {
+    if (_autoDetectedMaxBodyChars > 0) {
+      return Math.min(_config.maxBodyChars, _autoDetectedMaxBodyChars);
+    }
+    return _config.maxBodyChars;
+  }
   if (_autoDetectedMaxBodyChars > 0) return _autoDetectedMaxBodyChars;
   return 1500; // safe fallback before any detection
 }
