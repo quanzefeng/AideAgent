@@ -239,17 +239,40 @@ function syncColorPicker(theme) {
 
 function initColorPicker() {
   const square = $canvas("bg-color-square");
-  const hueBar = $canvas("bg-color-hue-bar");
-  if (!square || !hueBar) return;
+  const huePresets = document.getElementById("bg-color-hue-presets");
+  if (!square || !huePresets) return;
 
   slCanvasCtx = square.getContext("2d");
   slCanvasW = square.width;
   slCanvasH = square.height;
-  const hueCtx = hueBar.getContext("2d");
-  if (!hueCtx) return;
 
-  // 首次绘制：色相条（静态）+ SL 方块（按当前色相）
-  paintHueBar(hueCtx, hueBar.width, hueBar.height);
+  // Build 12 hue preset buttons (every 30°). Much easier to click precisely
+  // than the previous 18×150 vertical strip.
+  if (huePresets) {
+    const presets = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+    huePresets.innerHTML = presets.map((hue) => {
+      const color = hslToHex(hue, 1, 0.5);
+      const active = Math.abs(pendingBgHSL[0] - hue) < 1 ? " active" : "";
+      return `<button type="button" class="bg-hue-preset${active}" data-hue="${hue}" style="background:${color};" title="${hue}°" aria-label="色相 ${hue}°"></button>`;
+    }).join("");
+    /** @type {HTMLButtonElement|null} */
+    let activeBtn = huePresets.querySelector(".bg-hue-preset.active");
+    /** @param {HTMLButtonElement} btn */
+    const setHue = (btn) => {
+      const hue = Number(btn.dataset.hue);
+      pendingBgHSL[0] = hue;
+      if (activeBtn) activeBtn.classList.remove("active");
+      btn.classList.add("active");
+      activeBtn = btn;
+      if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
+      syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
+    };
+    huePresets.querySelectorAll(".bg-hue-preset").forEach((btn) => {
+      btn.addEventListener("click", () => setHue(/** @type {HTMLButtonElement} */ (btn)));
+    });
+  }
+
+  // 首次绘制：SL 方块（按当前色相）
   if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
   syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
 
@@ -272,24 +295,6 @@ function initColorPicker() {
     if (draggingSL) onSLEvent(e.clientX, e.clientY);
   });
   document.addEventListener("mouseup", () => { draggingSL = false; });
-
-  // ── 色相条：点击/拖动 → 改 H，重绘 SL ──
-  /** @type {(clientX: number) => void} */
-  const onHueEvent = (clientX) => {
-    const rect = hueBar.getBoundingClientRect();
-    const x = (clientX - rect.left) / rect.width;
-    pendingBgHSL[0] = Math.max(0, Math.min(360, x * 360));
-    if (slCanvasCtx) paintSLSquare(slCanvasCtx, pendingBgHSL[0], slCanvasW, slCanvasH);
-    syncColorPicker({ bg: hslToHex(...pendingBgHSL) });
-  };
-  let draggingHue = false;
-  hueBar.addEventListener("mousedown", (e) => {
-    draggingHue = true; onHueEvent(e.clientX);
-  });
-  document.addEventListener("mousemove", (e) => {
-    if (draggingHue) onHueEvent(e.clientX);
-  });
-  document.addEventListener("mouseup", () => { draggingHue = false; });
 
   // ── 应用按钮：把暂存色写入主题 ──
   const applyBtn = document.getElementById("bg-color-apply-btn");

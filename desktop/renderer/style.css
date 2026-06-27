@@ -805,6 +805,45 @@ html, body {
   flex-shrink: 0;
   user-select: none;
 }
+
+/* ── Hue preset row (replaces the narrow 18×150 vertical strip) ──
+   12 hue buttons at 30° intervals — each is a clickable colored square
+   sized for easy targeting (24×24 = 576px² touch target).
+   Replaces the previous vertical bar that was too narrow to click precisely. */
+.bg-color-hue-presets {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  background: var(--bg-card);
+  justify-content: space-between;
+}
+.bg-hue-preset {
+  flex: 1 1 0;
+  height: 24px;
+  min-width: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+  outline: none;
+}
+.bg-hue-preset:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+.bg-hue-preset:focus-visible {
+  border-color: var(--accent, #6366f1);
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
+.bg-hue-preset.active {
+  border-color: var(--text, #1a1a2e);
+  box-shadow: 0 0 0 1px var(--bg, #fff), 0 0 0 3px var(--text, #1a1a2e);
+}
 .bg-color-hue-bar {
   display: block;
   width: 100%;
