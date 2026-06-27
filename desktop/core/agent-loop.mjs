@@ -9,6 +9,10 @@ import { compressContext, sendContextUsage, estimateTokens, estimateMessageToken
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
+import { writeFileSync, mkdtempSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getExtractor } from "../kb/extractors/index.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -247,14 +251,45 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       if (f.type && f.type.startsWith("image/")) {
         contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
       } else {
+        // Non-image attachments: try to extract readable text via KB
+        // extractors. Previously this used `atob()` to decode the base64
+        // as a Latin-1 string — which silently corrupts binary files
+        // (PDF/DOCX/XLSX/PPTX) into FlateDecode/ASCII85 byte noise that
+        // models can't parse. Now we route .pdf/.docx/.pptx/.xlsx through
+        // the proper extractors; pure-text files (.md/.txt/.json/.csv...)
+        // fall back to utf-8 decoding.
+        const base64Data = f.dataUrl.includes("base64,") ? f.dataUrl.split("base64,")[1] : f.dataUrl;
+        const buffer = Buffer.from(base64Data, "base64");
+        let fileText = "";
+        let extractionNote = "";
         try {
-          const base64Data = f.dataUrl.includes("base64,") ? f.dataUrl.split("base64,")[1] : f.dataUrl;
-          const decoded = atob(base64Data);
-          const fileDesc = `\n\n--- File: ${f.name} ---\n${decoded}\n--- End of ${f.name} ---\n`;
-          contentParts.push({ type: "text", text: fileDesc });
-        } catch {
-          contentParts.push({ type: "text", text: `\n\n[Attachment: ${f.name} — unable to decode]` });
+          const ext = (f.name.split(".").pop() ?? "").toLowerCase();
+          // Use a synthetic filename so the extractor can dispatch by extension.
+          const tempName = `attach-${Date.now()}.${ext}`;
+          const tempPath = join(tmpdir(), tempName);
+          writeFileSync(tempPath, buffer);
+          try {
+            const extractor = await getExtractor(tempPath);
+            if (extractor) {
+              /** @type {{ extract: (p: string) => Promise<{body: string}>, id: string }} */
+              const ext = /** @type {any} */ (extractor);
+              const result = await ext.extract(tempPath);
+              fileText = result.body || "";
+              extractionNote = `[Extracted via ${ext.id} extractor from ${f.name}]`;
+            } else {
+              // No extractor — fall back to utf-8 (works for .md/.txt/.json/.csv).
+              fileText = buffer.toString("utf-8");
+              extractionNote = `[Decoded as utf-8 — no extractor for .${ext}]`;
+            }
+          } finally {
+            try { unlinkSync(tempPath); } catch { /* tmp cleanup best-effort */ }
+          }
+        } catch (e) {
+          fileText = `[Failed to read attachment: ${(/** @type {any} */ (e)).message}]`;
+          extractionNote = `[Extraction error for ${f.name}]`;
         }
+        const fileDesc = `\n\n--- File: ${f.name} ---\n${extractionNote}\n${fileText}\n--- End of ${f.name} ---\n`;
+        contentParts.push({ type: "text", text: fileDesc });
       }
     }
     userMessage = { role: "user", content: contentParts };
