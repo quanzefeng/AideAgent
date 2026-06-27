@@ -265,3 +265,56 @@ export async function detectOpencode() {
     homeUsed: HOME,
   };
 }
+
+/**
+ * List all available OpenCode models without spawning a full ACP session.
+ *
+ * Runs `opencode models` as a one-shot CLI subprocess and parses the
+ * "provider/model" lines it prints. Used by the renderer's model picker
+ * so it can populate the dropdown BEFORE the user submits the first
+ * prompt (otherwise the picker would sit empty until ACP's session/new
+ * returns the model list, which happens lazily on first turn).
+ *
+ * @returns {Promise<Array<{id:string, name:string}>>}
+ */
+export async function listOpencodeModels() {
+  const detection = await detectOpencode();
+  if (!detection.installed || !detection.path) return [];
+
+  // Use the existing runCmd wrapper so Windows .cmd shims (npm-installed
+  // opencode.cmd) work the same way they do for `opencode --version` during
+  // detection. Direct `execFile` returns EINVAL on those shims.
+  const stdout = await runCmd(detection.path, ["models"], 15_000);
+  if (stdout == null) {
+    console.warn("[opencode-detector] listOpencodeModels: command failed");
+    return [];
+  }
+  return parseModelsOutput(stdout);
+}
+
+/**
+ * Parse `opencode models` output into [{id, name}] records.
+ * Each non-empty line is "provider/model-name"; the friendly name is the
+ * model portion only (so the picker shows "glm-5.2" instead of
+ * "opencode-go/glm-5.2"). Provider is preserved in `id` so the picker
+ * can pass it back unchanged.
+ * @param {string} stdout
+ * @returns {Array<{id:string, name:string}>}
+ */
+export function parseModelsOutput(stdout) {
+  /** @type {Array<{id:string, name:string}>} */
+  const out = [];
+  const seen = new Set();
+  for (const raw of stdout.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const slash = line.indexOf("/");
+    if (slash < 1 || slash === line.length - 1) continue; // skip junk
+    const id = line;
+    const name = line.slice(slash + 1);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name });
+  }
+  return out;
+}

@@ -187,8 +187,11 @@ KNOWLEDGE: <内容>
  * @param {boolean} [isPlanMode]
  * @param {boolean} [webSearchEnabled]
  * @param {boolean} [silent]
+ * @param {string} [opencodeModelId] - when runtime === "opencode", the
+ *   model id the user picked from the picker (e.g. "anthropic/claude-sonnet-4").
+ *   Forwarded to ACP `session/new` so opencode spawns with that model.
  */
-export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false, runtime = "aide") {
+export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false, runtime = "aide", opencodeModelId) {
   // Captured as closure-local: every saveSession call inside this agentLoop
   // invocation writes the SAME runtime value, regardless of what a concurrent
   // or later agentLoop call does to its own local copy.
@@ -238,6 +241,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       sdr,
       isPlanMode,
       signal,
+      opencodeModelId,
     });
   }
 
@@ -944,10 +948,12 @@ export function resetPromptCache() {
  * @param {"aide"|"opencode"} args.sessionRuntime
  * @param {(id: string, history: Array<any>, title: string) => Promise<void>} args.saveSession
  * @param {(channel: string, data: any) => void} args.sdr
+ * @param {boolean} [args.isPlanMode]
  * @param {AbortSignal} [args.signal]
+ * @param {string|null} [args.opencodeModelId]
  * @returns {Promise<{ text: string }>}
  */
-async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false }) {
+async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false, opencodeModelId }) {
   const { OpencodeAcpClient } = await import("./opencode-acp-client.mjs");
   const { detectOpencode } = await import("./opencode-detector.mjs");
 
@@ -1050,6 +1056,21 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     binPath: detection.path,
     cwd: getWorkspace() || process.cwd(),
     clientInfo: { name: "AideAgent", version: "1.0.0" },
+    modelId: opencodeModelId || null,
+  });
+
+  // Surface ACP results to the renderer as soon as start() resolves so the
+  // model picker can populate even before the first prompt completes.
+  client.on("ready", (info) => {
+    sdr("opencode:ready", {
+      models: info.models || [],
+      modes: info.modes || [],
+      configOptions: info.configOptions || [],
+      sessionId: info.sessionId,
+      // Echo the user-selected modelId back so the renderer can mark it
+      // active even if opencode's "currentModelId" field is absent.
+      currentModelId: opencodeModelId || (info.currentModelId ?? null),
+    });
   });
 
   // 4. Wire event translators. We accumulate text + reasoning so we can

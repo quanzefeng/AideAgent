@@ -3089,10 +3089,12 @@ html, body {
   gap: 4px;
   padding: 2px 8px;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  font-weight: var(--fw-medium, 500);
+  /* Light-purple chip with deep-black text — matches the model picker
+     so the two info-bar buttons read as a unified pair. */
+  color: #1a1a1a;
+  background: #faf5ff;
+  border: 1px solid #ddd6fe;
   border-radius: 999px;
   cursor: pointer;
   transition: background var(--duration-fast, 120ms) var(--ease-out, ease),
@@ -3101,8 +3103,8 @@ html, body {
   line-height: 1.4;
 }
 .mode-button:hover {
-  background: var(--bg-card-hover, rgba(255, 255, 255, 0.04));
-  border-color: var(--border-hover, var(--accent, #9178dc));
+  background: #f3e8ff;
+  border-color: #c4b5fd;
 }
 .mode-button:focus-visible {
   outline: 2px solid var(--accent, #9178dc);
@@ -3111,6 +3113,137 @@ html, body {
 .mode-chevron {
   transition: transform var(--duration-fast, 120ms) var(--ease-out, ease);
   color: var(--text-muted);
+}
+
+/* ── OpenCode model picker (button + dropdown) ──
+   Mirrors the mode-button style for visual consistency but with a longer
+   label slot for model names. */
+.opencode-model-picker {
+  position: relative;
+  display: inline-block;
+}
+.opencode-model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: var(--fw-medium, 500);
+  /* Light-purple chip with deep-purple text — makes the picker pop
+     visually regardless of light/dark theme. */
+  color: #1a1a1a;
+  background: #faf5ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--duration-fast, 120ms) var(--ease-out, ease),
+              border-color var(--duration-fast, 120ms) var(--ease-out, ease);
+  font-family: inherit;
+  line-height: 1.4;
+  max-width: 320px;
+}
+.opencode-model-button:hover {
+  background: #f3e8ff;
+  border-color: #c4b5fd;
+}
+.opencode-model-button:focus-visible {
+  outline: 2px solid var(--accent, #9178dc);
+  outline-offset: 2px;
+}
+.opencode-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+  /* Explicit color — without this, some browsers use the parent's
+     inherited value but DevTools/Chromium can lose inheritance through
+     the .mode-* class chain. */
+  color: #1a1a1a;
+}
+.opencode-model-chevron {
+  flex-shrink: 0;
+  color: #1a1a1a;
+  transition: transform var(--duration-fast, 120ms) var(--ease-out, ease);
+}
+.opencode-model-button[aria-expanded="true"] .opencode-model-chevron {
+  transform: rotate(180deg);
+}
+.opencode-model-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 60;
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  margin: 0;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+.opencode-model-menu.hidden {
+  display: none;
+}
+.opencode-model-menu li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--duration-fast, 120ms) var(--ease-out, ease);
+  color: var(--text);
+}
+.opencode-model-menu li:hover {
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.04));
+}
+.opencode-model-menu li[aria-selected="true"] {
+  background: var(--accent-soft, rgba(145, 120, 220, 0.15));
+  color: var(--accent, #9178dc);
+}
+.opencode-model-menu .opencode-model-check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent, #9178dc);
+  opacity: 0;
+}
+.opencode-model-menu li[aria-selected="true"] .opencode-model-check {
+  opacity: 1;
+}
+.opencode-model-menu .opencode-model-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.opencode-model-menu .opencode-model-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.opencode-model-empty {
+  cursor: default !important;
+  color: var(--text-muted) !important;
+  font-style: italic;
+  justify-content: center !important;
+}
+.opencode-model-empty:hover {
+  background: transparent !important;
+}
+/* Hide the secondary id descriptor in the model picker — the dropdown is
+   compact enough that showing the full "provider/model-name" twice (button
+   label + row subtitle) is redundant. Keep the structure (so we don't have
+   to fork the renderer) but render only the friendly name. */
+#opencode-model-menu .mode-desc {
+  display: none !important;
 }
 .mode-selector.open .mode-chevron {
   transform: rotate(180deg);

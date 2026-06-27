@@ -5,8 +5,9 @@ contextBridge.exposeInMainWorld("aideagent", {
   version: process.versions.electron,
   respondPermission: (/** @type {any} */ id, /** @type {any} */ allow) => ipcRenderer.invoke("permission:respond", { id, allow }),
   onPermissionRequest: (/** @type {any} */ cb) => ipcRenderer.on("permission:request", (_event, d) => cb(d)),
-  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled, /** @type {any} */ runtime) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime }),
+  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled, /** @type {any} */ runtime, /** @type {any} */ opencodeModelId) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId }),
   detectOpencode: () => ipcRenderer.invoke("agent:detect-opencode"),
+  listOpencodeModels: () => ipcRenderer.invoke("opencode:list-models"),
   openExternal: (/** @type {any} */ url) => ipcRenderer.invoke("shell:open-external", url),
   setPlanMode: (/** @type {any} */ enabled) => ipcRenderer.invoke("plan-mode:set", enabled),
   getPlanMode: () => ipcRenderer.invoke("plan-mode:get"),
@@ -56,6 +57,10 @@ contextBridge.exposeInMainWorld("aideagent", {
   listSkills: () => ipcRenderer.invoke("skills:list"),
   loadSkill: (/** @type {any} */ name) => ipcRenderer.invoke("skills:load", name),
   onStreamStart: (/** @type {any} */ cb) => ipcRenderer.on("stream:start", () => cb()),
+  // OpenCode model picker — ACP `session/new` returns the list of
+  // available provider/model pairs. The main process forwards that via
+  // the `opencode:ready` event so the renderer's picker can populate.
+  onOpencodeModels: (/** @type {any} */ cb) => ipcRenderer.on("opencode:ready", (_event, d) => cb(d)),
   onStreamMetrics: (/** @type {any} */ cb) => ipcRenderer.on("stream:metrics", (_event, d) => cb(d)),
   onStreamChunk: (/** @type {any} */ cb) => ipcRenderer.on("stream:chunk", (_event, d) => cb(d)),
   onStreamReasoning: (/** @type {any} */ cb) => ipcRenderer.on("stream:reasoning", (_event, d) => cb(d)),

@@ -105,6 +105,22 @@ const opencodeModeLabel = $("#opencode-mode-label");
 // re-pick "计划模式" every time they restart the app. localStorage key
 // follows the existing `AideAgent_*` convention.
 const OC_MODE_KEY = "AideAgent_oc_mode";
+// OpenCode model picker — sibling of the mode selector. The DOM refs are
+// queried at module init (the picker is inside #info-bar-opencode, which
+// only mounts on welcome screen). State lives in `ocAvailableModels` /
+// `ocModelId` and is persisted to `OC_MODEL_KEY` so the choice survives
+// restart. Populated when the ACP `ready` event delivers the model list.
+const opencodeModelButton = $("#opencode-model-button");
+const opencodeModelMenu = $("#opencode-model-menu");
+const opencodeModelName = $("#opencode-model-name");
+/** @type {Array<{id:string,name:string}>} */
+let ocAvailableModels = [];
+const ocAvailableModelIds = new Set();
+let ocModelId = (() => {
+  try { return localStorage.getItem("AideAgent_opencodeModel") || null; }
+  catch { return null; }
+})();
+const OC_MODEL_KEY = "AideAgent_opencodeModel";
 let ocMode = (() => {
   const saved = (() => { try { return localStorage.getItem(OC_MODE_KEY); } catch { return null; } })();
   return saved === "default" || saved === "build" || saved === "plan" ? saved : "build";
@@ -497,6 +513,10 @@ function initOpencodeModelSelector() {
  * initOpencodeModelSelector() on init, and could be called from a "refresh"
  * button later if we add one.
  */
+// Expose on window so runtime-selector.mjs (which doesn't import app.js)
+// can trigger a refresh on every runtime switch. Idempotent.
+if (typeof window !== "undefined") window.__refreshOpencodeModels = () => refreshOpencodeModels();
+
 async function refreshOpencodeModels() {
   if (!window.aideagent?.listOpencodeModels) return;
   try {
@@ -514,7 +534,7 @@ async function refreshOpencodeModels() {
       }
       // Re-render the picker (the selector might not be visible yet, but
       // this updates the label + aria-selected for when it is).
-      const menu = document.getElementById("opencode-model-menu-list");
+      const menu = document.getElementById("opencode-model-menu");
       const name = document.getElementById("opencode-model-name");
       if (menu && name) {
         const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1357,7 +1377,12 @@ async function submitQuery() {
     const agentName = loadAgentName();
     const kbEnabled = document.getElementById("kb-toggle")?.checked || false;
     const webSearchEnabled = document.getElementById("web-search-toggle")?.checked ?? true;
-    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime());
+    // When runtime=opencode, the AideAgent API config (`cfg.model`) is
+    // ignored — opencode uses its own model selection. Forward the user's
+    // picker choice (or null = opencode default) so the main process can
+    // pass it to ACP `session/new`.
+    const opencodeModelId = getCurrentRuntime() === "opencode" ? ocModelId : null;
+    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime(), opencodeModelId);
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -1903,6 +1928,11 @@ function setupIPC() {
     state._cacheMetrics = null;
   });
 
+  // OpenCode model picker — main process forwards ACP `session/new`
+  // results via the `opencode:ready` event channel. Wire it now so the
+  // picker is populated as soon as opencode spawns.
+  wireOpencodeModelsStreamListener();
+
   onIpc("onStreamMetrics", (data) => {
     state._cacheMetrics = data;
   });
@@ -2429,6 +2459,7 @@ initInputMenu();
 filePreviews.init();
 if (ocFileInput) ocFilePreviews.init();
 initOpencodeModeSelector();
+initOpencodeModelSelector();
 setupIPC();
 loadAvatar();
 initAgentNameUI();
@@ -2436,6 +2467,12 @@ applyAgentName(loadAgentName());
 initUserAvatarUI();
 applyUserName(loadUserName());
 initRuntimeSelector();
+// Kick off the OpenCode model fetch so the picker is populated even
+// before the user clicks the runtime card. The fetch is cheap (single
+// `opencode models` CLI call, ~200ms) and idempotent.
+if (typeof window.__refreshOpencodeModels === "function") {
+  window.__refreshOpencodeModels();
+}
 updateConfigBanner();
 // Session info: wrap localStorage.setItem so any write to an
 // `AideAgent_*` key auto-pushes the snapshot to main. After install,

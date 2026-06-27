@@ -44,14 +44,24 @@ export class OpencodeAcpClient extends EventEmitter {
    * @param {string} [opts.cwd] Working directory for the agent session.
    * @param {object} [opts.clientInfo] Identifies us in the initialize handshake.
    * @param {Array<object>} [opts.mcpServers] MCP server configs forwarded to opencode.
+   * @param {string|null} [opts.modelId] Optional model id (e.g. "anthropic/claude-sonnet-4").
+   *   Forwarded to ACP `session/new` so opencode binds that model. When null,
+   *   opencode picks its own default.
    */
-  constructor({ binPath, cwd, clientInfo, mcpServers = [] } = {}) {
+  constructor({ binPath, cwd, clientInfo, mcpServers = [], modelId } = {}) {
     super();
     if (!binPath) throw new Error("OpencodeAcpClient: binPath required");
     this.binPath = binPath;
     this.cwd = cwd || process.cwd();
     this.clientInfo = clientInfo || { name: "AideAgent", version: "1.0.0" };
     this.mcpServers = mcpServers;
+    /**
+     * Optional model id forwarded to ACP `session/new`. When null, opencode
+     * picks its own default (usually models[0]). When set, opencode is told
+     * to bind the session to that provider/model pair.
+     * @type {string|null}
+     */
+    this.modelId = modelId;
 
     /** @type {import('node:child_process').ChildProcess|null} */
     this.proc = null;
@@ -147,12 +157,36 @@ export class OpencodeAcpClient extends EventEmitter {
     }
 
     // 3. Create a session. JSON-RPC method is `session/new` (slash-separated).
-    const sessionResult = await this._request("session/new", {
+    // The `modelId` parameter exists in the ACP spec but opencode v1.17
+    // silently ignores it — the spawned session always picks its own
+    // default model. We deliberately do NOT pass modelId here; the actual
+    // switch happens via `session/set_config_option` after the session is
+    // created (see step 4 below).
+    const newSessionParams = {
       cwd: this.cwd,
       mcpServers: this.mcpServers,
-    });
+    };
+    const sessionResult = await this._request("session/new", newSessionParams);
     this._sessionId = sessionResult.sessionId;
     if (!this._sessionId) throw new Error("session/new returned no sessionId");
+
+    // 4. Apply the user-selected model via config update. ACP `session/set_config_option`
+    //    is the only path opencode actually honors — passing `modelId` to
+    //    `session/new` is silently dropped. Verified empirically with v1.17.11.
+    //    No-op when no modelId was set (opencode picks its own default).
+    if (this.modelId) {
+      try {
+        await this._request("session/set_config_option", {
+          sessionId: this._sessionId,
+          configId: "model",
+          value: this.modelId,
+        });
+      } catch (/** @type {any} */ e) {
+        // Non-fatal: fall back to opencode's default model and surface the
+        // failure in the ready event so the renderer can warn the user.
+        console.warn(`[OpencodeAcpClient] failed to set model ${this.modelId}: ${e.message}`);
+      }
+    }
 
     const result = {
       sessionId: this._sessionId,

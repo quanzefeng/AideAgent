@@ -218,6 +218,12 @@ function _applyRuntimeSwitch(rt, persist = true) {
   setActiveCard(rt);
   switchInputBox(rt);
   if (persist) saveRuntime(rt);
+  // Trigger the model picker refresh whenever the user lands on OpenCode.
+  // refreshOpencodeModels is defined in app.js and is idempotent — safe to
+  // call on every switch (including aide→opencode and opencode→aide).
+  if (rt === "opencode" && typeof window.__refreshOpencodeModels === "function") {
+    window.__refreshOpencodeModels();
+  }
 }
 
 /**

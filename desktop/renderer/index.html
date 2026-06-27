@@ -995,7 +995,19 @@ brew install opencode</pre>
             </div>
           </div>
           <div id="info-bar-opencode">
-            <span id="opencode-model-name" class="opencode-model-name">OpenCode</span>
+            <div class="opencode-model-picker" id="opencode-model-selector">
+              <button type="button" id="opencode-model-button" class="opencode-model-button" aria-haspopup="listbox" aria-expanded="false" title="点击切换 OpenCode 模型">
+                <span id="opencode-model-name" class="opencode-model-name">OpenCode</span>
+                <svg class="opencode-model-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <ul id="opencode-model-menu" class="opencode-model-menu hidden" role="listbox">
+                <!-- Populated dynamically when ACP advertises models via opencode:ready.
+                     Placeholder keeps the menu clickable even before the first prompt. -->
+                <li class="opencode-model-empty" role="presentation">
+                  <span class="opencode-model-empty-text" data-i18n="opencode.model.loading">加载中…</span>
+                </li>
+              </ul>
+            </div>
             <!-- OpenCode mode selector — dropdown with 3 options:
                  default | build | plan. Click the button to open the menu. -->
             <div class="mode-selector" id="opencode-mode-selector">

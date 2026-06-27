@@ -169,7 +169,16 @@ app.whenReady().then(async () => {
       const vault = kb.getVault();
       if (vault) {
         // Start the watcher first so future changes are caught live.
-        kb.startWatcher().catch((e) => console.error("[kb] watcher start:", e.message));
+        // startWatcher is synchronous (returns { ok, error }); wrap in try/catch
+        // instead of `.catch()` which doesn't exist on plain objects.
+        try {
+          const res = kb.startWatcher();
+          if (res && res.error && res.error !== "already watching") {
+            console.warn("[kb] watcher start:", res.error);
+          }
+        } catch (e) {
+          console.error("[kb] watcher start:", e.message);
+        }
         // Then do a one-time sync to catch anything that changed while offline.
         // Run async — don't block app startup on KB indexing.
         (async () => {

@@ -12,7 +12,7 @@ import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
 import { scanSkills } from "./skill-scanner.mjs";
-import { detectOpencode } from "./opencode-detector.mjs";
+import { detectOpencode, listOpencodeModels } from "./opencode-detector.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -55,6 +55,12 @@ export function registerIpcHandlers() {
     try { return await detectOpencode(); }
     catch (/** @type {any} */ e) { return { installed: false, path: null, version: null, available: false, reason: "error", error: e.message }; }
   });
+  // List available OpenCode models without spawning a full ACP session.
+  // Populates the renderer's model picker BEFORE the first prompt.
+  ipcMain.handle("opencode:list-models", async () => {
+    try { return await listOpencodeModels(); }
+    catch (/** @type {any} */ e) { console.warn("[ipc] opencode:list-models failed:", e.message); return []; }
+  });
 
   // Open an external URL in the user's default browser (used by the opencode
   // install-guide modal). Validated to http(s) AND restricted to an allow-list
@@ -87,13 +93,13 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide" }) => {
+  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null }) => {
     setPlanMode(!!pm);
     setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
-    console.log("[plan-mode] query:submit planMode =", getPlanMode(), "pm =", pm);
+    console.log("[query:submit] runtime =", runtime, "opencodeModelId =", opencodeModelId, "planMode =", getPlanMode(), "pm =", pm);
     if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
     sendToRenderer("stream:start", {});
-    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime); }
+    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
     catch (/** @type {any} */ err) { sendToRenderer("stream:error", { message: err.message }); }
     sendToRenderer("stream:done", {});
   });
