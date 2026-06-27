@@ -15,6 +15,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["core/**/*", "*.mjs", "preload.cjs", "renderer/**/*"],
+  "include": ["core/**/*", "*.mjs", "preload.cjs", "renderer/**/*", "types/**/*"],
   "exclude": ["node_modules", "test/**", "test-results/**", "playwright-report/**", "dist/**", "models/**", "release/**", "scripts/**"]
 }

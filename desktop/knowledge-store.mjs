@@ -174,8 +174,24 @@ export function getStatus() {
     const embeddedCount = Number(db.prepare("SELECT COUNT(*) as count FROM kb_embeddings").get()?.count ?? 0);
     const watcherActive = !!_watcher;
     const cfg = getConfig();
+    const vault = getVault();
+
+    // Format breakdown — kb_notes has no format column, derive from rel_path
+    // extension. Useful for "why isn't kb_get_note returning my .pdf?" answers.
+    const extRows = db.prepare(
+      "SELECT rel_path FROM kb_notes"
+    ).all();
+    /** @type {Record<string, number>} */
+    const formatBreakdown = {};
+    for (const r of extRows) {
+      const m = String(r.rel_path || "").match(/\.([^./\\]+)$/);
+      const ext = m ? "." + m[1].toLowerCase() : "(none)";
+      formatBreakdown[ext] = (formatBreakdown[ext] || 0) + 1;
+    }
+
     return {
-      vault: getVault(),
+      vault,
+      vaultExists: !!vault && existsSync(vault),
       noteCount,
       chunkCount,
       embeddedCount,
@@ -184,6 +200,14 @@ export function getStatus() {
       maxBodyChars: cfg.maxBodyChars,
       autoDetectedMaxBodyChars: getAutoDetectedMaxBodyChars(),
       effectiveMaxBodyChars: getEffectiveMaxBodyChars(),
+      // Per-extension counts — agents can see "yes, KB indexed 1 PDF"
+      // without having to list every note.
+      formatBreakdown,
+      // What formats the user has enabled in Settings. If formatBreakdown
+      // shows .pdf=0 but enabledFormats.pdf=true, the vault has no PDFs
+      // yet (or they're filtered). If enabledFormats.pdf=false, KB is
+      // intentionally skipping them.
+      enabledFormats: cfg.enabledFormats || {},
       // Expose error counters so operators can detect degraded operation
       // (silent FTS drift, embed failures, etc.) without grepping logs.
       errorCounts: getErrorCounts(),

@@ -21,6 +21,7 @@ import * as docxExtractor from "./docx.mjs";
 import * as pptxExtractor from "./pptx.mjs";
 import * as csvExtractor from "./csv.mjs";
 import * as xlsxExtractor from "./xlsx.mjs";
+import * as pdfExtractor from "./pdf.mjs";
 
 // ── Extractor interface (JSDoc) ──────────────────────────────────
 /**
@@ -37,6 +38,9 @@ import * as xlsxExtractor from "./xlsx.mjs";
 // pdf-parse), the import cost is ~150KB each — negligible compared
 // to Electron's 200MB baseline. If this grows significantly, switch
 // to dynamic import() with a cache.
+// NOTE: pdf-parse is lazy-loaded inside pdf.mjs due to a known CJS
+// import quirk (reads a test file on load). Keep the static import
+// above for the registry, but pdf.mjs handles the heavy part lazily.
 /** @type {Record<string, Extractor>} */
 const EXTRACTORS = {
   markdown: markdownExtractor,
@@ -44,7 +48,7 @@ const EXTRACTORS = {
   pptx: pptxExtractor,
   csv: csvExtractor,
   xlsx: xlsxExtractor,
-  // pdf will be added after spike validation.
+  pdf: pdfExtractor,
 };
 
 /**

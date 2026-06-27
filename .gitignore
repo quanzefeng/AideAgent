@@ -6,3 +6,5 @@ desktop/release/
 *.txt
 # Per-user skill name translations (Phase 2)
 **/skill-translations.json
+# pdf-parse v1 test data workaround (dummy file for import)
+desktop/test/

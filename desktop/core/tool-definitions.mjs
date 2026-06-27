@@ -416,7 +416,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "kb_get_note",
-      description: "Read the full content of a specific note from the knowledge base.\n\nUSE for: after `kb_search` returns a result and you need the full text of a specific note; or when you know the exact path.\n\nDO NOT use for: searching (use `kb_search`); reading current project files (use `file_read`).",
+      description: "Read the full content of a specific note from the knowledge base.\n\nUSE for: after `kb_search` returns a result and you need the full text of a specific note; or when you know the exact path.\n\nSupports .md/.markdown text notes AND binary formats (.pdf/.docx/.pptx/.xlsx) — binary formats return extracted text reconstructed from KB chunks (not raw bytes). The response always has a `content` string field, plus optional `format` (e.g. \"pdf\") and `chunks` (array of {heading, content}) for structured access.\n\nDO NOT use for: searching (use `kb_search`); reading current project files (use `file_read`).",
       parameters: {
         type: "object", properties: {
           path: { type: "string", description: "Relative path of the note (e.g. 'folder/note.md')" },

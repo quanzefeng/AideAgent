@@ -1006,10 +1006,21 @@ export async function runTool(tc) {
         if (!notePath) return { error: "path required" };
         const note = kb.getNote(notePath);
         if (!note) return { error: `Note not found: ${notePath}` };
+        const maxChars = kb.getConfig().maxChars || 10000;
+        // For binary formats (PDF/DOCX/PPTX/XLSX), getNote returns
+        // { content: null, chunks: [...] }. Stitch chunks into a string
+        // so the agent's `result.content.slice(...)` pattern keeps working
+        // across all formats. format + chunks are also exposed for callers
+        // that want structured access.
+        const text = note.content !== null
+          ? note.content
+          : (note.chunks || []).map((/** @type {any} */ c) => c.content).join("\n\n");
         return {
           path: note.rel_path,
           title: note.title,
-          content: note.content.slice(0, kb.getConfig().maxChars || 10000),
+          content: text.slice(0, maxChars),
+          format: note.format || null,
+          chunks: note.chunks || null,
         };
       } catch (e) { return { error: e.message }; }
     }

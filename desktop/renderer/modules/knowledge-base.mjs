@@ -85,7 +85,7 @@ export async function loadKnowledgeBasePanel() {
     }
 
     // Format toggles
-    const formatDefaults = { docx: true, pptx: true, csv: false, xlsx: false };
+    const formatDefaults = { docx: true, pptx: true, csv: false, xlsx: false, pdf: false };
     const enabledFormats = cfg.enabledFormats ? { ...formatDefaults, ...cfg.enabledFormats } : formatDefaults;
     for (const [fmt, def] of Object.entries(formatDefaults)) {
       const cb = /** @type {HTMLInputElement | null} */ (document.getElementById(`kb-format-${fmt}`));

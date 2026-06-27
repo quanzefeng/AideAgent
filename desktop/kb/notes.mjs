@@ -11,7 +11,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync, statSync } from "fs";
-import { join, dirname, basename } from "path";
+import { join, dirname, basename, extname } from "path";
 import { getDb } from "./db.mjs";
 import { getVault, getEffectiveMaxBodyChars } from "./config.mjs";
 import { isSafeVaultPath } from "./vault-scanner.mjs";
@@ -20,6 +20,14 @@ import { embedText, getEmbeddingDim } from "./embedder.mjs";
 import { vectorToBuffer } from "./vector-math.mjs";
 import { stripNoteBody, stripMarkdown, splitIntoChunks, extractTitle, extractTags } from "./markdown.mjs";
 import { ftsInsertChunk } from "./search.mjs";
+
+/**
+ * KB-indexed binary formats — these are ZIP/PDF containers, not raw text.
+ * getNote() must NOT readFileSync() them as utf-8 (silently corrupts bytes).
+ * Instead, return the chunks array (already extracted during indexing).
+ * Text formats (.md/.csv/.tsv) keep the raw-read path.
+ */
+const BINARY_KB_FORMATS = new Set([".pdf", ".docx", ".pptx", ".xlsx"]);
 
 export function listNotes(offset = 0, limit = 50) {
   const db = getDb();
@@ -51,14 +59,33 @@ export function getNote(relPath) {
   try {
     const note = db.prepare("SELECT * FROM kb_notes WHERE rel_path = ?").get(relPath);
     if (!note) return null;
-    // Read actual file content
-    const fullPath = join(getVault(), relPath);
-    const content = readFileSync(fullPath, "utf-8");
-    return {
+
+    const ext = extname(relPath).toLowerCase();
+    const isBinary = BINARY_KB_FORMATS.has(ext);
+
+    /** @type {any} */
+    const result = {
       ...note,
       tags: JSON.parse(String(note.tags || "[]")),
-      content,
     };
+
+    if (isBinary) {
+      // Binary formats — never read raw bytes (PDF/DOCX/PPTX/XLSX are
+      // binary containers; utf-8 decoding corrupts them).
+      // Return extracted chunks from the KB index instead.
+      const chunks = db.prepare(
+        "SELECT chunk_index, heading, content FROM kb_chunks WHERE note_id = ? ORDER BY chunk_index"
+      ).all(note.id);
+      result.chunks = chunks;
+      result.content = null; // explicit null — signals "not raw text"
+      result.format = ext.slice(1); // "pdf", "docx", etc.
+    } else {
+      // Text formats — read raw file (current behavior)
+      const fullPath = join(getVault(), relPath);
+      result.content = readFileSync(fullPath, "utf-8");
+    }
+
+    return result;
   } catch (/** @type {any} */ e) {
     // getNote is read-only; on missing file or DB error, return null and log.
     _logError("db", e);
