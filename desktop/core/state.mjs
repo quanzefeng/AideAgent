@@ -121,6 +121,39 @@ export let sessionId = null;
 export function setSessionId(id) { sessionId = id; }
 export function getSessionId() { return sessionId; }
 
+/**
+ * Long-lived `OpencodeAcpClient` instance reused across consecutive prompts
+ * within the same OpenCode runtime session. Without this cache, every user
+ * message would spawn a brand-new `opencode acp` subprocess + `session/new`,
+ * causing total context loss between turns.
+ *
+ * Lifecycle:
+ *   - Created on the first `runOpencodeAcp()` call after a session reset (or
+ *     on the very first call ever).
+ *   - Reused on subsequent `runOpencodeAcp()` calls in the same session.
+ *   - Cleared on `session:reset` (ipc-handlers.mjs) and on subprocess crash.
+ *
+ * The cached instance is only "alive" when `!_closed && proc && !proc.killed`.
+ * Consumers must check `isOpencodeAcpClientAlive(cached)` before reuse.
+ *
+ * @type {import("./opencode-acp-client.mjs").OpencodeAcpClient|null}
+ */
+export let opencodeAcpClient = null;
+export function setOpencodeAcpClient(c) { opencodeAcpClient = c; }
+export function getOpencodeAcpClient() { return opencodeAcpClient; }
+/**
+ * Test if the cached ACP client is still connected to a live subprocess.
+ * Returns false when the client is null, has been stopped, or its process
+ * has exited.
+ */
+export function isOpencodeAcpClientAlive(client = opencodeAcpClient) {
+  if (!client) return false;
+  // Private fields — guarded reads.
+  if (client._closed) return false;
+  if (!client.proc || client.proc.killed || client.proc.exitCode !== null) return false;
+  return true;
+}
+
 export let history = [];
 export function setHistory(h) { history = h; }
 export function getHistory() { return history; }

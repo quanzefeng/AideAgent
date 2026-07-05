@@ -25,6 +25,7 @@ import {
   pendingPerms, _askResolvers,
   setLastApiConfig,
   sendToRenderer, getRendererBuffer, clearRendererBuffer,
+  getOpencodeAcpClient, setOpencodeAcpClient,
 } from "./state.mjs";
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
 import { hasPersistedWorkspace } from "./workspace-config.mjs";
@@ -138,6 +139,16 @@ export function registerIpcHandlers() {
     resetPromptCache(); // P0: invalidate stale system prompt cache from previous session
     // P3: drop any pending long-task resume marker for the old session.
     if (sessionId) { try { sessionDb.clearTurnProgress(sessionId); } catch { /* ignored */ } }
+    // Tear down any cached OpenCode ACP subprocess so the next "new chat"
+    // starts a fresh ACP session. Without this, a reset → first-prompt
+    // path would reuse the prior session's context (a worse leak than
+    // the original bug). Best-effort: stop() can throw if the process
+    // already exited, and that's fine.
+    const cachedOpencode = getOpencodeAcpClient();
+    if (cachedOpencode) {
+      try { await cachedOpencode.stop(); } catch { /* ignore */ }
+      setOpencodeAcpClient(null);
+    }
     sendToRenderer("task:clear", {});
   });
 

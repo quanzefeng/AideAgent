@@ -21,6 +21,7 @@ import {
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
   resetSurfacedMemories, bumpTurnCounter,
+  getOpencodeAcpClient, setOpencodeAcpClient, isOpencodeAcpClientAlive,
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
@@ -1052,31 +1053,98 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
   if (inlineText) promptBlocks.push({ type: "text", text: inlineText });
 
   // 3. Spawn + initialize the ACP client.
-  const client = new OpencodeAcpClient({
-    binPath: detection.path,
-    cwd: getWorkspace() || process.cwd(),
-    clientInfo: { name: "AideAgent", version: "1.0.0" },
-    modelId: opencodeModelId || null,
-  });
+  //
+  // REUSE POLICY: a cached `OpencodeAcpClient` (kept in module state by
+  // state.mjs) survives across consecutive prompts in the same session.
+  // Without this, every user message spawns a fresh subprocess + session,
+  // losing all prior conversation context — this was the bug fixed in v1.29.
+  //
+  // We reuse when the cached client is alive AND nothing about the
+  // environment changed that requires a fresh process:
+  //   - cached._sessionId must exist (start() completed)
+  //   - opencode binary path must still match the detected one (rare —
+  //     covers reinstalls / multi-version PATH)
+  //   - cwd must still match (user switched workspace mid-session)
+  //   - if modelId changed, we apply it via session/set_config_option on
+  //     the existing session instead of spawning a new one.
+  //
+  // When reusing, we skip start() and the modelId is applied via
+  // `applyModelIfNeeded` below. When the cache is stale/missing, we spawn
+  // a fresh client and run the full handshake.
+  const cached = getOpencodeAcpClient();
+  const targetCwd = getWorkspace() || process.cwd();
+  // isOpencodeAcpClientAlive() returns false when `cached` is null, but TS
+  // can't see through the optional default → narrow explicitly.
+  const cachedAlive = cached !== null && isOpencodeAcpClientAlive(cached);
+  const canReuse = cachedAlive
+    && cached.binPath === detection.path
+    && cached.cwd === targetCwd
+    && cached._sessionId;
 
-  // Surface ACP results to the renderer as soon as start() resolves so the
-  // model picker can populate even before the first prompt completes.
-  client.on("ready", (info) => {
-    sdr("opencode:ready", {
-      models: info.models || [],
-      modes: info.modes || [],
-      configOptions: info.configOptions || [],
-      sessionId: info.sessionId,
-      // Echo the user-selected modelId back so the renderer can mark it
-      // active even if opencode's "currentModelId" field is absent.
-      currentModelId: opencodeModelId || (info.currentModelId ?? null),
+  /** @type {import("./opencode-acp-client.mjs").OpencodeAcpClient} */
+  let client;
+  let clientOwnedByCache = false;  // true if we created a new client this turn
+
+  if (canReuse && cached) {
+    // Reuse path: keep the subprocess + ACP session alive across prompts so
+    // the agent sees the full conversation context.
+    client = cached;
+    console.log(`[runOpencodeAcp] reusing cached ACP client (sessionId=${cached._sessionId}, modelId=${cached.modelId})`);
+    // Push the prompt blocks via the existing session. The model's existing
+    // context (prior turns) is preserved server-side because the ACP session
+    // is the same.
+  } else {
+    // Cold path: spawn a fresh subprocess + initialize + session/new.
+    // If a stale cached client exists (dead/different binPath/cwd), tear it
+    // down before replacing so we don't leak the old subprocess.
+    if (cached && !isOpencodeAcpClientAlive(cached)) {
+      try { await cached.stop(); } catch { /* ignore */ }
+      setOpencodeAcpClient(null);
+    }
+    client = new OpencodeAcpClient({
+      binPath: detection.path,
+      cwd: targetCwd,
+      clientInfo: { name: "AideAgent", version: "1.0.0" },
+      modelId: opencodeModelId || null,
     });
-  });
+    setOpencodeAcpClient(client);
+    clientOwnedByCache = true;
+
+    // Surface ACP results to the renderer as soon as start() resolves so the
+    // model picker can populate even before the first prompt completes.
+    client.on("ready", (info) => {
+      sdr("opencode:ready", {
+        models: info.models || [],
+        modes: info.modes || [],
+        configOptions: info.configOptions || [],
+        sessionId: info.sessionId,
+        // Echo the user-selected modelId back so the renderer can mark it
+        // active even if opencode's "currentModelId" field is absent.
+        currentModelId: opencodeModelId || (info.currentModelId ?? null),
+      });
+    });
+  }
 
   // 4. Wire event translators. We accumulate text + reasoning so we can
   //    persist them into the session DB the same way the cloud path does.
   //    `allHistory` captures the full conversation including tool calls so
   //    session reload shows the complete chain — not just first+last message.
+  //
+  //    CRITICAL — LISTENER LEAK FIX (added with ACP session reuse):
+  //    When the client is reused across turns, every previously-registered
+  //    listener is still attached. EventEmitter.on() appends, not replaces,
+  //    so each turn's registration would stack on top of the previous one.
+  //    Symptom: turn 1 normal, turn 2 each chunk fires 2x, turn 3 each
+  //    chunk fires 3x — text appears duplicated/tripled/etc. in the
+  //    renderer. Remove existing listeners for these events before
+  //    re-registering so each turn has exactly one set.
+  client.removeAllListeners("text-chunk");
+  client.removeAllListeners("reasoning-chunk");
+  client.removeAllListeners("tool-start");
+  client.removeAllListeners("tool-result");
+  client.removeAllListeners("auth-required");
+  client.removeAllListeners("permission-request");
+
   let allText = "";
   let allReasoning = "";
   /** @type {Array<{role:string, content:string, tool_name?:string, tool_args?:string, tool_result?:string}>} */
@@ -1160,12 +1228,12 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     await client.start();
     sdr("session:update", { sessionId });
 
-    // After start() the agent has advertised its prompt capabilities via
+// After start() the agent has advertised its prompt capabilities via
     // `initialize`. Now we can route binaryFiles (images + non-text
     // attachments) through buildFileBlocks, which uses {type:"image"} when
     // the agent supports it or writes a temp file + resource_link otherwise.
-    // Any file buildFileBlocks drops (e.g. empty payload) is surfaced to
-    // the user — no silent drops.
+    // Any file buildFileBlocks drops (e.g. empty payload) is surfaced to the
+    // user — no silent drops.
     if (binaryFiles.length > 0) {
       const { blocks, tempDir, dropped } = client.buildFileBlocks(binaryFiles);
       fileTempDir = tempDir;
@@ -1173,6 +1241,30 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
       for (const d of dropped) {
         sdr("stream:error", {
           message: `附件 "${d.name}" 未发送：${d.reason}`,
+          nonFatal: true,
+        });
+      }
+    }
+
+    // Mid-conversation model switch: if the user picked a different model
+    // between turns (or this is the very first prompt but a modelId was
+    // supplied), apply it via session/set_config_option before sending.
+    // Required because session/new silently ignores modelId in opencode
+    // v1.17.x — set_config_option is the only reliable path. See
+    // opencode-acp-client.mjs _start() for the same pattern on cold start.
+    if (opencodeModelId && client.modelId !== opencodeModelId) {
+      try {
+        await client._request?.("session/set_config_option", {
+          sessionId: client._sessionId,
+          configId: "model",
+          value: opencodeModelId,
+        });
+        client.modelId = opencodeModelId;
+        console.log(`[runOpencodeAcp] switched model mid-session to ${opencodeModelId}`);
+      } catch (/** @type {any} */ e) {
+        console.warn(`[runOpencodeAcp] model switch to ${opencodeModelId} failed: ${e.message}`);
+        sdr("stream:error", {
+          message: `切换模型到 ${opencodeModelId} 失败：${e.message}（继续使用当前模型）`,
           nonFatal: true,
         });
       }
@@ -1197,7 +1289,32 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     return { text: allText };
   } finally {
     if (signal) signal.removeEventListener("abort", onAbort);
-    try { await client.stop(); } catch { /* ignore */ }
+    // CRITICAL: only stop the client if it's no longer alive OR we just
+    // created it on the cold path and the subprocess crashed mid-turn.
+    // On the reuse path we deliberately keep the subprocess alive so the
+    // next user message in the same session sees the full conversation.
+    if (clientOwnedByCache) {
+      // Cold path this turn: client is "ours" for now. Keep it cached for
+      // the next prompt UNLESS it died during the turn. On the next call,
+      // canReuse will be false (because isOpencodeAcpClientAlive() returns
+      // false) and we'll spawn fresh — but at least the user gets one good
+      // turn on the cold path. If the client died, evict it so we don't
+      // hand a dead instance to the next caller.
+      if (!isOpencodeAcpClientAlive(client)) {
+        try { await client.stop(); } catch { /* ignore */ }
+        setOpencodeAcpClient(null);
+        console.log("[runOpencodeAcp] cold-path client died during turn, evicted from cache");
+      }
+      // else: alive → keep in cache for the next prompt
+    } else {
+      // Reuse path: explicitly do NOT stop. The client is shared with future
+      // prompts; tearing it down would defeat the whole point of caching.
+      // If it's somehow dead, evict the cache so the next turn spawns fresh.
+      if (!isOpencodeAcpClientAlive(client)) {
+        setOpencodeAcpClient(null);
+        console.log("[runOpencodeAcp] reused client died mid-turn, evicted from cache");
+      }
+    }
     // Clean up any temp dir created by buildFileBlocks (resource_link
     // fallback for binary files). Safe to call with null.
     try { client.cleanupFileBlocks(fileTempDir); } catch { /* ignore */ }

@@ -131,7 +131,7 @@ Supported file formats (toggleable in Settings → Knowledge Base):
 - **PowerPoint** — `.pptx` (default on, parsed via direct OOXML XML extraction)
 - **CSV / TSV** — `.csv` / `.tsv` (default off, each row → "column: value" sentence)
 - **Excel** — `.xlsx` (default off, parsed via SheetJS, multi-sheet support)
-- **PDF** — `.pdf` (planned for v1.28, pending extraction-quality validation)
+- **PDF** — `.pdf` (shipped in v1.29, parsed via `pdf-parse`)
 
 Under the hood: SQLite + FTS5 full-text search + ONNX running a local embedding model (`all-MiniLM-L6-v2`, 384 dimensions), fused with RRF. Fully offline. Nothing leaves your machine.
 
