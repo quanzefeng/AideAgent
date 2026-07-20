@@ -87,6 +87,17 @@ function getFtsDb() {
 }
 
 /**
+ * Close the FTS SQLite handle. Called by main.mjs on `will-quit` so the
+ * SQLite WAL journal is checkpointed cleanly and the `.db` file is not left
+ * locked on Windows. Safe to call when the handle hasn't been opened.
+ */
+export function closeFtsDb() {
+  if (!_ftsDb) return;
+  try { _ftsDb.close(); } catch { /* ignore — already closed or invalid */ }
+  _ftsDb = null;
+}
+
+/**
  * @param {string} filename
  */
 function ftsDelete(filename) {

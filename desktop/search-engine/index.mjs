@@ -6,9 +6,14 @@
 // All fire in parallel; failures are collected silently.
 // Results are deduplicated by URL + title similarity and sorted.
 
-// ── In-memory Cache ─────────────────────────────────────────────
+// ── In-memory Cache (LRU, bounded) ────────────────────────────
+// Map preserves insertion order in JS, so the oldest entry is always at
+// the front. When size exceeds CACHE_MAX, the oldest entries are evicted.
+// Without a size bound, a long session with many unique queries would
+// grow the cache without limit.
 const cache = new Map();
 const CACHE_TTL = 60_000;
+const CACHE_MAX = 200;
 
 /**
  * @typedef {Object} SearchResult
@@ -37,6 +42,16 @@ function cacheGet(key) {
 /** @param {string} key @param {*} data @param {number} [ttl] */
 function cacheSet(key, data, ttl = CACHE_TTL) {
   cache.set(key, { data, expiry: Date.now() + ttl });
+  // Evict oldest entries past CACHE_MAX. Map iteration is in insertion
+  // order, so the first key is always the oldest. We delete in a loop
+  // (rather than computing a count) so a single `set` never leaves the
+  // cache above the bound even if many entries were stale-expired in
+  // one go.
+  while (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
 }
 
 // ── Source Health Tracking ──────────────────────────────────────

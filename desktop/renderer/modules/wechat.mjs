@@ -29,6 +29,14 @@
 export function createWechatPanel({ t, loadApiConfig }) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let _wxPollTimer = null;
+  // Guard against IPC listener stacking. `window.aideagent.onWechatBotStatus`
+  // and `onWechatIncoming` register a permanent ipcRenderer.on() listener
+  // each call (preload.cjs uses ipcRenderer.on, not .once). If this panel
+  // is rebuilt (e.g. settings tab toggled, or app re-rendered), each new
+  // init would append another listener and old ones would fire forever
+  // with stale DOM references. Same pattern as update-toast's
+  // __updateToastWired guard — see P1-4 audit.
+  let _wechatIpcWired = false;
 
   /** Fetch the current WeChat login status and update the badge. */
   async function initWechatStatus() {
@@ -203,8 +211,11 @@ export function createWechatPanel({ t, loadApiConfig }) {
 
   // ── Main-process event listeners ───────────────────────────
 
-  // Bot status updates from main process
-  if (typeof window.aideagent.onWechatBotStatus === "function") {
+  // Bot status updates from main process — guard against double-wiring
+  // (preload.cjs uses ipcRenderer.on which appends; without this guard
+  // every panel rebuild stacks another listener).
+  if (!_wechatIpcWired && typeof window.aideagent.onWechatBotStatus === "function") {
+    _wechatIpcWired = true;
     window.aideagent.onWechatBotStatus((data) => {
       if (data.status === "connected") updateWechatUI({ loggedIn: true, status: "running" });
       else if (data.status === "disconnected") updateWechatUI({ loggedIn: false });
@@ -212,7 +223,8 @@ export function createWechatPanel({ t, loadApiConfig }) {
   }
 
   // Incoming message notifications
-  if (typeof window.aideagent.onWechatIncoming === "function") {
+  if (!_wechatIpcWired && typeof window.aideagent.onWechatIncoming === "function") {
+    _wechatIpcWired = true;  // re-set is fine — first guard above already flipped it
     window.aideagent.onWechatIncoming((data) => {
       showWxStatus(t("social.incoming", { text: data.text }), "info");
       setTimeout(hideWxStatus, 5000);

@@ -96,9 +96,19 @@ export class OpencodeAcpClient extends EventEmitter {
      * @returns {Promise<{ sessionId: string, models?: Array<object>, modes?: Array<object> }>}
      */
   async start() {
+    // Synchronously stamp _readyPromise BEFORE the first await in _start().
+    // The previous version assigned it AFTER the `if` check, leaving a
+    // tiny window where two concurrent start() calls could both pass the
+    // check and both enter _start(), spawning two `opencode acp` subprocesses.
+    // The first subprocess's sessionId would be lost when the second call
+    // overwrote _readyPromise, leaving the first as an orphan.
     if (this._readyPromise) return this._readyPromise;
-    this._readyPromise = this._start();
-    return this._readyPromise;
+    const p = this._start();
+    this._readyPromise = p;
+    // Swallow rejection here so the cached promise doesn't trigger
+    // unhandled-rejection warnings; start()'s awaiter still sees it.
+    p.catch(() => {});
+    return p;
   }
 
   async _start() {

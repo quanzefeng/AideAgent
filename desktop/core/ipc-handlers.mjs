@@ -765,7 +765,25 @@ export function registerIpcHandlers() {
     return store[provider] || null;
   });
 
+  // Read-only env access for renderer-side features that need to know things
+  // like the user's PATH, HOME, or locale. SECURITY: We do NOT expose the
+  // full environment to the renderer — a Skill's rendered output could read
+  // AWS keys, GitHub tokens, or any other secret in process.env via a
+  // crafted <script> tag. Allow-list only the harmless env vars a UI feature
+  // might legitimately need; everything else is rejected with null.
   ipcMain.handle("env:get", (_event, name) => {
+    if (typeof name !== "string") return null;
+    const ALLOWED = new Set([
+      "PATH", "Path",                       // locate binaries
+      "HOME", "USERPROFILE",                // user home
+      "USER", "USERNAME",                   // username
+      "LANG", "LC_ALL", "LANGUAGE",         // locale
+      "TZ",                                  // timezone
+      "SHELL", "ComSpec",                    // default shell (Windows)
+      "TMP", "TEMP", "TMPDIR",               // temp dirs
+      "XDG_CONFIG_HOME", "XDG_DATA_HOME",   // Linux XDG paths
+    ]);
+    if (!ALLOWED.has(name)) return null;
     return process.env[name] || null;
   });
 

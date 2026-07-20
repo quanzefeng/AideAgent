@@ -192,3 +192,15 @@ export function _setDbPath(path) {
   }
   _hasFts5 = false;
 }
+
+/**
+ * Close the KB SQLite handle. Called by main.mjs on `will-quit` to ensure
+ * the WAL journal is checkpointed and the file is not held open on Windows.
+ * Safe to call when the handle hasn't been opened.
+ */
+export function closeDb() {
+  if (!_db) return;
+  try { _db.close(); } catch { /* ignore — already closed or invalid */ }
+  _db = null;
+  _hasFts5 = false;
+}

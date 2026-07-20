@@ -83,7 +83,7 @@ Point it at your Obsidian vault (or any Markdown folder), and the AI will search
 
 ### 3. 🌐 Web Search — live web search
 
-Toggle it on when you need real-time info. A built-in meta-search engine (Bing + GitHub, no API key required), plus an optional paid Tavily integration.
+Toggle it on when you need real-time info. A built-in meta-search engine (Bing + GitHub, no API key required).
 
 ### 4. 💡 Reasoning — think deeper
 
@@ -188,7 +188,7 @@ If you're a developer, these will keep you busy for a while:
 
 - **Full IPC interface** — every feature exposed as an IPC handler, script it however you like
 - **Two agent runtimes** — built-in AideAgent loop + OpenCode via ACP. Same UI, different engines
-- **Test coverage** — Vitest unit tests + Playwright E2E (in Electron mode)
+- **Test scaffolding** — Vitest + Playwright are configured in `package.json` (`npm test`, `npm run test:e2e`); actual test files are still being added. Type checking (`tsc --noEmit`) covers the main process with JSDoc types
 - **Type checking** — `tsc --noEmit` passes across the whole project (JS source with JSDoc type annotations)
 - **Cross-platform packaging** — `electron-builder` produces Windows NSIS, macOS DMG, and Linux deb+AppImage in one shot
 - **Auto-update** — `electron-updater` pulls new versions from GitHub Releases
@@ -307,8 +307,8 @@ Built installers land in `desktop/release/`.
 
 ```bash
 npm run dev          # Electron + DevTools
-npm run test         # Vitest unit tests
-npm run test:e2e     # Playwright E2E (Electron mode)
+npm run test         # Vitest unit tests (when test files exist)
+npm run test:e2e     # Playwright E2E (when test files exist)
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
 ```
@@ -319,7 +319,7 @@ npm run typecheck    # tsc --noEmit
 
 - **Local-first data** — sessions, note indexes, skills, and memory all live in `~/.aideagent/`, never uploaded
 - **Encrypted API keys** — OS Keychain, never plaintext
-- **Auto-migration on first launch** — upgrading from an older version (`~/.goodagent/`)? Config migrates automatically
+- **Auto-migration on first launch** — first-time setup is fully automatic; no manual steps required
 - **Strict CSP** — the renderer ships with a complete Content Security Policy
 - **MCP config compatible with Claude Code format** — copy your existing `.mcp.json` over and it just works
 - **Per-runtime persistence** — your runtime pick (AideAgent / OpenCode), OpenCode mode (Build / Plan / Authorize), and OpenCode model are all stored in `localStorage` and re-applied on every launch

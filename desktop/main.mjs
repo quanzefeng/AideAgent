@@ -2,9 +2,15 @@
 // Thin entry: app lifecycle + window creation + module wiring.
 // All business logic lives in core/*.mjs modules.
 
+/** @typedef {{ name: string, fn: () => void | Promise<void> }} ShutdownEntry */
+/** @type {{ curatorTimer?: NodeJS.Timeout | null }} */
+const _aideagentInternal = (/** @type {any} */ (globalThis)).__aideagentInternal ?? {};
+(/** @type {any} */ (globalThis)).__aideagentInternal = _aideagentInternal;
+
 import { app, BrowserWindow, session, Menu, nativeImage } from "electron";
 import { join } from "node:path";
 import mcpManager from "./mcp-manager.mjs";
+import lspManager from "./lsp-manager.mjs";
 import sessionDb from "./session-db.mjs";
 import * as skills from "./skills-store.mjs";
 import * as kb from "./knowledge-store.mjs";
@@ -220,10 +226,63 @@ app.whenReady().then(async () => {
   }
 
   const CURATOR_INTERVAL = 6 * 60 * 60 * 1000;
-  setInterval(() => {
+  const curatorTimer = setInterval(() => {
     try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); }
     catch (/** @type {any} */ e) { console.error("[curator] periodic run failed:", e.message); }
   }, CURATOR_INTERVAL);
+  // Make the curator timer unref()'d so it never blocks app exit, and
+  // remember the handle so will-quit can clearInterval() it explicitly.
+  // (unref alone is enough for tests; clearInterval is the belt-and-suspenders
+  //  for production exits where a shutdown might fire before the next tick.)
+  if (typeof curatorTimer.unref === "function") curatorTimer.unref();
+  _aideagentInternal.curatorTimer = curatorTimer;
+
+  // ── Register shutdown hooks (run on before-quit) ──
+  // MCP: stop all npx children so they don't outlive the app
+  addShutdownFn("mcp", () => mcpManager.shutdown());
+  // WeChat: abort the poll loop
+  addShutdownFn("wechat", async () => {
+    const { getWxPollAbort } = await import("./core/state.mjs");
+    const c = /** @type {AbortController | null | undefined} */ (getWxPollAbort());
+    if (c) {
+      try { c.abort(); } catch { /* already aborted */ }
+    }
+  });
+  // KB: stop the file watcher
+  addShutdownFn("kb-watcher", async () => {
+    const ks = await import("./knowledge-store.mjs");
+    try { ks.stopWatcher(); } catch { /* not watching — fine */ }
+  });
+  // KB SQLite: close the handle so WAL is checkpointed
+  addShutdownFn("kb-db", async () => {
+    const { closeDb } = await import("./kb/db.mjs");
+    try { closeDb(); } catch { /* ignored */ }
+  });
+  // Memory: close FTS DB
+  addShutdownFn("memory-db", async () => {
+    const ms = await import("./memory-store.mjs");
+    try { ms.closeFtsDb(); } catch { /* ignored */ }
+  });
+  // OpenCode ACP: stop the cached subprocess if any
+  addShutdownFn("opencode-acp", async () => {
+    const { getOpencodeAcpClient, setOpencodeAcpClient } = await import("./core/state.mjs");
+    const c = getOpencodeAcpClient();
+    if (c) {
+      try { await c.stop(); } catch { /* already dead */ }
+      setOpencodeAcpClient(null);
+    }
+  });
+  // Skills curator: clear the interval
+  addShutdownFn("skills-curator", () => {
+    if (_aideagentInternal.curatorTimer) {
+      try { clearInterval(_aideagentInternal.curatorTimer); } catch { /* ignored */ }
+      _aideagentInternal.curatorTimer = null;
+    }
+  });
+  // LSP: kill TS language server subprocesses
+  addShutdownFn("lsp", () => lspManager.shutdown());
+  // Session DB (was the only one in the original handler)
+  addShutdownFn("session-db", () => { try { sessionDb.close(); } catch { /* ignored */ } });
 
   // Register all IPC handlers
   registerIpcHandlers();
@@ -235,9 +294,52 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on("will-quit", () => {
-  try { sessionDb.close(); } catch { /* ignored */ }
-  try {
-    import("./lsp-manager.mjs").then(m => m.default.shutdown()).catch(() => {});
-  } catch { /* ignored */ }
+
+/**
+ * Comprehensive will-quit cleanup. Each module is responsible for its own
+ * teardown (see addShutdownFn below); this handler just orchestrates.
+ *
+ * Without this, every restart leaks:
+ *   - npx MCP server children (file locks on Windows)
+ *   - the WeChat poll loop
+ *   - the KB fs.watch handle
+ *   - the opencode ACP subprocess
+ *   - SQLite WAL journals for memory + KB DBs
+ *   - the skills curator interval
+ *
+ * `before-quit` is preferred over `will-quit` because it fires before the
+ * renderer is destroyed, giving async cleanup a chance to finish.
+ */
+/** @type {Array<{ name: string, fn: () => void | Promise<void> }>} */
+const _shutdownFns = [];
+/**
+ * Register a cleanup function. Errors are caught and logged so one
+ * failing shutdown doesn't block the rest.
+ * @param {string} name
+ * @param {() => void | Promise<void>} fn
+ */
+function addShutdownFn(name, fn) {
+  _shutdownFns.push({ name, fn });
+}
+(/** @type {any} */ (globalThis)).__aideagentAddShutdownFn = addShutdownFn;
+
+app.on("before-quit", () => {
+  // Run shutdowns in parallel where possible. The shutdown functions are
+  // best-effort — each one swallows its own errors. We give the whole
+  // process up to 3s to finish, then return and let Electron close anyway
+  // (a 30s orphan npx is better than a hung shutdown).
+  const all = _shutdownFns.map(async (entry) => {
+    try { await entry.fn(); }
+    catch (/** @type {any} */ e) {
+      console.error(`[shutdown] ${entry.name} failed:`, e?.message || e);
+    }
+  });
+  // Block before-quit for up to 3 seconds. Returning a Promise that
+  // resolves later doesn't actually delay quit in Electron, so this is
+  // best-effort fire-and-forget.
+  Promise.allSettled(all).catch(() => {});
+  // Belt-and-suspenders: hard-kill any process we missed after 3s.
+  setTimeout(() => {
+    try { process.exit(0); } catch { /* already gone */ }
+  }, 3000).unref?.();
 });

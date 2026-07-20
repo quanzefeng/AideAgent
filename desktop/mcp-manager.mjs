@@ -43,6 +43,44 @@ const BUILTIN_SERVERS = Object.freeze({
   },
 });
 
+/**
+ * Validate an MCP server command + args before spawn. Returns null if safe
+ * to spawn, or an error message string explaining why it was rejected.
+ *
+ * The check is conservative by design. A safe MCP command is one of:
+ *   - an absolute path (e.g. `/usr/local/bin/foo`, `C:\Program Files\foo.exe`)
+ *   - a bare binary name resolvable via PATH (e.g. `node`, `npx`, `uvx`)
+ *   - a relative path with no shell metacharacters (e.g. `./server.sh`)
+ *
+ * Rejected: anything containing `;`, `&`, `|`, backticks, `$(...)`, `${...}`,
+ * `>`, `<`, or newlines. These are all things that should never legitimately
+ * appear in a command name or argument, but would let a shell re-interpret
+ * the command if it were ever invoked via shell.
+ *
+ * @param {string} command
+ * @param {Array<string> | undefined} args
+ * @returns {string | null} null if safe, else reason
+ */
+const SHELL_METACHARS = /[;&|`$<>\\\n\r]/;
+function validateMcpCommand(command, args) {
+  if (typeof command !== "string" || command.length === 0) {
+    return "command must be a non-empty string";
+  }
+  if (SHELL_METACHARS.test(command)) {
+    return `command contains shell metacharacter: ${command.slice(0, 40)}`;
+  }
+  if (Array.isArray(args)) {
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (typeof a !== "string") return `arg[${i}] is not a string`;
+      if (SHELL_METACHARS.test(a)) {
+        return `arg[${i}] contains shell metacharacter: ${a.slice(0, 40)}`;
+      }
+    }
+  }
+  return null;
+}
+
 class McpManager {
   constructor() {
     /** @type {Object<string, {process: import("child_process").ChildProcess|null, config: object, tools: Array, status: string, error: string|null, buffer: string}>} */
@@ -122,13 +160,34 @@ class McpManager {
   async startServer(name, cfg) {
     if (this.servers[name]) await this.stopServer(name);
 
+    // SECURITY: Validate command before spawn. A malicious or compromised
+    // MCP config (e.g. pasted from a sketchy blog post) could otherwise
+    // exploit `shell: true` to run arbitrary commands. We require:
+    //   - command is a non-empty string
+    //   - command does not contain shell metacharacters that would let
+    //     `cmd.exe` / `sh` reinterpret it
+    //   - args (if any) don't try to break out via `;`, `&`, `|`, backticks
+    //     or `$(...)` substitution
+    // The check is intentionally conservative — false positives (rejecting
+    // a valid config) are better than RCE. Users who hit a false positive
+    // can rename their binary or split the command.
+    const cmdCheck = validateMcpCommand(cfg.command, cfg.args);
+    if (cmdCheck) throw new Error(`MCP server "${name}" rejected: ${cmdCheck}`);
+
     const env = { ...process.env };
     if (cfg.env) Object.assign(env, cfg.env);
 
+    // Windows requires `shell: true` to execute `.cmd` / `.bat` files via
+    // `npx`, `pnpm`, etc. — without it, Node's spawn() returns ENOENT
+    // because it looks for `npx.exe` and the npm-installed shim is
+    // `npx.cmd`. With the validator above rejecting any shell-metachar
+    // input, going through cmd.exe on Windows does NOT enable injection —
+    // the dangerous inputs are blocked at validation time. macOS/Linux
+    // keep `shell: false` to avoid the broader shell attack surface.
     const proc = spawn(cfg.command, cfg.args || [], {
       stdio: ["pipe", "pipe", "pipe"],
       env,
-      shell: true,
+      shell: process.platform === "win32",
     });
 
     const server = {
@@ -328,6 +387,18 @@ class McpManager {
     }
     // For remote servers there's no child process — just remove from map
     delete this.servers[name];
+  }
+
+  /**
+   * Stop ALL running MCP servers. Called by main.mjs on `app.on("will-quit")`
+   * so npx subprocesses don't outlive the app. Without this, every restart
+   * leaves orphaned `npx` children that hold file locks on Windows.
+   * Best-effort: each stopServer is independent, so a single failure doesn't
+   * skip the rest.
+   */
+  async shutdown() {
+    const names = Array.from(this.servers.keys());
+    await Promise.allSettled(names.map((n) => this.stopServer(n)));
   }
 
   async restartServer(name) {
