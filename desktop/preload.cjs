@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   version: process.versions.electron,
   respondPermission: (/** @type {any} */ id, /** @type {any} */ allow) => ipcRenderer.invoke("permission:respond", { id, allow }),
   onPermissionRequest: (/** @type {any} */ cb) => ipcRenderer.on("permission:request", (_event, d) => cb(d)),
-  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled, /** @type {any} */ runtime, /** @type {any} */ opencodeModelId) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId }),
+  submitQuery: (/** @type {any} */ prompt, /** @type {any} */ apiKey, /** @type {any} */ apiUrl, /** @type {any} */ model, /** @type {any} */ apiFormat, /** @type {any} */ files, /** @type {any} */ enabledSkills, /** @type {any} */ reasoning, /** @type {any} */ agentName, /** @type {any} */ kbEnabled, /** @type {any} */ planMode, /** @type {any} */ webSearchEnabled, /** @type {any} */ runtime, /** @type {any} */ opencodeModelId, /** @type {any} */ contextWindowOverride) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId, contextWindowOverride }),
   detectOpencode: () => ipcRenderer.invoke("agent:detect-opencode"),
   listOpencodeModels: () => ipcRenderer.invoke("opencode:list-models"),
   openExternal: (/** @type {any} */ url) => ipcRenderer.invoke("shell:open-external", url),
@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld("aideagent", {
   skillsSaveSkill: (/** @type {any} */ name, /** @type {any} */ meta, /** @type {any} */ body) => ipcRenderer.invoke("skills:save", name, meta, body),
   skillsSearch: (/** @type {any} */ query, /** @type {any} */ limit) => ipcRenderer.invoke("skills:search", query, limit),
   skillsReindex: () => ipcRenderer.invoke("skills:reindex"),
+  // Phase 2 completion: AI distills a reusable SKILL.md from matching sessions.
+  // One-shot (user picks a candidate phrase) or full sweep (auto-generate-all).
+  skillsAutoGenerate: (/** @type {any} */ phrase, /** @type {any} */ apiConfig) => ipcRenderer.invoke("skills:auto-generate", { phrase, apiConfig }),
+  skillsAutoGenerateAll: (/** @type {any} */ apiConfig) => ipcRenderer.invoke("skills:auto-generate-all", { apiConfig }),
   // Phase 2: per-user Chinese skill-name translations (display-only cache)
   skillsTranslationsGet: () => ipcRenderer.invoke("skills:translations-get"),
   skillsTranslationsMissing: () => ipcRenderer.invoke("skills:translations-missing"),

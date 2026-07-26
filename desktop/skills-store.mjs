@@ -955,6 +955,164 @@ function extractKeyPhrase(text) {
   return cleaned.split(" ").slice(0, 2).join(" ");
 }
 
+// ── Auto-generate skills from conversation (Phase 2 completion) ───────────
+//
+// detectPatterns() only surfaces *candidates* — it does not write any SKILL.md.
+// This module closes the loop: pull matching sessions for a candidate phrase,
+// send the concatenated transcript to the LLM with a "distill a reusable skill"
+// prompt, parse the returned front-matter + steps, and saveSkill() so the new
+// skill shows up in the L2 panel on next refresh.
+//
+// Design notes:
+//  - Reuses saveSkill() / buildFrontmatter() — no new disk path.
+//  - Mirrors autoReview()'s LLM-call shape (same headers, same abort handling)
+//    so behavior is predictable across providers (OpenAI + Anthropic).
+//  - Returns a structured result so callers (IPC handler, future CLI) can
+//    surface per-skill success/failure to the UI without parsing strings.
+
+/**
+ * Build the "distill this conversation into a reusable skill" prompt.
+ * Kept as a pure function for testability.
+ * @param {{phrase: string, count?: number, examples: string[]}} candidate
+ * @param {Array<{role: string, content: string}>} msgs
+ * @returns {string}
+ */
+function buildSkillDistillPrompt(candidate, msgs) {
+  const convText = msgs.map(m => {
+    const role = m.role === "user" ? "用户" : "助手";
+    const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 1200);
+    return `[${role}] ${text}`;
+  }).join("\n");
+
+  return `你是一个技能提炼助手。以下对话中反复出现一个任务模式「${candidate.phrase}」。
+
+请提炼一个可复用的 SKILL（技能）来处理这类任务。技能应该能让未来的 AI 助手按步骤完成同样的事。
+
+对话节选（出现 ${candidate.count ?? "?"} 次，下面是代表性片段）：
+${convText}
+
+请严格按以下格式输出，不要多余解释：
+
+NAME: <kebab-case 英文技能名，如 summarize-pdf>
+NAME_ZH: <中文技能名，简洁，不超过 12 个字>
+DESCRIPTION: <一句话描述什么时候该用这个技能>
+TRIGGERS: <逗号分隔的触发短语，2-5 个>
+---
+## 步骤
+1. ...
+2. ...
+3. ...
+
+## 注意事项
+- ...
+- ...`;
+}
+
+/**
+ * Parse the structured response from buildSkillDistillPrompt().
+ * Tolerant of leading whitespace / code fences. Returns null on malformed output.
+ * @param {string} text
+ * @returns {{name: string, name_zh: string, description: string, triggers: string[], body: string} | null}
+ */
+function parseDistilledSkill(text) {
+  if (!text || typeof text !== "string") return null;
+  // Strip optional ``` fenced code block if any.
+  const stripped = text.replace(/^```[\w-]*\s*\n?/, "").replace(/\n?```$/, "").trim();
+  const lines = stripped.split(/\r?\n/);
+  const header = /** @type {Record<string, string>} */ ({});
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "---") { i++; break; }
+    const m = line.match(/^(\w[\w_]*)\s*:\s*(.+)$/);
+    if (m) header[m[1].trim()] = m[2].trim();
+  }
+  const body = lines.slice(i).join("\n").trim();
+  const name = (header.NAME || "").replace(/[^\w-]/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  if (!name) return null;
+  return {
+    name,
+    name_zh: header.NAME_ZH || "",
+    description: header.DESCRIPTION || "",
+    triggers: (header.TRIGGERS || "").split(",").map(s => s.trim()).filter(Boolean),
+    body: body || "## 步骤\n1. （AI 未生成具体步骤）\n",
+  };
+}
+
+/**
+ * One LLM call → one distilled SKILL.md file on disk.
+ *
+ * @param {object} args
+ * @param {Array<{role: string, content: string}>} args.msgs Recent conversation messages.
+ * @param {{phrase: string, count?: number, examples: string[]}} args.candidate From detectPatterns().
+ * @param {string} args.apiKey
+ * @param {string} args.apiUrl
+ * @param {string} args.model
+ * @param {string} args.apiFormat "openai" | "anthropic"
+ * @param {AbortSignal} [args.signal]
+ * @returns {Promise<{saved: boolean, name?: string, error?: string, alreadyExisted?: boolean}>}
+ */
+export async function autoGenerateSkillFromConversation(args) {
+  const { msgs, candidate, apiKey, apiUrl, model, apiFormat, signal } = args;
+  if (!Array.isArray(msgs) || msgs.length < 4) return { saved: false, error: "not enough messages" };
+  if (!candidate?.phrase) return { saved: false, error: "no candidate phrase" };
+
+  try {
+    const prompt = buildSkillDistillPrompt(candidate, msgs);
+    const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, temperature?: number, stream: boolean, system?: string }} */ ({
+      model: model || "deepseek-chat",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 1024,
+      temperature: 0.4,
+      stream: false,
+    });
+    /** @type {Record<string,string>} */
+    const headers = apiFormat === "anthropic"
+      ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+      : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+    const endpoint = apiFormat === "anthropic"
+      ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
+      : apiUrl;
+    if (apiFormat === "anthropic") {
+      body.system = "你是一个技能提炼助手。从对话中提炼可复用的技能步骤。";
+      body.model = model || "claude-sonnet-4-20250514";
+      body.temperature = undefined;
+    }
+
+    const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
+    const res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: composed });
+    if (!res.ok) return { saved: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    const text = apiFormat === "anthropic"
+      ? (data.content?.[0]?.text || "")
+      : (data.choices?.[0]?.message?.content || "");
+    if (!text || !text.trim()) return { saved: false, error: "empty LLM response" };
+
+    const parsed = parseDistilledSkill(text);
+    if (!parsed) return { saved: false, error: "parse failed" };
+
+    // Skip if a skill by the same name already exists (L2 or L3).
+    const existing = listSkills().find(s => s.name === parsed.name);
+    if (existing) return { saved: false, alreadyExisted: true, name: parsed.name };
+
+    const meta = {
+      name: parsed.name,
+      name_zh: parsed.name_zh,
+      description: parsed.description,
+      triggers: parsed.triggers,
+      version: "1.0.0",
+      status: "active",
+      created_at: new Date().toISOString(),
+      _origin: "auto-generated",
+    };
+    saveSkill(parsed.name, meta, parsed.body);
+    recordSkillUsage(parsed.name, true);
+    return { saved: true, name: parsed.name };
+  } catch (/** @type {any} */ e) {
+    return { saved: false, error: e?.message || String(e) };
+  }
+}
+
 // helpers
 
 // ── Curator (Phase 3) ───────────────────────────────────────

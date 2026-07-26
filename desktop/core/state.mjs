@@ -99,7 +99,22 @@ export const PS_UTF8_PREFIX = '$OutputEncoding = [Console]::OutputEncoding = [Sy
 // ── Agent Loop State ────────────────────────────────────────
 export const MAX_TURNS = 50;
 export const MAX_CONTINUATIONS = 5;
-export const CONTEXT_WINDOW = 262144;
+export const DEFAULT_CONTEXT_WINDOW = 262144;
+// Mutable: context-window.mjs re-resolves this whenever the user switches
+// model (or the local server reports a different loaded context). ESM live
+// bindings mean every importer (token-budget.mjs, agent-loop.mjs) sees the
+// updated value on their next read — no other call-site changes needed.
+export let CONTEXT_WINDOW = DEFAULT_CONTEXT_WINDOW;
+/**
+ * Clamp-and-set guard so a garbage probe result can never wedge the agent
+ * loop. Values outside [4K, 10M] are ignored (keep previous value).
+ * @param {number} n
+ */
+export function setContextWindow(n) {
+  if (Number.isFinite(n) && n >= 4096 && n <= 10_000_000) {
+    CONTEXT_WINDOW = Math.floor(n);
+  }
+}
 export const CONTEXT_WARN_PCT = 0.60;
 export const CONTEXT_COMPRESS_PCT = 0.70;
 // B5: was 2500 — too aggressive for LLM to make tool-calling decisions on

@@ -576,7 +576,7 @@ export async function refreshSkillsList() {
     }
 
     if (patterns?.length) {
-      html += '<div class="patterns-card"><div class="patterns-card-header">' + t("agent_skills.patterns_title") + '</div>';
+      html += '<div class="patterns-card"><div class="patterns-card-header"><span>' + t("agent_skills.patterns_title") + '</span><button class="btn btn-xs primary" id="auto-generate-all-btn" title="' + (t("agent_skills.generate_all_title") || "用 AI 一键提炼所有候选") + '">✨ ' + (t("agent_skills.generate_all") || "全部自动提炼") + '</button></div>';
       for (const p of patterns) {
         html += '<div class="patterns-item"><span><b>' + sanitize(p.phrase) + '</b> — ' + t("agent_skills.occurred") + ' ' + p.count + ' ' + t("agent_skills.times") + '</span><button class="btn btn-xs primary generate-skill-btn" data-phrase="' + sanitize(p.phrase) + '">' + t("agent_skills.generate") + '</button></div>';
       }
@@ -615,33 +615,53 @@ export async function refreshSkillsList() {
         if (!phrase) return;
         btn.disabled = true; btn.textContent = t("agent_skills.generating");
         try {
+          // Route through main process (skills:auto-generate) so the LLM
+          // call gets the actual matching-session transcript as raw
+          // material — the old in-renderer fetch only passed the bare
+          // phrase, so the model had to guess what the task looked like.
           const cfg = loadApiConfig();
-          let url = (cfg.apiUrl || "").replace(/\/+$/, "");
-          if (!url.includes("/chat/completions")) { if (!url.endsWith("/v1")) url += "/v1"; url += "/chat/completions"; }
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (cfg.apiKey || "") },
-            body: JSON.stringify({
-              model: cfg.model || "deepseek-chat",
-              messages: [
-                { role: "system", content: "You are a skill generator. Output ONLY valid markdown with YAML frontmatter." },
-                { role: "user", content: "Create a reusable skill for: " + phrase + ". This is a repeated pattern in conversations." }
-              ],
-              max_tokens: 2048,
-            }),
-            signal: AbortSignal.timeout(30000),
-          });
-          if (!res.ok) throw new Error("API " + res.status);
-          const data = await res.json();
-          const skillText = data.choices?.[0]?.message?.content || "";
-          const nameMatch = skillText.match(/name:\s*(\S+)/);
-          const descMatch = skillText.match(/description:\s*"([^"]+)"/);
-          const name = nameMatch?.[1] || phrase.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
-          await window.aideagent.skillsSaveSkill(name, { name, description: (descMatch?.[1] || phrase), triggers: [phrase], version: "1.0.0", status: "active", created_at: new Date().toISOString() }, skillText);
-          await refreshSkillsList();
+          /** @type {any} */
+          const api = window.aideagent;
+          const res = await api.skillsAutoGenerate?.(phrase, cfg);
+          if (res?.saved) {
+            btn.textContent = "✅ " + (t("agent_skills.generated_ok") || "已生成");
+            await refreshSkillsList();
+          } else if (res?.alreadyExisted) {
+            btn.textContent = "⚠️ " + (t("agent_skills.already_exists") || "已存在");
+          } else {
+            throw new Error(res?.error || "unknown error");
+          }
         } catch (e) { alert(t("agent_skills.generate_fail").replace("{error}", /** @type {Error} */ (e).message)); }
         btn.disabled = false; btn.textContent = t("agent_skills.generate");
       });
+    });
+
+    // Sweep-all button: walks every detected candidate phrase in one shot
+    // and saves a SKILL.md for each. Per-result feedback in alert form so
+    // the user knows which phrases succeeded / failed / already existed.
+    const genAllBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("auto-generate-all-btn"));
+    genAllBtn?.addEventListener("click", async () => {
+      if (!genAllBtn) return;
+      genAllBtn.disabled = true;
+      const original = genAllBtn.textContent;
+      genAllBtn.textContent = t("agent_skills.generating");
+      try {
+        const cfg = loadApiConfig();
+        /** @type {any} */
+        const api = window.aideagent;
+        /** @type {any[]} */
+        const results = await api.skillsAutoGenerateAll?.(cfg) || [];
+        const saved = results.filter((/** @type {any} */ r) => r.saved).length;
+        const existed = results.filter((/** @type {any} */ r) => r.alreadyExisted).length;
+        const failed = results.length - saved - existed;
+        const msg = (t("agent_skills.generate_all_summary") || "已生成 {saved} 个 / 已存在 {existed} 个 / 失败 {failed} 个")
+          .replace("{saved}", String(saved))
+          .replace("{existed}", String(existed))
+          .replace("{failed}", String(failed));
+        alert(msg);
+        if (saved > 0) await refreshSkillsList();
+      } catch (e) { alert(t("agent_skills.generate_fail").replace("{error}", /** @type {Error} */ (e).message)); }
+      genAllBtn.disabled = false; genAllBtn.textContent = original;
     });
 
     container.querySelectorAll(".skill-toggle-input").forEach((node) => {

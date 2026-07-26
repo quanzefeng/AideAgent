@@ -168,6 +168,7 @@ const settingsUrl = $("#settings-url");
 const settingsModel = $("#settings-model");
 const settingsModelInput = $("#settings-model-input");
 const settingsKey = $("#settings-key");
+const settingsContextWindow = $("#settings-context-window");
 const settingsSearchProvider = $("#settings-search-provider");
 const settingsTavilyKey = $("#settings-tavily-key");
 const tavilyKeyRow = $("#tavily-key-row");
@@ -974,15 +975,19 @@ function loadApiConfig() {
     model: localStorage.getItem(`${prefix}model`) || "",
     apiKey,
     apiFormat: localStorage.getItem(STORAGE_KEYS.API_FORMAT) || "openai",
+    contextWindow: localStorage.getItem(`${prefix}context_window`) || "",
   };
 }
 
-async function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat) {
+async function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat, contextWindow) {
   const prefix = provider ? `AideAgent_${provider}_` : "AideAgent_";
   if (apiUrl) localStorage.setItem(`${prefix}api_url`, apiUrl);
   localStorage.setItem(STORAGE_KEYS.PROVIDER, provider);
   if (model) localStorage.setItem(`${prefix}model`, model);
   if (apiFormat) localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
+  // Empty string = clear the manual override (auto-detection takes over).
+  if (contextWindow) localStorage.setItem(`${prefix}context_window`, contextWindow);
+  else localStorage.removeItem(`${prefix}context_window`);
   if (apiKey) {
     _apiKeyCache[provider] = apiKey;
     await window.aideagent.saveApiKey(provider, apiKey);
@@ -1071,6 +1076,7 @@ function fillSettingsForm() {
       populateModelDropdown(preset, selectedModel);
     }
     if (settingsKey) settingsKey.value = cfg.apiKey;
+    if (settingsContextWindow) settingsContextWindow.value = cfg.contextWindow || "";
     // Load search provider + Tavily key
     if (settingsSearchProvider) {
       const saved = localStorage.getItem("AideAgent_search_provider") || "tavily";
@@ -1108,6 +1114,8 @@ function onProviderChange() {
     settingsUrl.value = savedUrl;
     populateModelDropdown(null, savedModel);
   }
+  // Context-window override is stored per-provider, same prefix scheme.
+  if (settingsContextWindow) settingsContextWindow.value = localStorage.getItem(`${prefix}context_window`) || "";
   // Load from encrypted key store (not localStorage — keys were migrated)
   if (settingsKey) {
     settingsKey.value = _apiKeyCache[key] || "";
@@ -1142,12 +1150,22 @@ async function saveSettingsForm() {
   const rawUrl = (settingsUrl?.value || "").trim();
   const model = getCurrentModelValue().trim();
   const apiKey = (settingsKey?.value || "").trim();
+  const contextWindow = (settingsContextWindow?.value || "").trim();
   const preset = PROVIDER_PRESETS[provider];
   const apiFormat = preset?.format || "openai";
 
   if (!rawUrl) {
     if (settingsStatus) {
       settingsStatus.textContent = t("api.fill_url");
+      settingsStatus.className = "settings-status error";
+    }
+    return;
+  }
+
+  // Manual context-window override: empty (auto) or a sane integer.
+  if (contextWindow && (!/^\d+$/.test(contextWindow) || Number(contextWindow) < 4096)) {
+    if (settingsStatus) {
+      settingsStatus.textContent = t("api.context_window_invalid");
       settingsStatus.className = "settings-status error";
     }
     return;
@@ -1160,7 +1178,7 @@ async function saveSettingsForm() {
     settingsUrl.value = apiUrl;
   }
 
-  await saveApiConfig(provider, apiUrl, model, apiKey, apiFormat);
+  await saveApiConfig(provider, apiUrl, model, apiKey, apiFormat, contextWindow);
   // Save search provider preference (localStorage for UI + config file for main process)
   if (settingsSearchProvider) {
     localStorage.setItem("AideAgent_search_provider", settingsSearchProvider.value);
@@ -1382,7 +1400,7 @@ async function submitQuery() {
     // picker choice (or null = opencode default) so the main process can
     // pass it to ACP `session/new`.
     const opencodeModelId = getCurrentRuntime() === "opencode" ? ocModelId : null;
-    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime(), opencodeModelId);
+    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime(), opencodeModelId, cfg.contextWindow || "");
   } catch (err) {
     console.error("Query error:", err);
   }

@@ -1,0 +1,785 @@
+- generic [ref=e2]:
+  - banner [ref=e990]:
+    - generic [ref=e992]:
+      - link "Hugging Face's logo Hugging Face" [ref=e993] [cursor=pointer]:
+        - /url: /
+        - img "Hugging Face's logo" [ref=e994]
+        - generic [ref=e995]: Hugging Face
+      - textbox "Search models, datasets, users..." [ref=e997]
+      - button [ref=e1001] [cursor=pointer]
+  - main [ref=e18]:
+    - generic [ref=e21]:
+      - heading "bartowski / FINAL-Bench_Darwin-35B-A3B-Opus-GGUF like 39" [level=1] [ref=e22]:
+        - generic [ref=e23]:
+          - link [ref=e27] [cursor=pointer]:
+            - /url: /bartowski
+          - link "bartowski" [ref=e31] [cursor=pointer]:
+            - /url: /bartowski
+          - generic [ref=e32]: /
+        - generic [ref=e33]:
+          - link "FINAL-Bench_Darwin-35B-A3B-Opus-GGUF" [ref=e34] [cursor=pointer]:
+            - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+          - button "Copy model name to clipboard" [ref=e35] [cursor=pointer]
+        - generic [ref=e40]:
+          - button "like" [ref=e43] [cursor=pointer]
+          - button "39" [ref=e47] [cursor=pointer]
+      - generic [ref=e48]:
+        - link "Image-Text-to-Text" [ref=e49] [cursor=pointer]:
+          - /url: /models?pipeline_tag=image-text-to-text
+        - link "GGUF" [ref=e57] [cursor=pointer]:
+          - /url: /models?library=gguf
+        - button "10 languages" [ref=e62] [cursor=pointer]
+        - link "Merge" [ref=e67] [cursor=pointer]:
+          - /url: /models?other=merge
+        - link "evolutionary-merge" [ref=e72] [cursor=pointer]:
+          - /url: /models?other=evolutionary-merge
+        - link "darwin" [ref=e75] [cursor=pointer]:
+          - /url: /models?other=darwin
+        - link "darwin-v5" [ref=e78] [cursor=pointer]:
+          - /url: /models?other=darwin-v5
+        - link "model-mri" [ref=e81] [cursor=pointer]:
+          - /url: /models?other=model-mri
+        - link "reasoning" [ref=e84] [cursor=pointer]:
+          - /url: /models?other=reasoning
+        - link "advanced-reasoning" [ref=e87] [cursor=pointer]:
+          - /url: /models?other=advanced-reasoning
+        - link "chain-of-thought" [ref=e90] [cursor=pointer]:
+          - /url: /models?other=chain-of-thought
+        - link "thinking" [ref=e93] [cursor=pointer]:
+          - /url: /models?other=thinking
+        - link "qwen3.5" [ref=e96] [cursor=pointer]:
+          - /url: /models?other=qwen3.5
+        - link "qwen" [ref=e99] [cursor=pointer]:
+          - /url: /models?other=qwen
+        - link "Mixture of Experts" [ref=e102] [cursor=pointer]:
+          - /url: /models?other=moe
+        - link "mixture-of-experts" [ref=e107] [cursor=pointer]:
+          - /url: /models?other=mixture-of-experts
+        - link "claude-opus" [ref=e110] [cursor=pointer]:
+          - /url: /models?other=claude-opus
+        - link "distillation" [ref=e113] [cursor=pointer]:
+          - /url: /models?other=distillation
+        - link "multimodal" [ref=e116] [cursor=pointer]:
+          - /url: /models?other=multimodal
+        - link "vision-language" [ref=e119] [cursor=pointer]:
+          - /url: /models?other=vision-language
+        - link "201-languages" [ref=e122] [cursor=pointer]:
+          - /url: /models?other=201-languages
+        - link "gpqa" [ref=e125] [cursor=pointer]:
+          - /url: /models?other=gpqa
+        - link "benchmark" [ref=e128] [cursor=pointer]:
+          - /url: /models?other=benchmark
+        - link "open-source" [ref=e131] [cursor=pointer]:
+          - /url: /models?other=open-source
+        - link "apache-2.0" [ref=e134] [cursor=pointer]:
+          - /url: /models?other=apache-2.0
+        - link "natural-selection" [ref=e137] [cursor=pointer]:
+          - /url: /models?other=natural-selection
+        - link "layer-wise-merge" [ref=e140] [cursor=pointer]:
+          - /url: /models?other=layer-wise-merge
+        - link "moe-merge" [ref=e143] [cursor=pointer]:
+          - /url: /models?other=moe-merge
+        - link "dead-expert-revival" [ref=e146] [cursor=pointer]:
+          - /url: /models?other=dead-expert-revival
+        - link "neural-anatomy" [ref=e149] [cursor=pointer]:
+          - /url: /models?other=neural-anatomy
+        - link "coding-agent" [ref=e152] [cursor=pointer]:
+          - /url: /models?other=coding-agent
+        - link "tool-calling" [ref=e155] [cursor=pointer]:
+          - /url: /models?other=tool-calling
+        - link "long-context" [ref=e158] [cursor=pointer]:
+          - /url: /models?other=long-context
+        - link "262k-context" [ref=e161] [cursor=pointer]:
+          - /url: /models?other=262k-context
+        - link "Eval Results (legacy)" [ref=e164] [cursor=pointer]:
+          - /url: /models?other=model-index
+        - link "imatrix" [ref=e171] [cursor=pointer]:
+          - /url: /models?other=imatrix
+        - link "conversational" [ref=e174] [cursor=pointer]:
+          - /url: /models?other=conversational
+        - 'button "License: apache-2.0" [ref=e178] [cursor=pointer]':
+          - generic [ref=e180]:
+            - generic [ref=e183]: "License:"
+            - generic [ref=e184]: apache-2.0
+      - generic [ref=e186]:
+        - generic [ref=e187]:
+          - link "Model card" [ref=e188] [cursor=pointer]:
+            - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+          - link "Files xet" [ref=e193] [cursor=pointer]:
+            - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/tree/main
+            - generic [ref=e197]: Files
+            - generic [ref=e198]: xet
+          - link "Community 4" [ref=e205] [cursor=pointer]:
+            - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/discussions
+            - text: Community
+            - generic [ref=e209]: "4"
+        - generic [ref=e210]:
+          - button [ref=e213] [cursor=pointer]
+          - generic [ref=e218]:
+            - button "Deploy" [ref=e220] [cursor=pointer]
+            - dialog
+          - button "Copy to bucket new" [ref=e226] [cursor=pointer]:
+            - text: Copy to bucket
+            - generic [ref=e229]: new
+          - generic [ref=e230]:
+            - button "Use this model" [ref=e231] [cursor=pointer]
+            - navigation [ref=e236]:
+              - heading "Instructions to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with libraries, inference providers, notebooks, and local apps. Follow these links to get started." [level=3] [ref=e237]
+              - list [ref=e238]:
+                - listitem [ref=e239]: Libraries
+                - listitem [ref=e240]:
+                  - link "llama-cpp-python" [ref=e241] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?library=llama-cpp-python
+                  - paragraph [ref=e246]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with llama-cpp-python:"
+                  - generic [ref=e247]: "# !pip install llama-cpp-python from llama_cpp import Llama llm = Llama.from_pretrained( repo_id=\"bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF\", filename=\"FINAL-Bench_Darwin-35B-A3B-Opus-IQ2_M.gguf\", )"
+                  - generic [ref=e248]: "llm.create_chat_completion( messages = [ { \"role\": \"user\", \"content\": [ { \"type\": \"text\", \"text\": \"Describe this image in one sentence.\" }, { \"type\": \"image_url\", \"image_url\": { \"url\": \"https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg\" } } ] } ] )"
+                - listitem [ref=e249]: Notebooks
+                - listitem [ref=e250]:
+                  - link "Google Colab" [ref=e251] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/colab
+                - listitem [ref=e258]:
+                  - link "Kaggle" [ref=e259] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/kaggle
+                - listitem [ref=e263]:
+                  - generic [ref=e264]: Local Apps
+                  - link "Settings" [ref=e265] [cursor=pointer]:
+                    - /url: /settings/local-apps
+                - listitem [ref=e269]:
+                  - link "llama.cpp" [ref=e270] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=llama.cpp
+                  - paragraph [ref=e273]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with llama.cpp:"
+                  - heading "Install (macOS, Linux)" [level=5] [ref=e274]
+                  - generic [ref=e275]: "curl -LsSf https://llama.app/install.sh | sh # Start a local OpenAI-compatible server with a web UI: llama serve -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M # Run inference directly in the terminal: llama cli -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Install from WinGet (Windows)" [level=5] [ref=e276]
+                  - generic [ref=e277]: "winget install llama.cpp # Start a local OpenAI-compatible server with a web UI: llama serve -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M # Run inference directly in the terminal: llama cli -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Use pre-built binary" [level=5] [ref=e278]
+                  - generic [ref=e279]: "# Download pre-built binary from: # https://github.com/ggerganov/llama.cpp/releases # Start a local OpenAI-compatible server with a web UI: ./llama-server -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M # Run inference directly in the terminal: ./llama-cli -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Build from source code" [level=5] [ref=e280]
+                  - generic [ref=e281]: "git clone https://github.com/ggerganov/llama.cpp.git cd llama.cpp cmake -B build cmake --build build -j --target llama-server llama-cli # Start a local OpenAI-compatible server with a web UI: ./build/bin/llama-server -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M # Run inference directly in the terminal: ./build/bin/llama-cli -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Use Docker" [level=5] [ref=e282]
+                  - generic [ref=e283]: docker model run hf.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M
+                - listitem [ref=e284]:
+                  - link "LM Studio" [ref=e285] [cursor=pointer]:
+                    - /url: lmstudio://open_from_hf?model=bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+                - listitem [ref=e292]:
+                  - link "Jan" [ref=e293] [cursor=pointer]:
+                    - /url: jan://models/huggingface/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+                - listitem [ref=e299]:
+                  - link "vLLM" [ref=e300] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=vllm
+                  - paragraph [ref=e306]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with vLLM:"
+                  - heading "Install from pip and serve model" [level=5] [ref=e307]
+                  - generic [ref=e308]: "# Install vLLM from pip: pip install vllm # Start the vLLM server: vllm serve \"bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF\" # Call the server using curl (OpenAI-compatible API): curl -X POST \"http://localhost:8000/v1/chat/completions\" \\ -H \"Content-Type: application/json\" \\ --data '{ \"model\": \"bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF\", \"messages\": [ { \"role\": \"user\", \"content\": [ { \"type\": \"text\", \"text\": \"Describe this image in one sentence.\" }, { \"type\": \"image_url\", \"image_url\": { \"url\": \"https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg\" } } ] } ] }'"
+                  - heading "Use Docker" [level=5] [ref=e309]
+                  - generic [ref=e310]: docker model run hf.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M
+                - listitem [ref=e311]:
+                  - link "Ollama" [ref=e312] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=ollama
+                  - paragraph [ref=e319]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Ollama:"
+                  - generic [ref=e320]: ollama run hf.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M
+                - listitem [ref=e321]:
+                  - link "Unsloth Studio" [ref=e322] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=unsloth
+                  - paragraph [ref=e325]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Unsloth Studio:"
+                  - heading "Install Unsloth Studio (macOS, Linux, WSL)" [level=5] [ref=e326]
+                  - generic [ref=e327]: "curl -fsSL https://unsloth.ai/install.sh | sh # Run unsloth studio unsloth studio -H 0.0.0.0 -p 8888 # Then open http://localhost:8888 in your browser # Search for bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF to start chatting"
+                  - heading "Install Unsloth Studio (Windows)" [level=5] [ref=e328]
+                  - generic [ref=e329]: "irm https://unsloth.ai/install.ps1 | iex # Run unsloth studio unsloth studio -H 0.0.0.0 -p 8888 # Then open http://localhost:8888 in your browser # Search for bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF to start chatting"
+                  - heading "Using HuggingFace Spaces for Unsloth" [level=5] [ref=e330]
+                  - generic [ref=e331]: "# No setup required # Open https://huggingface.co/spaces/unsloth/studio in your browser # Search for bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF to start chatting"
+                - listitem [ref=e332]:
+                  - link "Pi" [ref=e333] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=pi
+                  - paragraph [ref=e337]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Pi:"
+                  - heading "Start the llama.cpp server" [level=5] [ref=e338]
+                  - generic [ref=e339]: "# Install llama.cpp: brew install llama.cpp # Start a local OpenAI-compatible server: llama serve -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Configure the model in Pi" [level=5] [ref=e340]
+                  - generic [ref=e341]: "# Install Pi: npm install -g @mariozechner/pi-coding-agent # Add to ~/.pi/agent/models.json: { \"providers\": { \"llama-cpp\": { \"baseUrl\": \"http://localhost:8080/v1\", \"api\": \"openai-completions\", \"apiKey\": \"none\", \"models\": [ { \"id\": \"bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M\" } ] } } }"
+                  - heading "Run Pi" [level=5] [ref=e342]
+                  - generic [ref=e343]: "# Start Pi in your project directory: pi"
+                - listitem [ref=e344]:
+                  - link "Hermes Agent new" [ref=e345] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=hermes-agent
+                    - generic: Hermes Agent
+                    - generic [ref=e348]: new
+                  - paragraph [ref=e349]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Hermes Agent:"
+                  - heading "Start the llama.cpp server" [level=5] [ref=e350]
+                  - generic [ref=e351]: "# Install llama.cpp: brew install llama.cpp # Start a local OpenAI-compatible server: llama serve -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Configure Hermes" [level=5] [ref=e352]
+                  - generic [ref=e353]: "# Install Hermes: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash hermes setup # Point Hermes at the local server: hermes config set model.provider custom hermes config set model.base_url http://127.0.0.1:8080/v1 hermes config set model.default bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Run Hermes" [level=5] [ref=e354]
+                  - generic [ref=e355]: hermes
+                - listitem [ref=e356]:
+                  - link "Atomic Chat new" [ref=e357] [cursor=pointer]:
+                    - /url: atomic-chat://models/huggingface/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+                    - generic: Atomic Chat
+                    - generic [ref=e360]: new
+                - listitem [ref=e361]:
+                  - link "OpenClaw new" [ref=e362] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=openclaw
+                    - generic: OpenClaw
+                    - generic [ref=e370]: new
+                  - paragraph [ref=e371]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with OpenClaw:"
+                  - heading "Start the llama.cpp server" [level=5] [ref=e372]
+                  - generic [ref=e373]: "# Install llama.cpp: brew install llama.cpp # Start a local OpenAI-compatible server: llama serve -hf bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Configure OpenClaw" [level=5] [ref=e374]
+                  - generic [ref=e375]: "# Install OpenClaw: npm install -g openclaw@latest # Register the local server and set it as the default model: openclaw onboard --non-interactive --mode local \\ --auth-choice custom-api-key \\ --custom-base-url http://127.0.0.1:8080/v1 \\ --custom-model-id \"bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M\" \\ --custom-provider-id llama-cpp \\ --custom-compatibility openai \\ --custom-text-input \\ --accept-risk \\ --skip-health"
+                  - heading "Run OpenClaw" [level=5] [ref=e376]
+                  - generic [ref=e377]: openclaw agent --local --agent main --message "Hello from Hugging Face"
+                - listitem [ref=e378]:
+                  - link "Docker Model Runner" [ref=e379] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=docker-model-runner
+                  - paragraph [ref=e382]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Docker Model Runner:"
+                  - generic [ref=e383]: docker model run hf.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M
+                - listitem [ref=e384]:
+                  - link "Lemonade" [ref=e385] [cursor=pointer]:
+                    - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF?local-app=lemonade
+                  - paragraph [ref=e395]: "How to use bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF with Lemonade:"
+                  - heading "Pull the model" [level=5] [ref=e396]
+                  - generic [ref=e397]: "# Download Lemonade from https://lemonade-server.ai/ lemonade pull bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF:Q4_K_M"
+                  - heading "Run and chat with the model" [level=5] [ref=e398]
+                  - generic [ref=e399]: lemonade run user.FINAL-Bench_Darwin-35B-A3B-Opus-GGUF-Q4_K_M
+                  - heading "List all available models" [level=5] [ref=e400]
+                  - generic [ref=e401]: lemonade list
+    - generic [ref=e402]:
+      - generic [ref=e404]:
+        - button [ref=e410] [cursor=pointer]
+        - generic [ref=e413]:
+          - heading "Llamacpp imatrix Quantizations of Darwin-35B-A3B-Opus by FINAL-Bench" [level=2] [ref=e414]:
+            - link [ref=e415] [cursor=pointer]:
+              - /url: "#llamacpp-imatrix-quantizations-of-darwin-35b-a3b-opus-by-final-bench"
+          - paragraph [ref=e420]:
+            - text: Using
+            - link "llama.cpp" [ref=e421] [cursor=pointer]:
+              - /url: https://github.com/ggml-org/llama.cpp/
+            - text: release
+            - link "b8586" [ref=e422] [cursor=pointer]:
+              - /url: https://github.com/ggml-org/llama.cpp/releases/tag/b8586
+            - text: for quantization.
+          - paragraph [ref=e423]:
+            - text: "Original model:"
+            - link "https://huggingface.co/FINAL-Bench/Darwin-35B-A3B-Opus" [ref=e424] [cursor=pointer]:
+              - /url: https://huggingface.co/FINAL-Bench/Darwin-35B-A3B-Opus
+          - paragraph [ref=e425]:
+            - text: All quants made using imatrix option with dataset from
+            - link "here" [ref=e426] [cursor=pointer]:
+              - /url: https://gist.github.com/bartowski1182/82ae9b520227f57d79ba04add13d0d0d
+          - paragraph [ref=e427]: "Run them in your choice of tools:"
+          - list [ref=e428]:
+            - listitem [ref=e429]:
+              - link "llama.cpp" [ref=e430] [cursor=pointer]:
+                - /url: https://github.com/ggml-org/llama.cpp
+            - listitem [ref=e431]:
+              - link "ramalama" [ref=e432] [cursor=pointer]:
+                - /url: https://github.com/containers/ramalama
+            - listitem [ref=e433]:
+              - link "LM Studio" [ref=e434] [cursor=pointer]:
+                - /url: https://lmstudio.ai/
+            - listitem [ref=e435]:
+              - link "koboldcpp" [ref=e436] [cursor=pointer]:
+                - /url: https://github.com/LostRuins/koboldcpp
+            - listitem [ref=e437]:
+              - link "Jan AI" [ref=e438] [cursor=pointer]:
+                - /url: https://www.jan.ai/
+            - listitem [ref=e439]:
+              - link "Text Generation Web UI" [ref=e440] [cursor=pointer]:
+                - /url: https://github.com/oobabooga/text-generation-webui
+            - listitem [ref=e441]:
+              - link "LoLLMs" [ref=e442] [cursor=pointer]:
+                - /url: https://github.com/ParisNeo/lollms
+          - paragraph [ref=e443]: "Note: if it's a newly supported model, you may need to wait for an update from the developers."
+          - heading "Prompt format" [level=2] [ref=e444]:
+            - link [ref=e445] [cursor=pointer]:
+              - /url: "#prompt-format"
+          - code [ref=e451]: "<|im_start|>system {system_prompt}<|im_end|> <|im_start|>user {prompt}<|im_end|> <|im_start|>assistant <think>"
+          - heading "Download a file (not the whole branch) from below:" [level=2] [ref=e452]:
+            - link [ref=e453] [cursor=pointer]:
+              - /url: "#download-a-file-not-the-whole-branch-from-below"
+          - table [ref=e459]:
+            - rowgroup [ref=e460]:
+              - row [ref=e461]:
+                - columnheader "Filename" [ref=e462]
+                - columnheader "Quant type" [ref=e463]
+                - columnheader "File Size" [ref=e464]
+                - columnheader "Split" [ref=e465]
+                - columnheader "Description" [ref=e466]
+            - rowgroup [ref=e467]:
+              - row [ref=e468]:
+                - cell [ref=e469]:
+                  - link "Darwin-35B-A3B-Opus-bf16.gguf" [ref=e470] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/tree/main/FINAL-Bench_Darwin-35B-A3B-Opus-bf16
+                - cell "bf16" [ref=e471]
+                - cell "69.38GB" [ref=e472]
+                - cell "true" [ref=e473]
+                - cell "Full BF16 weights." [ref=e474]
+              - row [ref=e475]:
+                - cell [ref=e476]:
+                  - link "Darwin-35B-A3B-Opus-Q8_0.gguf" [ref=e477] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q8_0.gguf
+                - cell "Q8_0" [ref=e478]
+                - cell "36.91GB" [ref=e479]
+                - cell "false" [ref=e480]
+                - cell "Extremely high quality, generally unneeded but max available quant." [ref=e481]
+              - row [ref=e482]:
+                - cell [ref=e483]:
+                  - link "Darwin-35B-A3B-Opus-Q6_K_L.gguf" [ref=e484] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q6_K_L.gguf
+                - cell "Q6_K_L" [ref=e485]
+                - cell "30.30GB" [ref=e486]
+                - cell "false" [ref=e487]
+                - cell [ref=e488]:
+                  - text: Uses Q8_0 for embed and output weights. Very high quality, near perfect,
+                  - emphasis [ref=e489]: recommended
+                  - text: .
+              - row [ref=e490]:
+                - cell [ref=e491]:
+                  - link "Darwin-35B-A3B-Opus-Q6_K.gguf" [ref=e492] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q6_K.gguf
+                - cell "Q6_K" [ref=e493]
+                - cell "30.05GB" [ref=e494]
+                - cell "false" [ref=e495]
+                - cell [ref=e496]:
+                  - text: Very high quality, near perfect,
+                  - emphasis [ref=e497]: recommended
+                  - text: .
+              - row [ref=e498]:
+                - cell [ref=e499]:
+                  - link "Darwin-35B-A3B-Opus-Q5_K_L.gguf" [ref=e500] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q5_K_L.gguf
+                - cell "Q5_K_L" [ref=e501]
+                - cell "25.33GB" [ref=e502]
+                - cell "false" [ref=e503]
+                - cell [ref=e504]:
+                  - text: Uses Q8_0 for embed and output weights. High quality,
+                  - emphasis [ref=e505]: recommended
+                  - text: .
+              - row [ref=e506]:
+                - cell [ref=e507]:
+                  - link "Darwin-35B-A3B-Opus-Q5_K_M.gguf" [ref=e508] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q5_K_M.gguf
+                - cell "Q5_K_M" [ref=e509]
+                - cell "25.02GB" [ref=e510]
+                - cell "false" [ref=e511]
+                - cell [ref=e512]:
+                  - text: High quality,
+                  - emphasis [ref=e513]: recommended
+                  - text: .
+              - row [ref=e514]:
+                - cell [ref=e515]:
+                  - link "Darwin-35B-A3B-Opus-Q5_K_S.gguf" [ref=e516] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q5_K_S.gguf
+                - cell "Q5_K_S" [ref=e517]
+                - cell "24.16GB" [ref=e518]
+                - cell "false" [ref=e519]
+                - cell [ref=e520]:
+                  - text: High quality,
+                  - emphasis [ref=e521]: recommended
+                  - text: .
+              - row [ref=e522]:
+                - cell [ref=e523]:
+                  - link "Darwin-35B-A3B-Opus-Q4_1.gguf" [ref=e524] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q4_1.gguf
+                - cell "Q4_1" [ref=e525]
+                - cell "21.97GB" [ref=e526]
+                - cell "false" [ref=e527]
+                - cell "Legacy format, similar performance to Q4_K_S but with improved tokens/watt on Apple silicon." [ref=e528]
+              - row [ref=e529]:
+                - cell [ref=e530]:
+                  - link "Darwin-35B-A3B-Opus-Q4_K_L.gguf" [ref=e531] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q4_K_L.gguf
+                - cell "Q4_K_L" [ref=e532]
+                - cell "21.77GB" [ref=e533]
+                - cell "false" [ref=e534]
+                - cell [ref=e535]:
+                  - text: Uses Q8_0 for embed and output weights. Good quality,
+                  - emphasis [ref=e536]: recommended
+                  - text: .
+              - row [ref=e537]:
+                - cell [ref=e538]:
+                  - link "Darwin-35B-A3B-Opus-Q4_K_M.gguf" [ref=e539] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q4_K_M.gguf
+                - cell "Q4_K_M" [ref=e540]
+                - cell "21.39GB" [ref=e541]
+                - cell "false" [ref=e542]
+                - cell [ref=e543]:
+                  - text: Good quality, default size for most use cases,
+                  - emphasis [ref=e544]: recommended
+                  - text: .
+              - row [ref=e545]:
+                - cell [ref=e546]:
+                  - link "Darwin-35B-A3B-Opus-Q4_K_S.gguf" [ref=e547] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q4_K_S.gguf
+                - cell "Q4_K_S" [ref=e548]
+                - cell "20.59GB" [ref=e549]
+                - cell "false" [ref=e550]
+                - cell [ref=e551]:
+                  - text: Slightly lower quality with more space savings,
+                  - emphasis [ref=e552]: recommended
+                  - text: .
+              - row [ref=e553]:
+                - cell [ref=e554]:
+                  - link "Darwin-35B-A3B-Opus-Q4_0.gguf" [ref=e555] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q4_0.gguf
+                - cell "Q4_0" [ref=e556]
+                - cell "19.94GB" [ref=e557]
+                - cell "false" [ref=e558]
+                - cell "Legacy format, offers online repacking for ARM and AVX CPU inference." [ref=e559]
+              - row [ref=e560]:
+                - cell [ref=e561]:
+                  - link "Darwin-35B-A3B-Opus-IQ4_NL.gguf" [ref=e562] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ4_NL.gguf
+                - cell "IQ4_NL" [ref=e563]
+                - cell "19.86GB" [ref=e564]
+                - cell "false" [ref=e565]
+                - cell "Similar to IQ4_XS, but slightly larger. Offers online repacking for ARM CPU inference." [ref=e566]
+              - row [ref=e567]:
+                - cell [ref=e568]:
+                  - link "Darwin-35B-A3B-Opus-IQ4_XS.gguf" [ref=e569] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ4_XS.gguf
+                - cell "IQ4_XS" [ref=e570]
+                - cell "18.81GB" [ref=e571]
+                - cell "false" [ref=e572]
+                - cell [ref=e573]:
+                  - text: Decent quality, smaller than Q4_K_S with similar performance,
+                  - emphasis [ref=e574]: recommended
+                  - text: .
+              - row [ref=e575]:
+                - cell [ref=e576]:
+                  - link "Darwin-35B-A3B-Opus-Q3_K_XL.gguf" [ref=e577] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q3_K_XL.gguf
+                - cell "Q3_K_XL" [ref=e578]
+                - cell "17.33GB" [ref=e579]
+                - cell "false" [ref=e580]
+                - cell "Uses Q8_0 for embed and output weights. Lower quality but usable, good for low RAM availability." [ref=e581]
+              - row [ref=e582]:
+                - cell [ref=e583]:
+                  - link "Darwin-35B-A3B-Opus-IQ3_M.gguf" [ref=e584] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ3_M.gguf
+                - cell "IQ3_M" [ref=e585]
+                - cell "16.90GB" [ref=e586]
+                - cell "false" [ref=e587]
+                - cell "Medium-low quality, new method with decent performance comparable to Q3_K_M." [ref=e588]
+              - row [ref=e589]:
+                - cell [ref=e590]:
+                  - link "Darwin-35B-A3B-Opus-Q3_K_L.gguf" [ref=e591] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q3_K_L.gguf
+                - cell "Q3_K_L" [ref=e592]
+                - cell "16.89GB" [ref=e593]
+                - cell "false" [ref=e594]
+                - cell "Lower quality but usable, good for low RAM availability." [ref=e595]
+              - row [ref=e596]:
+                - cell [ref=e597]:
+                  - link "Darwin-35B-A3B-Opus-Q3_K_M.gguf" [ref=e598] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q3_K_M.gguf
+                - cell "Q3_K_M" [ref=e599]
+                - cell "16.23GB" [ref=e600]
+                - cell "false" [ref=e601]
+                - cell "Low quality." [ref=e602]
+              - row [ref=e603]:
+                - cell [ref=e604]:
+                  - link "Darwin-35B-A3B-Opus-IQ3_XS.gguf" [ref=e605] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ3_XS.gguf
+                - cell "IQ3_XS" [ref=e606]
+                - cell "16.22GB" [ref=e607]
+                - cell "false" [ref=e608]
+                - cell "Lower quality, new method with decent performance, slightly better than Q3_K_S." [ref=e609]
+              - row [ref=e610]:
+                - cell [ref=e611]:
+                  - link "Darwin-35B-A3B-Opus-Q3_K_S.gguf" [ref=e612] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q3_K_S.gguf
+                - cell "Q3_K_S" [ref=e613]
+                - cell "15.51GB" [ref=e614]
+                - cell "false" [ref=e615]
+                - cell "Low quality, not recommended." [ref=e616]
+              - row [ref=e617]:
+                - cell [ref=e618]:
+                  - link "Darwin-35B-A3B-Opus-IQ3_XXS.gguf" [ref=e619] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ3_XXS.gguf
+                - cell "IQ3_XXS" [ref=e620]
+                - cell "14.87GB" [ref=e621]
+                - cell "false" [ref=e622]
+                - cell "Lower quality, new method with decent performance, comparable to Q3 quants." [ref=e623]
+              - row [ref=e624]:
+                - cell [ref=e625]:
+                  - link "Darwin-35B-A3B-Opus-Q2_K_L.gguf" [ref=e626] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q2_K_L.gguf
+                - cell "Q2_K_L" [ref=e627]
+                - cell "13.11GB" [ref=e628]
+                - cell "false" [ref=e629]
+                - cell "Uses Q8_0 for embed and output weights. Very low quality but surprisingly usable." [ref=e630]
+              - row [ref=e631]:
+                - cell [ref=e632]:
+                  - link "Darwin-35B-A3B-Opus-Q2_K.gguf" [ref=e633] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-Q2_K.gguf
+                - cell "Q2_K" [ref=e634]
+                - cell "12.62GB" [ref=e635]
+                - cell "false" [ref=e636]
+                - cell "Very low quality but surprisingly usable." [ref=e637]
+              - row [ref=e638]:
+                - cell [ref=e639]:
+                  - link "Darwin-35B-A3B-Opus-IQ2_M.gguf" [ref=e640] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ2_M.gguf
+                - cell "IQ2_M" [ref=e641]
+                - cell "12.07GB" [ref=e642]
+                - cell "false" [ref=e643]
+                - cell "Relatively low quality, uses SOTA techniques to be surprisingly usable." [ref=e644]
+              - row [ref=e645]:
+                - cell [ref=e646]:
+                  - link "Darwin-35B-A3B-Opus-IQ2_S.gguf" [ref=e647] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ2_S.gguf
+                - cell "IQ2_S" [ref=e648]
+                - cell "11.01GB" [ref=e649]
+                - cell "false" [ref=e650]
+                - cell "Low quality, uses SOTA techniques to be usable." [ref=e651]
+              - row [ref=e652]:
+                - cell [ref=e653]:
+                  - link "Darwin-35B-A3B-Opus-IQ2_XS.gguf" [ref=e654] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ2_XS.gguf
+                - cell "IQ2_XS" [ref=e655]
+                - cell "10.80GB" [ref=e656]
+                - cell "false" [ref=e657]
+                - cell "Low quality, uses SOTA techniques to be usable." [ref=e658]
+              - row [ref=e659]:
+                - cell [ref=e660]:
+                  - link "Darwin-35B-A3B-Opus-IQ2_XXS.gguf" [ref=e661] [cursor=pointer]:
+                    - /url: https://huggingface.co/bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/FINAL-Bench_Darwin-35B-A3B-Opus-IQ2_XXS.gguf
+                - cell "IQ2_XXS" [ref=e662]
+                - cell "9.78GB" [ref=e663]
+                - cell "false" [ref=e664]
+                - cell "Very low quality, uses SOTA techniques to be usable." [ref=e665]
+          - heading "Embed/output weights" [level=2] [ref=e666]:
+            - link [ref=e667] [cursor=pointer]:
+              - /url: "#embedoutput-weights"
+          - paragraph [ref=e672]: Some of these quants (Q3_K_XL, Q4_K_L etc) are the standard quantization method with the embeddings and output weights quantized to Q8_0 instead of what they would normally default to.
+          - heading "Downloading using huggingface-cli" [level=2] [ref=e673]:
+            - link [ref=e674] [cursor=pointer]:
+              - /url: "#downloading-using-huggingface-cli"
+          - group [ref=e679]:
+            - generic "Click to view download instructions" [ref=e680]
+          - heading "ARM/AVX information" [level=2] [ref=e681]:
+            - link [ref=e682] [cursor=pointer]:
+              - /url: "#armavx-information"
+          - paragraph [ref=e687]: Previously, you would download Q4_0_4_4/4_8/8_8, and these would have their weights interleaved in memory in order to improve performance on ARM and AVX machines by loading up more data in one pass.
+          - paragraph [ref=e688]:
+            - text: Now, however, there is something called "online repacking" for weights. details in
+            - link "this PR" [ref=e689] [cursor=pointer]:
+              - /url: https://github.com/ggml-org/llama.cpp/pull/9921
+            - text: . If you use Q4_0 and your hardware would benefit from repacking weights, it will do it automatically on the fly.
+          - paragraph [ref=e690]:
+            - text: As of llama.cpp build
+            - link "b4282" [ref=e691] [cursor=pointer]:
+              - /url: https://github.com/ggml-org/llama.cpp/releases/tag/b4282
+            - text: you will not be able to run the Q4_0_X_X files and will instead need to use Q4_0.
+          - paragraph [ref=e692]:
+            - text: Additionally, if you want to get slightly better quality for , you can use IQ4_NL thanks to
+            - link "this PR" [ref=e693] [cursor=pointer]:
+              - /url: https://github.com/ggml-org/llama.cpp/pull/10541
+            - text: which will also repack the weights for ARM, though only the 4_4 for now. The loading time may be slower but it will result in an overall speed incrase.
+          - group [ref=e694]:
+            - generic "Click to view Q4_0_X_X information (deprecated" [ref=e695]
+          - heading "Which file should I choose?" [level=2] [ref=e696]:
+            - link [ref=e697] [cursor=pointer]:
+              - /url: "#which-file-should-i-choose"
+          - group [ref=e702]:
+            - generic "Click here for details" [ref=e703]
+          - heading "Credits" [level=2] [ref=e704]:
+            - link [ref=e705] [cursor=pointer]:
+              - /url: "#credits"
+          - paragraph [ref=e710]: Thank you kalomaze and Dampf for assistance in creating the imatrix calibration dataset.
+          - paragraph [ref=e711]: Thank you ZeroWw for the inspiration to experiment with embed/output.
+          - paragraph [ref=e712]: Thank you to LM Studio for sponsoring my work.
+          - paragraph [ref=e713]:
+            - text: "Want to support my work? Visit my ko-fi page here:"
+            - link "https://ko-fi.com/bartowski" [ref=e714] [cursor=pointer]:
+              - /url: https://ko-fi.com/bartowski
+      - generic [ref=e715]:
+        - generic [ref=e717]:
+          - term [ref=e718]: Downloads last month
+          - definition [ref=e719]: 2,021
+        - generic [ref=e727]:
+          - generic [ref=e728]:
+            - generic [ref=e729]:
+              - text: GGUF
+              - link [ref=e732] [cursor=pointer]:
+                - /url: https://huggingface.co/docs/hub/gguf
+            - generic [ref=e737]:
+              - generic [ref=e738]:
+                - generic [ref=e739]: Model size
+                - generic [ref=e740]: 35B params
+              - generic [ref=e741]:
+                - generic [ref=e742]: Architecture
+                - generic [ref=e743]: qwen35moe
+              - button [ref=e745] [cursor=pointer]:
+                - paragraph [ref=e748]: Chat template
+          - generic [ref=e749]:
+            - generic [ref=e750]:
+              - generic [ref=e751]: Hardware compatibility
+              - generic [ref=e756]:
+                - link "Log In" [ref=e757] [cursor=pointer]:
+                  - /url: /login
+                - generic: to add your hardware
+            - generic [ref=e758]:
+              - generic [ref=e759]:
+                - paragraph [ref=e760]: 2-bit
+                - generic [ref=e761]:
+                  - button "IQ2_XXS 9.78 GB" [ref=e762] [cursor=pointer]:
+                    - generic [ref=e763]: IQ2_XXS
+                    - generic [ref=e765]: 9.78 GB
+                  - button "IQ2_XS 10.8 GB" [ref=e766] [cursor=pointer]:
+                    - generic [ref=e767]: IQ2_XS
+                    - generic [ref=e769]: 10.8 GB
+                  - button "IQ2_S 11 GB" [ref=e770] [cursor=pointer]:
+                    - generic [ref=e771]: IQ2_S
+                    - generic [ref=e773]: 11 GB
+                  - button "Q2_K 12.6 GB" [ref=e774] [cursor=pointer]:
+                    - generic [ref=e775]: Q2_K
+                    - generic [ref=e777]: 12.6 GB
+                  - button "IQ2_M 12.1 GB" [ref=e778] [cursor=pointer]:
+                    - generic [ref=e779]: IQ2_M
+                    - generic [ref=e781]: 12.1 GB
+                  - button "Q2_K_L 13.1 GB" [ref=e782] [cursor=pointer]:
+                    - generic [ref=e783]: Q2_K_L
+                    - generic [ref=e785]: 13.1 GB
+              - generic [ref=e786]:
+                - paragraph [ref=e787]: 3-bit
+                - generic [ref=e788]:
+                  - button "IQ3_XXS 14.9 GB" [ref=e789] [cursor=pointer]:
+                    - generic [ref=e790]: IQ3_XXS
+                    - generic [ref=e792]: 14.9 GB
+                  - button "IQ3_XS 16.2 GB" [ref=e793] [cursor=pointer]:
+                    - generic [ref=e794]: IQ3_XS
+                    - generic [ref=e796]: 16.2 GB
+                  - button "Q3_K_S 15.5 GB" [ref=e797] [cursor=pointer]:
+                    - generic [ref=e798]: Q3_K_S
+                    - generic [ref=e800]: 15.5 GB
+                  - button "IQ3_M 16.9 GB" [ref=e801] [cursor=pointer]:
+                    - generic [ref=e802]: IQ3_M
+                    - generic [ref=e804]: 16.9 GB
+                  - button "Q3_K_M 16.2 GB" [ref=e805] [cursor=pointer]:
+                    - generic [ref=e806]: Q3_K_M
+                    - generic [ref=e808]: 16.2 GB
+                  - button "Q3_K_L 16.9 GB" [ref=e809] [cursor=pointer]:
+                    - generic [ref=e810]: Q3_K_L
+                    - generic [ref=e812]: 16.9 GB
+                  - button "Q3_K_XL 17.3 GB" [ref=e813] [cursor=pointer]:
+                    - generic [ref=e814]: Q3_K_XL
+                    - generic [ref=e816]: 17.3 GB
+              - generic [ref=e817]:
+                - paragraph [ref=e818]: 4-bit
+                - generic [ref=e819]:
+                  - button "IQ4_XS 18.8 GB" [ref=e820] [cursor=pointer]:
+                    - generic [ref=e821]: IQ4_XS
+                    - generic [ref=e823]: 18.8 GB
+                  - button "Q4_K_S 20.6 GB" [ref=e824] [cursor=pointer]:
+                    - generic [ref=e825]: Q4_K_S
+                    - generic [ref=e827]: 20.6 GB
+                  - button "IQ4_NL 19.9 GB" [ref=e828] [cursor=pointer]:
+                    - generic [ref=e829]: IQ4_NL
+                    - generic [ref=e831]: 19.9 GB
+                  - button "Q4_0 19.9 GB" [ref=e832] [cursor=pointer]:
+                    - generic [ref=e833]: Q4_0
+                    - generic [ref=e835]: 19.9 GB
+                  - button "Q4_1 22 GB" [ref=e836] [cursor=pointer]:
+                    - generic [ref=e837]: Q4_1
+                    - generic [ref=e839]: 22 GB
+                  - button "Q4_K_M 21.4 GB" [ref=e840] [cursor=pointer]:
+                    - generic [ref=e841]: Q4_K_M
+                    - generic [ref=e843]: 21.4 GB
+              - generic [ref=e844]:
+                - paragraph [ref=e845]: 5-bit
+                - generic [ref=e846]:
+                  - button "Q5_K_S 24.2 GB" [ref=e847] [cursor=pointer]:
+                    - generic [ref=e848]: Q5_K_S
+                    - generic [ref=e850]: 24.2 GB
+                  - button "Q5_K_M 25 GB" [ref=e851] [cursor=pointer]:
+                    - generic [ref=e852]: Q5_K_M
+                    - generic [ref=e854]: 25 GB
+              - generic [ref=e855]:
+                - paragraph [ref=e856]: 6-bit
+                - generic [ref=e857]:
+                  - button "Q6_K 30.1 GB" [ref=e858] [cursor=pointer]:
+                    - generic [ref=e859]: Q6_K
+                    - generic [ref=e861]: 30.1 GB
+                  - button "Q6_K_L 30.3 GB" [ref=e862] [cursor=pointer]:
+                    - generic [ref=e863]: Q6_K_L
+                    - generic [ref=e865]: 30.3 GB
+              - generic [ref=e866]:
+                - paragraph [ref=e867]: 8-bit
+                - button "Q8_0 36.9 GB" [ref=e869] [cursor=pointer]:
+                  - generic [ref=e870]: Q8_0
+                  - generic [ref=e872]: 36.9 GB
+              - generic [ref=e873]:
+                - paragraph [ref=e874]: 16-bit
+                - button "BF16 69.4 GB" [ref=e876] [cursor=pointer]:
+                  - generic [ref=e877]: BF16
+                  - generic [ref=e879]: 69.4 GB
+              - link "View +1 variant" [ref=e882] [cursor=pointer]:
+                - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/tree/main
+        - generic [ref=e886]:
+          - generic [ref=e888]:
+            - generic [ref=e891]: Inference Providers
+            - link "NEW" [ref=e892] [cursor=pointer]:
+              - /url: https://huggingface.co/docs/inference-providers
+          - link "Image-Text-to-Text" [ref=e895] [cursor=pointer]:
+            - /url: /tasks/image-text-to-text
+          - generic [ref=e902]:
+            - generic [ref=e903]: This model isn't deployed by any Inference Provider.
+            - link "🙋 Ask for provider support" [ref=e904] [cursor=pointer]:
+              - /url: /spaces/huggingface/InferenceSupport/discussions/new?title=bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF&description=React%20to%20this%20comment%20with%20an%20emoji%20to%20vote%20for%20%5Bbartowski%2FFINAL-Bench_Darwin-35B-A3B-Opus-GGUF%5D(%2Fbartowski%2FFINAL-Bench_Darwin-35B-A3B-Opus-GGUF)%20to%20be%20supported%20by%20Inference%20Providers.%0A%0A(optional)%20Which%20providers%20are%20you%20interested%20in%3F%20(Novita%2C%20Hyperbolic%2C%20Together%E2%80%A6)%0A
+              - generic [ref=e905]: 🙋
+              - generic [ref=e907]: Ask for provider support
+        - heading "Model tree for bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF" [level=2] [ref=e909]:
+          - text: Model tree for
+          - generic [ref=e913]: bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF
+        - generic [ref=e914]:
+          - generic [ref=e915]:
+            - paragraph [ref=e916]: Base model
+            - link "FINAL-Bench/Darwin-35B-A3B-Opus" [ref=e917] [cursor=pointer]:
+              - /url: /FINAL-Bench/Darwin-35B-A3B-Opus
+          - generic [ref=e918]:
+            - generic [ref=e922]: Quantized
+            - generic [ref=e930]:
+              - text: (
+              - link "12" [ref=e931] [cursor=pointer]:
+                - /url: /models?other=base_model:quantized:FINAL-Bench/Darwin-35B-A3B-Opus
+              - text: )
+            - generic "bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF" [ref=e933]: this model
+        - generic [ref=e934]:
+          - heading [level=2] [ref=e936]:
+            - text: Evaluation results
+            - link [ref=e941] [cursor=pointer]:
+              - /url: https://huggingface.co/docs/hub/eval-results
+          - list [ref=e946]:
+            - listitem [ref=e947]:
+              - 'generic "Graduate-Level Reasoning: Accuracy on GPQA Diamond" [ref=e948]': Accuracy on GPQA Diamond
+              - link "self-reported" [ref=e949] [cursor=pointer]:
+                - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/README.md
+              - generic [ref=e950]: "90.000"
+            - listitem [ref=e951]:
+              - 'generic "Multilingual Knowledge: Accuracy on MMMLU" [ref=e952]': Accuracy on MMMLU
+              - link "self-reported" [ref=e953] [cursor=pointer]:
+                - /url: /bartowski/FINAL-Bench_Darwin-35B-A3B-Opus-GGUF/blob/main/README.md
+              - generic [ref=e955]: "85.000"
+  - contentinfo [ref=e956]:
+    - navigation [ref=e957]:
+      - button "System theme" [ref=e960] [cursor=pointer]
+      - link "TOS" [ref=e966] [cursor=pointer]:
+        - /url: /terms-of-service
+      - link "Privacy" [ref=e967] [cursor=pointer]:
+        - /url: /privacy
+      - link "About" [ref=e968] [cursor=pointer]:
+        - /url: /huggingface
+      - link "Careers" [ref=e969] [cursor=pointer]:
+        - /url: https://apply.workable.com/huggingface/
+      - link "Hugging Face" [ref=e970] [cursor=pointer]:
+        - /url: /
+      - link "Models" [ref=e985] [cursor=pointer]:
+        - /url: /models
+      - link "Datasets" [ref=e986] [cursor=pointer]:
+        - /url: /datasets
+      - link "Spaces" [ref=e987] [cursor=pointer]:
+        - /url: /spaces
+      - link "Pricing" [ref=e988] [cursor=pointer]:
+        - /url: /pricing
+      - link "Docs" [ref=e989] [cursor=pointer]:
+        - /url: /docs

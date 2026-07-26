@@ -16,6 +16,7 @@ import {
   getSessionId, setSessionId,
   getAbortCtrl, setAbortCtrl,
 } from "./state.mjs";
+import { updateContextWindowForModel } from "./context-window.mjs";
 
 function randomWxUin() {
   return Buffer.from(String(Math.floor(Math.random() * 4294967296)), "utf-8").toString("base64");
@@ -228,6 +229,10 @@ export function registerWechatIpc() {
     const cfg = loadWxConfig();
     cfg.apiUrl = apiUrl; cfg.apiKey = apiKey; cfg.model = model; cfg.apiFormat = apiFormat;
     saveWxConfig(cfg);
+    // WeChat messages run through the same agentLoop — keep the context window
+    // in sync with the model the desktop side just pushed. No override field
+    // here: undefined preserves any manual override set from the desktop UI.
+    updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat });
     return { ok: true };
   });
 }

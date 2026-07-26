@@ -30,6 +30,7 @@ import {
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
 import { hasPersistedWorkspace } from "./workspace-config.mjs";
 import { setRendererSnapshot } from "./session-info.mjs";
+import { updateContextWindowForModel } from "./context-window.mjs";
 
 /** @type {Map<string, AbortController>} */
 const _subAgentCtrls = _subAgentCtrlsRaw;
@@ -94,11 +95,15 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null }) => {
+  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null, contextWindowOverride }) => {
     setPlanMode(!!pm);
     setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
     console.log("[query:submit] runtime =", runtime, "opencodeModelId =", opencodeModelId, "planMode =", getPlanMode(), "pm =", pm);
     if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
+    // Re-resolve the context window for the active model (local servers need
+    // no apiKey, so this runs outside the guard above). Fire-and-forget: the
+    // sync path sets an immediate best guess; the server probe refines async.
+    updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride });
     sendToRenderer("stream:start", {});
     try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
     catch (/** @type {any} */ err) { sendToRenderer("stream:error", { message: err.message }); }
@@ -355,6 +360,112 @@ export function registerIpcHandlers() {
   ipcMain.handle("skills:save", async (_e, name, meta, body) => skills.saveSkill(name, meta, body));
   ipcMain.handle("skills:search", async (_e, query, limit) => skills.searchSkills(query, limit));
   ipcMain.handle("skills:reindex", async () => { skills.reindexSkills(); return { ok: true }; });
+
+  // ── Auto-generate skills from conversation (Phase 2 completion) ──
+  // Renderer-driven flow: user picks a candidate from the pattern card in
+  // the L2 skills panel and clicks "生成技能" → the main process pulls the
+  // matching sessions, calls the LLM, parses, and saves a SKILL.md.
+  //
+  // Returns a structured result so the renderer can surface failures.
+  ipcMain.handle("skills:auto-generate", async (_e, { phrase, apiConfig }) => {
+    try {
+      if (!phrase || typeof phrase !== "string") return { saved: false, error: "missing phrase" };
+      /** @type {{apiKey:string, apiUrl:string, model:string, apiFormat:string}} */
+      const cfg = apiConfig && typeof apiConfig === "object"
+        ? apiConfig
+        : { apiKey: "", apiUrl: "", model: "", apiFormat: "openai" };
+      if (!cfg.apiKey || !cfg.apiUrl) return { saved: false, error: "api config missing" };
+
+      const suggestions = skills.detectPatterns(sessionDb);
+      const match = suggestions.find(s => s.phrase === phrase);
+      if (!match) return { saved: false, error: "phrase not in detected patterns" };
+
+      // Pull recent sessions whose first user message contains the phrase,
+      // then ship their transcripts to the LLM as raw material for the distill.
+      const recentSessions = sessionDb.listSessions(30);
+      const matchingMsgs = /** @type {Array<{role: string, content: string}>} */ ([]);
+      for (const s of recentSessions.slice(0, 10)) {
+        try {
+          const data = sessionDb.loadSession(/** @type {string} */ (/** @type {any} */ (s).id));
+          if (!data?.history) continue;
+          /** @type {any[]} */
+          const hist = data.history;
+          const userMsgs = hist.filter(m => m.role === "user");
+          if (!userMsgs.length) continue;
+          const firstQuery = String(userMsgs[0].content || "").trim();
+          if (!firstQuery.includes(phrase)) continue;
+          // Take up to 16 messages (8 exchanges) from this matching session.
+          matchingMsgs.push(...hist.slice(0, 16).filter(m => m.role === "user" || m.role === "assistant"));
+        } catch { /* ignored */ }
+      }
+      if (matchingMsgs.length < 4) return { saved: false, error: "no matching session content" };
+
+      const result = await skills.autoGenerateSkillFromConversation({
+        msgs: matchingMsgs,
+        candidate: { phrase, count: match.count, examples: match.examples || [] },
+        apiKey: cfg.apiKey,
+        apiUrl: cfg.apiUrl,
+        model: cfg.model,
+        apiFormat: cfg.apiFormat || "openai",
+      });
+      // Tell the L2 panel to refresh so the new skill shows up immediately.
+      try { sendToRenderer("skills:translations-updated", { count: 1, generated: result.name }); } catch { /* renderer may be gone */ }
+      return result;
+    } catch (/** @type {any} */ e) {
+      return { saved: false, error: e?.message || String(e) };
+    }
+  });
+
+  // Sweep all detected candidates in one shot — used by the session-end
+  // auto-trigger in agent-loop.mjs. Resilient: one failure never aborts
+  // the others. Returns an array of results so the UI can show per-skill
+  // status.
+  ipcMain.handle("skills:auto-generate-all", async (_e, { apiConfig, signal } = {}) => {
+/** @type {Array<{phrase:string, saved:boolean, name?:string, error?:string, alreadyExisted?:boolean}>} */
+      const results = [];
+    try {
+      /** @type {{apiKey:string, apiUrl:string, model:string, apiFormat:string}} */
+      const cfg = apiConfig && typeof apiConfig === "object"
+        ? apiConfig
+        : { apiKey: "", apiUrl: "", model: "", apiFormat: "openai" };
+      if (!cfg.apiKey || !cfg.apiUrl) return [];
+
+      const suggestions = skills.detectPatterns(sessionDb);
+      if (!suggestions.length) return [];
+
+      const recentSessions = sessionDb.listSessions(30);
+      for (const cand of suggestions.slice(0, 5)) {
+        try {
+          const matchingMsgs = /** @type {Array<{role: string, content: string}>} */ ([]);
+          for (const s of recentSessions.slice(0, 10)) {
+            try {
+              const data = sessionDb.loadSession(/** @type {string} */ (/** @type {any} */ (s).id));
+              if (!data?.history) continue;
+              /** @type {any[]} */
+              const hist = data.history;
+              const userMsgs = hist.filter(m => m.role === "user");
+              if (!userMsgs.length) continue;
+              if (!String(userMsgs[0].content || "").includes(cand.phrase)) continue;
+              matchingMsgs.push(...hist.slice(0, 16).filter(m => m.role === "user" || m.role === "assistant"));
+            } catch { /* ignore */ }
+          }
+          if (matchingMsgs.length < 4) { results.push({ phrase: cand.phrase, saved: false, error: "no matching content" }); continue; }
+          const r = await skills.autoGenerateSkillFromConversation({
+            msgs: matchingMsgs, candidate: cand,
+            apiKey: cfg.apiKey, apiUrl: cfg.apiUrl, model: cfg.model, apiFormat: cfg.apiFormat || "openai",
+            signal,
+          });
+          results.push({ phrase: cand.phrase, saved: r.saved === true, name: r.name, error: r.error, alreadyExisted: r.alreadyExisted });
+        } catch (/** @type {any} */ e) {
+          results.push({ phrase: cand.phrase, saved: false, error: e?.message || String(e) });
+        }
+      }
+      try { sendToRenderer("skills:translations-updated", { count: results.filter(r => r.saved).length, generatedBatch: true }); } catch { /* renderer may be gone */ }
+    } catch (/** @type {any} */ e) {
+      console.error("[skills:auto-generate-all] error:", e?.message);
+    }
+    return results;
+  });
 
   // Per-user skill name translations (display-only, in ~/.aideagent/skill-translations.json)
   // Use the same union (L3 scanSkills + L2 listSkills) the renderer shows, so cache
