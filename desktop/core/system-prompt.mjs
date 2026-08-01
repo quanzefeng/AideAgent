@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { app } from "electron";
 import os from "node:os";
 import sessionDb from "../session-db.mjs";
+import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";

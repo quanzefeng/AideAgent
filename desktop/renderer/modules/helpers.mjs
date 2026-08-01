@@ -20,6 +20,24 @@ export function sanitize(html) {
 }
 
 /**
+ * Escape a string for safe insertion into HTML text content or quoted
+ * attribute values. Unlike DOMPurify (which sanitizes HTML fragments),
+ * this is for plain-text values that must NOT be interpreted as HTML.
+ * Use this for: element text, title="", alt="", data-*="", etc.
+ * @param {string} str
+ * @returns {string}
+ */
+export function escapeHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Render markdown to sanitized HTML, with $$...$$ and \[...\] converted to
  * KaTeX placeholders for later rendering in renderLatexInElement.
  * @param {string} text - raw markdown

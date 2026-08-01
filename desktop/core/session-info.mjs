@@ -59,7 +59,6 @@ function _homedir() {
 function _userDataDir() {
   if (_testPaths.userData) return _testPaths.userData;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { app } = require("electron");
     return app.getPath("userData");
   } catch {

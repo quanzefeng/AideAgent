@@ -16,14 +16,14 @@ import { detectOpencode, listOpencodeModels } from "./opencode-detector.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
-  taskStore, setTodoList,
+  taskStore, setTodoList, getTodoList,
   setEpisodicSearched,
   _subAgentCtrls as _subAgentCtrlsRaw, resetSurfacedMemories,
   getWorkspace, setWorkspace,
   getPlanMode, setPlanMode,
   getCurrentRuntime, setCurrentRuntime,
   pendingPerms, _askResolvers,
-  setLastApiConfig,
+  setLastApiConfig, getLastApiConfig,
   sendToRenderer, getRendererBuffer, clearRendererBuffer,
   getOpencodeAcpClient, setOpencodeAcpClient,
 } from "./state.mjs";
@@ -836,6 +836,16 @@ export function registerIpcHandlers() {
   // ── Encrypted API Key Storage ──────────────────────────────
   const KEY_STORE_PATH = join(homedir(), ".aideagent", "api-keys.enc");
 
+  // The "custom" provider is represented by an empty string "" throughout the
+  // renderer (settings-provider <option value="">). An empty string is falsy,
+  // so the old `if (!provider)` guards below silently REJECTED custom-provider
+  // keys — they were never persisted, and vanished on restart / provider
+  // switch. Normalize "" to a stable sentinel key (matching the existing
+  // `_search_provider` naming style) so custom keys are stored like any other.
+  const CUSTOM_KEYSTORE_ID = "_custom";
+  /** @param {string} provider @returns {string} non-empty keystore key */
+  const keyStoreId = (provider) => provider || CUSTOM_KEYSTORE_ID;
+
   function loadKeyStore() {
     try {
       if (existsSync(KEY_STORE_PATH)) {
@@ -863,17 +873,19 @@ export function registerIpcHandlers() {
   }
 
   ipcMain.handle("api-key:save", (_event, { provider, key }) => {
-    if (!provider || !key) return { error: "provider and key required" };
+    // `provider == null` (not `!provider`) so the custom provider's empty
+    // string is accepted and normalized to CUSTOM_KEYSTORE_ID.
+    if (provider == null || !key) return { error: "provider and key required" };
     const store = loadKeyStore();
-    store[provider] = key;
+    store[keyStoreId(provider)] = key;
     saveKeyStore(store);
     return { ok: true };
   });
 
   ipcMain.handle("api-key:load", (_event, { provider }) => {
-    if (!provider) return null;
+    if (provider == null) return null;
     const store = loadKeyStore();
-    return store[provider] || null;
+    return store[keyStoreId(provider)] || null;
   });
 
   // Read-only env access for renderer-side features that need to know things
@@ -899,9 +911,9 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("api-key:delete", (_event, { provider }) => {
-    if (!provider) return { error: "provider required" };
+    if (provider == null) return { error: "provider required" };
     const store = loadKeyStore();
-    delete store[provider];
+    delete store[keyStoreId(provider)];
     saveKeyStore(store);
     return { ok: true };
   });

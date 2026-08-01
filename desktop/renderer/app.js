@@ -11,7 +11,7 @@ import { initMemoryPanel } from './modules/memory-panel.mjs';
 import { initPromptsPanel } from './modules/prompts-settings.mjs';
 import { openPromptsImportModal } from './modules/prompts-modal.mjs';
 import { loadAgentName, loadUserName, applyAgentName, applyUserName, initAgentNameUI, initUserAvatarUI, loadUserAvatarSrc } from './modules/agent-name.mjs';
-import { sanitize, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, setStatus, loadReasoningEnabled, saveReasoningEnabled } from './modules/helpers.mjs';
+import { sanitize, escapeHtml, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, setStatus, loadReasoningEnabled, saveReasoningEnabled } from './modules/helpers.mjs';
 import { loadEnabledSkills, loadAndRenderSkills } from './modules/skills-panel.mjs';
 import { switchSettingsTab, initSettingsTabs } from './modules/settings-tabs.mjs';
 import { createFilePreviews } from './modules/file-previews.mjs';
@@ -900,12 +900,13 @@ function finishAssistantMessage(msgEl) {
 /* ── Show welcome ─────────────────────────────────────── */
 function showWelcome() {
   const agentName = loadAgentName();
+  const safeName = escapeHtml(agentName);
   messageList.innerHTML = `
     <div class="welcome">
       <div class="welcome-icon">
-        <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="${agentName}" />
+        <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="${safeName}" />
       </div>
-      <h1>${agentName}</h1>
+      <h1>${safeName}</h1>
       <p class="description">${t("chat.welcome_desc", { name: agentName })}</p>
       <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
         <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
@@ -947,22 +948,22 @@ const _apiKeyCache = {}; // { provider: key }
 
 async function initApiKeys() {
   const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
-  if (provider) {
-    try {
-      const key = await window.aideagent.loadApiKey(provider);
-      if (key) {
-        _apiKeyCache[provider] = key;
-      } else {
-        // Migrate old plaintext key from localStorage
-        const legacyKey = localStorage.getItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key") || "";
-        if (legacyKey) {
-          _apiKeyCache[provider] = legacyKey;
-          await window.aideagent.saveApiKey(provider, legacyKey);
-          localStorage.removeItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key");
-        }
+  // NOTE: no `if (provider)` guard — the custom provider is "" and its key
+  // must be loaded too (main process maps "" → "_custom" in the keystore).
+  try {
+    const key = await window.aideagent.loadApiKey(provider);
+    if (key) {
+      _apiKeyCache[provider] = key;
+    } else {
+      // Migrate old plaintext key from localStorage
+      const legacyKey = localStorage.getItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key") || "";
+      if (legacyKey) {
+        _apiKeyCache[provider] = legacyKey;
+        await window.aideagent.saveApiKey(provider, legacyKey);
+        localStorage.removeItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key");
       }
-    } catch { /* ignored */ }
-  }
+    }
+  } catch { /* ignored */ }
 }
 
 function loadApiConfig() {
@@ -1075,7 +1076,22 @@ function fillSettingsForm() {
       const selectedModel = cfg.model || preset?.model || "";
       populateModelDropdown(preset, selectedModel);
     }
-    if (settingsKey) settingsKey.value = cfg.apiKey;
+    if (settingsKey) {
+      settingsKey.value = cfg.apiKey;
+      // Fallback: cache may be empty if initApiKeys is still in flight (or
+      // this provider's key was never loaded). Pull it from the encrypted
+      // store so the field isn't blank. Works for the custom provider ("")
+      // too — main process maps "" → "_custom".
+      if (!cfg.apiKey) {
+        window.aideagent.loadApiKey(cfg.provider).then(k => {
+          if (k) {
+            _apiKeyCache[cfg.provider] = k;
+            // Only fill if the user hasn't switched provider in the meantime.
+            if ((settingsProvider?.value || "") === cfg.provider) settingsKey.value = k;
+          }
+        }).catch(() => {});
+      }
+    }
     if (settingsContextWindow) settingsContextWindow.value = cfg.contextWindow || "";
     // Load search provider + Tavily key
     if (settingsSearchProvider) {
@@ -1098,8 +1114,21 @@ function fillSettingsForm() {
   }
 }
 
+// Tracks the provider currently shown in the settings form, so that when the
+// user switches providers we can stash any not-yet-saved key they typed for
+// the outgoing provider (a memory-only draft — nothing hits disk until Save).
+// Without this, typing a custom key and switching away wiped the input.
+let _activeSettingsProvider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
+
 function onProviderChange() {
   const key = settingsProvider?.value || "";
+  // Stash the outgoing provider's unsaved key input as a draft so switching
+  // away and back doesn't lose what the user typed.
+  if (settingsKey && key !== _activeSettingsProvider) {
+    const draft = settingsKey.value.trim();
+    if (draft) _apiKeyCache[_activeSettingsProvider] = draft;
+  }
+  _activeSettingsProvider = key;
   const preset = PROVIDER_PRESETS[key];
   const prefix = key ? `AideAgent_${key}_` : "AideAgent_";
   const savedUrl = localStorage.getItem(`${prefix}api_url`) || "";
@@ -1116,10 +1145,12 @@ function onProviderChange() {
   }
   // Context-window override is stored per-provider, same prefix scheme.
   if (settingsContextWindow) settingsContextWindow.value = localStorage.getItem(`${prefix}context_window`) || "";
-  // Load from encrypted key store (not localStorage — keys were migrated)
+  // Load from encrypted key store (not localStorage — keys were migrated).
+  // No `&& key` guard: the custom provider ("") has a real stored key too —
+  // the main process maps "" → "_custom" in the keystore.
   if (settingsKey) {
     settingsKey.value = _apiKeyCache[key] || "";
-    if (!_apiKeyCache[key] && key) {
+    if (!_apiKeyCache[key]) {
       window.aideagent.loadApiKey(key).then(k => {
         if (k) { _apiKeyCache[key] = k; settingsKey.value = k; }
       }).catch(() => {});
@@ -1549,7 +1580,7 @@ function refreshSessionList() {
       const streamDot = isStreaming ? '<span class="streaming-dot"></span>' : '';
       return `
       <div class="session-item ${isActive ? "active" : ""}" data-session-id="${s.id}">
-        <div class="session-item-title" title="${sanitize(s.title || t("sidebar.no_title"))}">${streamDot}${sanitize((s.title || t("sidebar.no_title")).slice(0, 28))}</div>
+        <div class="session-item-title" title="${escapeHtml(s.title || t("sidebar.no_title"))}">${streamDot}${sanitize((s.title || t("sidebar.no_title")).slice(0, 28))}</div>
         <div class="session-item-actions">
           <button class="session-export" data-session-id="${s.id}" title="${t("sidebar.export")}">↓</button>
           <button class="session-delete" data-session-id="${s.id}" title="${t("sidebar.delete")}">×</button>

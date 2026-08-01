@@ -134,12 +134,21 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // CORS headers for custom API endpoints
+  // CORS headers for external API endpoints only.
+  // SECURITY: previously used `access-control-allow-origin: *` on ALL
+  // responses (including file:// and internal resources). Now scoped to
+  // http(s) requests only, and reflects the request's actual Origin header
+  // (typically "file://" from the Electron renderer) instead of wildcard.
+  // This prevents a compromised renderer (XSS, malicious skill output)
+  // from reading cross-origin responses it shouldn't have access to.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders };
-    headers["access-control-allow-origin"] = ["*"];
-    headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
-    headers["access-control-allow-headers"] = ["Content-Type, Authorization, X-Requested-With"];
+    if (details.url.startsWith("https://") || details.url.startsWith("http://")) {
+      const reqOrigin = details.requestHeaders?.["Origin"] || details.requestHeaders?.["origin"] || "file://";
+      headers["access-control-allow-origin"] = [reqOrigin];
+      headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
+      headers["access-control-allow-headers"] = ["Content-Type, Authorization, X-Requested-With"];
+    }
     callback({ responseHeaders: headers });
   });
 
