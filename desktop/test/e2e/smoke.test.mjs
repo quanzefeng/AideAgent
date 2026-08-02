@@ -247,6 +247,41 @@ test("boot sequence skips on click", async () => {
   await closeApp(app);
 });
 
+// ── 13. 阶段3 实时数据：IPC 事件填充 HUD 数据条 ────────
+test("hud telemetry fills topbar from IPC events", async () => {
+  const { app, window } = await launchApp();
+
+  // 初始：遥测模块自绘 STANDBY（而非 HTML 默认的 SYSTEM ONLINE）
+  await expect(window.locator("#hud-status")).toHaveText("STANDBY", { timeout: 3000 });
+
+  // 通过真实 preload 桥发送 context:usage
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("context:usage", {
+      totalTokens: 5000,
+      systemTokens: 1000,
+      historyTokens: 3000,
+      toolResultTokens: 1000,
+      windowSize: 20000,
+      usagePct: 25,
+    });
+  });
+  await expect(window.locator("#hud-ctx")).toHaveText("CTX: 25%", { timeout: 3000 });
+
+  // 发送 tool:start → 状态切到 TOOL RUNNING
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("tool:start", { name: "read_file", args: {} });
+  });
+  await expect(window.locator("#hud-status")).toHaveText("TOOL RUNNING", { timeout: 3000 });
+
+  // stream:done → 回到 STANDBY
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("stream:done");
+  });
+  await expect(window.locator("#hud-status")).toHaveText("STANDBY", { timeout: 3000 });
+
+  await closeApp(app);
+});
+
 // ── 12. Boot 跟随 HUD 开关：关闭时不出现 ────────────
 test("boot sequence is skipped when HUD is off", async () => {
   const { app, window } = await launchApp();
