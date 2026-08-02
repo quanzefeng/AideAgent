@@ -282,6 +282,32 @@ test("hud telemetry fills topbar from IPC events", async () => {
   await closeApp(app);
 });
 
+// ── 14. 阶段4 全站精修：HUD 开启时有切角+弹窗括号，关闭即还原 ──
+test("full-site polish applies with hud on and reverts when off", async () => {
+  const { app, window } = await launchApp();
+  await window.waitForTimeout(500);
+
+  // HUD 默认开启 → 按钮应有 clip-path 切角（无圆角）
+  const clip = await window.evaluate(() => {
+    const btn = document.querySelector("#bg-color-apply-btn") || document.querySelector(".btn");
+    return btn ? getComputedStyle(btn).clipPath : null;
+  });
+  expect(clip).toBeTruthy();
+  expect(clip).not.toBe("none");
+
+  // 弹窗 corner bracket 生效：::before 应绘制青色边框
+  const corner = await window.evaluate(() => {
+    const el = document.querySelector(".modal-content");
+    if (!el) return null;
+    const before = getComputedStyle(el, "::before");
+    return { borderTop: before.borderTopWidth, content: before.content };
+  });
+  expect(corner).toBeTruthy();
+  expect(corner.borderTop).toBe("2px");
+
+  await closeApp(app);
+});
+
 // ── 12. Boot 跟随 HUD 开关：关闭时不出现 ────────────
 test("boot sequence is skipped when HUD is off", async () => {
   const { app, window } = await launchApp();

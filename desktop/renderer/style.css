@@ -4432,3 +4432,129 @@ html[data-hud="off"] #hud-overlay { display: none; }
   .boot-progress-bar { transition: none; }
 }
 
+/* ════════════════════════════════════════════════
+   Cyberpunk Full-Site Polish (Stage 4)
+   ─ 全站精修：按钮切角 / 弹窗四角括号 / 设置页 / 暗色代码高亮
+   ─ 全部 gated on html[data-hud="on"]，HUD 关闭即还原原 UI
+   ════════════════════════════════════════════════ */
+
+/* ── 按钮切角（clip-path 六边切角，替换圆角）── */
+html[data-hud="on"] .btn {
+  border-radius: 0;
+  --hud-chamfer: 7px;
+  clip-path: polygon(
+    0 var(--hud-chamfer), var(--hud-chamfer) 0,
+    calc(100% - var(--hud-chamfer)) 0, 100% var(--hud-chamfer),
+    100% calc(100% - var(--hud-chamfer)), calc(100% - var(--hud-chamfer)) 100%,
+    var(--hud-chamfer) 100%, 0 calc(100% - var(--hud-chamfer))
+  );
+}
+
+/* 小号按钮切角更浅，避免形状失衡 */
+html[data-hud="on"] .btn-xs,
+html[data-hud="on"] .btn-sm,
+html[data-hud="on"] .btn-icon-only {
+  --hud-chamfer: 3px;
+}
+
+/* clip-path 会裁掉默认 focus 外框，改用内发光环 */
+html[data-hud="on"] .btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px #00e5ff;
+}
+
+/* ── 弹窗精修：直角 + 青色边框 + 左上/右下四角括号 ── */
+html[data-hud="on"] .modal-content {
+  position: relative;
+  border-radius: 0;
+  border-color: rgba(0, 229, 255, 0.28);
+  box-shadow:
+    var(--shadow-modal),
+    0 0 24px rgba(0, 229, 255, 0.08);
+}
+
+html[data-hud="on"] .modal-content::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 18px; height: 18px;
+  border-top: 2px solid #00e5ff;
+  border-left: 2px solid #00e5ff;
+  pointer-events: none;
+}
+
+html[data-hud="on"] .modal-content::after {
+  content: "";
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 18px; height: 18px;
+  border-bottom: 2px solid #00e5ff;
+  border-right: 2px solid #00e5ff;
+  pointer-events: none;
+}
+
+/* ── 设置页精修：标签栏等宽字体 + 青色激活态 ── */
+html[data-hud="on"] .settings-tabs {
+  border-right-color: rgba(0, 229, 255, 0.18);
+}
+
+html[data-hud="on"] .settings-tab {
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+}
+
+html[data-hud="on"] .settings-tab.active {
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.12), rgba(0, 229, 255, 0.02));
+  border-right-color: #00e5ff;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+}
+
+html[data-hud="on"] .settings-panel .section-title {
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
+/* ── 暗色代码高亮（覆盖 atom-one-light，配合深色背景）── */
+html[data-hud="on"] .message-text pre code,
+html[data-hud="on"] .message-bubble pre code {
+  background: #0b0d14;
+  border-color: rgba(0, 229, 255, 0.18);
+}
+
+html[data-hud="on"] .hljs {
+  background: #0b0d14;
+  color: #d6d8e0;
+}
+
+html[data-hud="on"] .hljs-comment,
+html[data-hud="on"] .hljs-quote { color: #5d6275; font-style: italic; }
+
+html[data-hud="on"] .hljs-keyword,
+html[data-hud="on"] .hljs-selector-tag,
+html[data-hud="on"] .hljs-type,
+html[data-hud="on"] .hljs-literal { color: #00e5ff; }
+
+html[data-hud="on"] .hljs-string,
+html[data-hud="on"] .hljs-regexp,
+html[data-hud="on"] .hljs-addition { color: #7ee787; }
+
+html[data-hud="on"] .hljs-number,
+html[data-hud="on"] .hljs-symbol { color: #ffd60a; }
+
+html[data-hud="on"] .hljs-title,
+html[data-hud="on"] .hljs-title.function_,
+html[data-hud="on"] .hljs-function .hljs-title { color: #a78bfa; }
+
+html[data-hud="on"] .hljs-attr,
+html[data-hud="on"] .hljs-attribute,
+html[data-hud="on"] .hljs-variable { color: #ff9e64; }
+
+html[data-hud="on"] .hljs-built_in,
+html[data-hud="on"] .hljs-params { color: #f672a7; }
+
+html[data-hud="on"] .hljs-meta,
+html[data-hud="on"] .hljs-selector-id { color: #888fa5; }
+
+html[data-hud="on"] .hljs-emphasis { font-style: italic; }
+html[data-hud="on"] .hljs-strong { font-weight: bold; }
+
