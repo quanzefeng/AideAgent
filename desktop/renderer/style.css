@@ -992,7 +992,10 @@ html, body {
 #sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
-  background: var(--bg-card);
+  /* 背景：亚克力微光（accent 色渗出） + 白卡基底 */
+  background:
+    radial-gradient(700px 900px at 0% 0%, rgba(var(--hud-accent-rgb), 0.10), transparent 60%),
+    var(--bg-card);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -2188,7 +2191,11 @@ html, body {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg);
+  /* 背景：柔光渐变（accent 色渗出的右上/左下微光，随主题变色）+ 纯色基底 */
+  background:
+    radial-gradient(1200px 800px at 85% -10%, rgba(var(--hud-accent-rgb), 0.20), transparent 60%),
+    radial-gradient(1000px 700px at 15% 110%, rgba(var(--hud-accent-rgb), 0.13), transparent 55%),
+    var(--bg);
 }
 
 /* ========================================
@@ -4167,10 +4174,12 @@ html, body {
   z-index: 180;                 /* < 200(wechat) < 1000(modal) */
   pointer-events: none;
   overflow: hidden;
-  /* 主界面背景：仅保留淡淡的径向光晕（六边网格已移除） */
+  /* 氛围光晕：追着右上/左上雷达 + 中央微光（六边网格已移除） */
   background-image:
-    radial-gradient(ellipse at 50% 45%, rgba(var(--hud-accent-rgb), 0.045), transparent 70%);
-  background-size: 100% 100%;
+    radial-gradient(60% 50% at 88% 6%,  rgba(var(--hud-accent-rgb), 0.16), transparent 70%),
+    radial-gradient(60% 50% at 30% 6%,  rgba(var(--hud-accent-rgb), 0.13), transparent 68%),
+    radial-gradient(100% 70% at 50% 45%, rgba(var(--hud-accent-rgb), 0.05), transparent 75%);
+  background-size: 100% 100%, 100% 100%, 100% 100%;
 }
 
 html[data-hud="off"] #hud-overlay { display: none; }
