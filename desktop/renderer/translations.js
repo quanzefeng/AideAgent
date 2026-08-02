@@ -408,6 +408,10 @@ const translations = {
     "hud.motion_label": "HUD 动画",
     "hud.motion_hint": "开启后忽略系统「减少动态效果」，雷达扫描与开机动画始终播放",
 
+    // ── HUD 垂直扫描线 ──
+    "hud.vscan_label": "垂直扫描线",
+    "hud.vscan_hint": "在对话主界面显示从上往下重复扫描的动效线",
+
     // ── Font Panel ──
     "font.label": "聊天字体",
     "font.yahei": "微软雅黑（默认）",
@@ -1073,6 +1077,10 @@ const translations = {
     // ── HUD Motion ──
     "hud.motion_label": "HUD Animation",
     "hud.motion_hint": "Always play HUD animations (radar sweep, boot sequence) even when the system reduces motion",
+
+    // ── HUD Vertical Scan Line ──
+    "hud.vscan_label": "Vertical Scan Line",
+    "hud.vscan_hint": "Show a repeated top-to-bottom scanning line over the chat area",
 
     // ── Font Panel ──
     "font.label": "Chat Font",

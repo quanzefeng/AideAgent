@@ -11,11 +11,14 @@
 const HUD_KEY = "AideAgent_hud";
 const HUD_DEFAULT = "on";
 const HUD_MOTION_KEY = "AideAgent_hud_motion";
+const HUD_VSCAN_KEY = "AideAgent_hud_vscan";
+const HUD_VSCAN_DEFAULT = "off";
 
 // 尽早暴露到 documentElement，供 CSS 动效降级块与 boot 序列读取
 try {
   document.documentElement.dataset.hud = localStorage.getItem(HUD_KEY) === "off" ? "off" : "on";
   document.documentElement.dataset.hudMotion = localStorage.getItem(HUD_MOTION_KEY) === "on" ? "on" : "auto";
+  document.documentElement.dataset.hudVscan = localStorage.getItem(HUD_VSCAN_KEY) === "on" ? "on" : "off";
 } catch {}
 
 /** @returns {boolean} 用户是否启用了 HUD 覆盖层 */
@@ -54,6 +57,28 @@ export function hudSetMotionEnabled(on) {
   } catch {}
   document.documentElement.dataset.hudMotion = on ? "on" : "auto";
   const cb = document.getElementById("hud-motion-checkbox");
+  if (cb) cb.checked = on;
+}
+
+/**
+ * HUD 垂直扫描线是否开启（独立子开关，默认关闭；不随总开关/动画开关联动）
+ * @returns {boolean}
+ */
+export function hudVscanEnabled() {
+  try {
+    return localStorage.getItem(HUD_VSCAN_KEY) === "on";
+  } catch {
+    return HUD_VSCAN_DEFAULT === "on";
+  }
+}
+
+/** @param {boolean} on @returns {void} 开启/关闭 HUD 垂直扫描线 */
+export function hudSetVscanEnabled(on) {
+  try {
+    localStorage.setItem(HUD_VSCAN_KEY, on ? "on" : "off");
+  } catch {}
+  document.documentElement.dataset.hudVscan = on ? "on" : "off";
+  const cb = document.getElementById("hud-vscan-checkbox");
   if (cb) cb.checked = on;
 }
 
@@ -132,7 +157,17 @@ function bindMotionToggle() {
   cb.checked = hudMotionEnabled();
   cb.addEventListener("change", () => {
     hudSetMotionEnabled(cb.checked);
-    // 强制开启时，若系统 reduce 导致 boot 已跳过，不再复现；仅实时反映到 HUD 动效
+  });
+}
+
+/** @returns {void} 绑定设置面板里的 HUD 垂直扫描线开关（幂等） */
+function bindVscanToggle() {
+  const cb = document.getElementById("hud-vscan-checkbox");
+  if (!cb || cb.dataset.bound) return;
+  cb.dataset.bound = "1";
+  cb.checked = hudVscanEnabled();
+  cb.addEventListener("change", () => {
+    hudSetVscanEnabled(cb.checked);
   });
 }
 
@@ -142,10 +177,12 @@ function init() {
     document.addEventListener("DOMContentLoaded", () => {
       injectHud();
       bindMotionToggle();
+      bindVscanToggle();
     });
   } else {
     injectHud();
     bindMotionToggle();
+    bindVscanToggle();
   }
 }
 

@@ -4184,6 +4184,10 @@ html, body {
 
 html[data-hud="off"] #hud-overlay { display: none; }
 
+/* HUD 垂直扫描线子开关：默认关闭，仅当 AideAgent_hud_vscan="on" 时显示 */
+html:not([data-hud-vscan="on"]) .hud-vscan { display: none; }
+html[data-hud-vscan="on"] .hud-vscan { display: block; }
+
 /* ── 四角括号 ── */
 .hud-corner {
   position: absolute;
@@ -4316,12 +4320,12 @@ html[data-hud="off"] #hud-overlay { display: none; }
   height: 2px;
   pointer-events: none;
   background: linear-gradient(90deg,
-    transparent,
-    rgba(var(--hud-accent-rgb), 0.15) 15%,
-    rgba(var(--hud-accent-rgb), 0.9) 50%,
-    rgba(var(--hud-accent-rgb), 0.15) 85%,
-    transparent);
-  box-shadow: 0 0 12px rgba(var(--hud-accent-rgb), 0.45);
+    rgba(var(--hud-accent-rgb), 0.42) 0%,
+    rgba(var(--hud-accent-rgb), 0.18) 30%,
+    rgba(var(--hud-accent-rgb), 0.08) 50%,
+    rgba(var(--hud-accent-rgb), 0.18) 70%,
+    rgba(var(--hud-accent-rgb), 0.42) 100%);
+  box-shadow: 0 0 12px rgba(var(--hud-accent-rgb), 0.30);
   will-change: transform;
   animation: hud-vscan-sweep 7s linear infinite;
 }
