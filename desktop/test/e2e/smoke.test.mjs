@@ -380,3 +380,45 @@ test("HUD motion toggle forces radar animation under reduced-motion", async () =
 
   await closeApp(app);
 });
+
+// ── 14. 双雷达：右上 + 左上镜像，面积加大 ──────────
+test("hud renders two radar scans (top-right + mirrored top-left) at enlarged size", async () => {
+  const { app, window } = await launchApp();
+
+  // 两个雷达 + 两个扫掠
+  const radarCount = await window.locator(".hud-radar").count();
+  expect(radarCount).toBe(2);
+  const sweepCount = await window.locator(".hud-radar-sweep").count();
+  expect(sweepCount).toBe(2);
+
+  // 位置：右上雷达靠右，左上雷达靠左（镜像）
+  const right = await window.evaluate(() => {
+    const el = document.getElementById("hud-radar");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, width: r.width, height: r.height };
+  });
+  const left = await window.evaluate(() => {
+    const el = document.getElementById("hud-radar-left");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, width: r.width, height: r.height };
+  });
+
+  expect(right).not.toBeNull();
+  expect(left).not.toBeNull();
+  // 左雷达整体位于右雷达左侧（镜像）
+  expect(left.left).toBeLessThan(right.left);
+  // 都贴近各自边缘
+  expect(right.left).toBeGreaterThan(window.viewportSize().width / 2);
+  expect(left.left).toBeLessThan(window.viewportSize().width / 2);
+  // 左雷达避开侧栏：起点 = 侧栏宽(240px) + 16px 内边距
+  expect(left.left).toBeCloseTo(256, -1);
+  // 面积加大：由 96px 提升到 140px
+  expect(right.width).toBe(140);
+  expect(right.height).toBe(140);
+  expect(left.width).toBe(140);
+  expect(left.height).toBe(140);
+
+  await closeApp(app);
+});

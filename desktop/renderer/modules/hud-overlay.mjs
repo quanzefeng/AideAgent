@@ -25,9 +25,7 @@ export function hudEnabled() {
   } catch {
     return HUD_DEFAULT === "on";
   }
-}
-
-/** @param {boolean} on @returns {void} */
+}/** @param {boolean} on @returns {void} */
 export function hudSetEnabled(on) {
   try {
     localStorage.setItem(HUD_KEY, on ? "on" : "off");
@@ -81,15 +79,23 @@ function injectHud() {
       '<span class="hud-topbar-item" id="hud-ctx">CTX: --%</span>' +
     '</div>' +
     // 右上雷达扫描
-    '<div class="hud-radar" id="hud-radar">' +
+    '<div class="hud-radar hud-radar-right" id="hud-radar">' +
       '<div class="hud-radar-rings"></div>' +
       '<div class="hud-radar-sweep"></div>' +
       '<div class="hud-radar-dot hud-radar-dot-1"></div>' +
       '<div class="hud-radar-dot hud-radar-dot-2"></div>' +
     '</div>' +
-    // 底部扫描线 + 状态
+    // 左上雷达扫描（镜像）
+    '<div class="hud-radar hud-radar-left" id="hud-radar-left">' +
+      '<div class="hud-radar-rings"></div>' +
+      '<div class="hud-radar-sweep"></div>' +
+      '<div class="hud-radar-dot hud-radar-dot-1"></div>' +
+      '<div class="hud-radar-dot hud-radar-dot-2"></div>' +
+    '</div>' +
+    // 对话区垂直扫描线（仅覆盖对话主界面，不遮侧边栏）
+    '<div class="hud-vscan" aria-hidden="true"></div>' +
+    // 底部状态
     '<div class="hud-bottom">' +
-      '<span class="hud-scanline"></span>' +
       '<span class="hud-status" id="hud-status">SYSTEM ONLINE</span>' +
     '</div>';
 

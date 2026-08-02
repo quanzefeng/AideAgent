@@ -5,12 +5,15 @@
  * 存储格式 (localStorage["AideAgent_theme"]):
  *   { preset: string, bg: "#rrggbb", brightness: 0.6~1.2, accent: "#rrggbb" }
  *
- * 派生规则（联动 5 个 CSS 变量）：
+ * 派生规则（联动 5 个 CSS 变量 + 3 个 HUD 变量）：
  *   --bg          = hsl(bg) * brightness
  *   --bg-surface  = 略暗（同色相，亮度 -2.5%）
  *   --bg-card     = 极亮时→纯白；暗色时→比 bg 亮 8%
  *   --text        = 暗主题→#e8e8f0；亮主题→#1a1a2e（自适应阈值 L=0.5）
  *   --accent      = 用户单独选定（默认 #f59e0b）
+ *   --hud-accent  = 跟随 accent（赛博 HUD 主色，默认 #00e5ff）
+ *   --hud-accent-rgb = accent 的 "r, g, b" 形式（供 rgba(var(...),α) 使用）
+ *   --hud-accent-contrast = 按 accent 明暗选出的对比文字色（白/近黑）
  */
 
 const THEME_KEY = "AideAgent_theme";
@@ -34,7 +37,7 @@ const PRESETS = {
   cyberpunk:   { bg: "#0a0a0f", accent: "#00e5ff" },
 };
 
-const DEFAULT_THEME = { preset: "cream", bg: "#faf6ef", brightness: 1.0, accent: "#f59e0b" };
+const DEFAULT_THEME = { preset: "light_blue", bg: "#eef2f9", brightness: 1.0, accent: "#6366f1" };
 
 // ── HSL 数学 ─────────────────────────────────────
 /** @param {string} hex @returns {[number, number, number]} */
@@ -81,6 +84,18 @@ function hslToHex(h, s, l) {
   const g = hue2rgb(p, q, h);
   const b = hue2rgb(p, q, h - 1/3);
   return "#" + [r, g, b].map(c => Math.round(c * 255).toString(16).padStart(2, "0")).join("");
+}
+
+/** @param {string} hex @returns {[number, number, number]} */
+function hexToRgb(hex) {
+  hex = String(hex || "").replace("#", "");
+  if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+  if (hex.length !== 6) return [0, 229, 255];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16)
+  ];
 }
 
 // HSL → RGB（用于 Canvas 像素绘制）
@@ -159,6 +174,9 @@ function deriveTheme(theme) {
       : "#ffffff",
     "--text": isDark ? "#e8e8f0" : "#1a1a2e",
     "--accent": theme.accent,
+    "--hud-accent": theme.accent,
+    "--hud-accent-rgb": hexToRgb(theme.accent).join(", "),
+    "--hud-accent-contrast": hexToHsl(theme.accent)[2] < 0.45 ? "#ffffff" : "#0a0a0f",
   };
 }
 
