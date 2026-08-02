@@ -4174,7 +4174,7 @@ html, body {
   z-index: 180;                 /* < 200(wechat) < 1000(modal) */
   pointer-events: none;
   overflow: hidden;
-  /* 氛围光晕：追着右上/左上雷达 + 中央微光（六边网格已移除） */
+  /* 氛围光晕：追着右上/左上雷达 + 中央微光 */
   background-image:
     radial-gradient(60% 50% at 88% 6%,  rgba(var(--hud-accent-rgb), 0.16), transparent 70%),
     radial-gradient(60% 50% at 30% 6%,  rgba(var(--hud-accent-rgb), 0.13), transparent 68%),
