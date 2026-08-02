@@ -31,6 +31,7 @@ const PRESETS = {
   gray:        { bg: "#f3f4f6", accent: "#0ea5e9" },
   dark_gray:   { bg: "#2a2d3a", accent: "#818cf8" },
   dark_purple: { bg: "#1e1b2e", accent: "#a78bfa" },
+  cyberpunk:   { bg: "#0a0a0f", accent: "#00e5ff" },
 };
 
 const DEFAULT_THEME = { preset: "cream", bg: "#faf6ef", brightness: 1.0, accent: "#f59e0b" };
