@@ -4132,3 +4132,169 @@ html, body {
 }
 .resume-banner-close:hover { opacity:1; }
 
+/* ════════════════════════════════════════════════
+   Cyberpunk HUD Overlay (Stage 1)
+   ─ 纯装饰覆盖层：pointer-events:none，不拦截交互
+   ─ 开关：html[data-hud="off"] #hud-overlay { display:none }
+   ─ z-index 低于弹窗(1000)与 wechat(200)，不遮挡业务层
+   ════════════════════════════════════════════════ */
+
+@property --hud-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+#hud-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;                 /* < 200(wechat) < 1000(modal) */
+  pointer-events: none;
+  overflow: hidden;
+  /* 六边网格背景（SVG pattern data-URI，青色细线） */
+  background-image:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'%3E%3Cpath d='M28 1 L55 15 L55 44 L28 58 L1 44 L1 15 Z' fill='none' stroke='%2300e5ff' stroke-opacity='0.06' stroke-width='1'/%3E%3Cpath d='M28 49 L55 63 L55 92 L28 96 L1 92 L1 63 Z' fill='none' stroke='%2300e5ff' stroke-opacity='0.06' stroke-width='1'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% 45%, rgba(0,229,255,0.045), transparent 70%);
+  background-size: 56px 97px, 100% 100%;
+}
+
+html[data-hud="off"] #hud-overlay { display: none; }
+
+/* ── 四角括号 ── */
+.hud-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgba(0, 229, 255, 0.55);
+  filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.5));
+}
+.hud-corner-tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+.hud-corner-tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+.hud-corner-bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+.hud-corner-br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+
+/* ── 左上标识 ── */
+.hud-tag {
+  position: absolute;
+  top: 18px;
+  left: 44px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(0, 229, 255, 0.75);
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.6);
+}
+
+/* ── 顶部数据条 ── */
+.hud-topbar {
+  position: absolute;
+  top: 18px;
+  right: 44px;
+  display: flex;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.hud-topbar-item {
+  color: rgba(0, 229, 255, 0.7);
+  text-shadow: 0 0 5px rgba(0, 229, 255, 0.45);
+  white-space: nowrap;
+}
+
+/* ── 右上雷达扫描 ── */
+.hud-radar {
+  position: absolute;
+  top: 46px;
+  right: 16px;
+  width: 96px;
+  height: 96px;
+  opacity: 0.5;
+}
+.hud-radar-rings {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  background:
+    repeating-conic-gradient(from 0deg, rgba(0,229,255,0.08) 0deg 2deg, transparent 2deg 45deg),
+    radial-gradient(circle, transparent 46%, rgba(0,229,255,0.12) 47% 49%, transparent 50%);
+}
+.hud-radar-rings::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  transform: scale(0.55);
+}
+.hud-radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from var(--hud-angle),
+    rgba(0, 229, 255, 0.35) 0deg, transparent 55deg);
+  animation: hud-radar-spin 4s linear infinite;
+}
+@keyframes hud-radar-spin { to { --hud-angle: 360deg; } }
+.hud-radar-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(0, 229, 255, 0.9);
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.9);
+  animation: hud-radar-blink 2.2s ease-in-out infinite;
+}
+.hud-radar-dot-1 { top: 26%; left: 58%; animation-delay: 0s; }
+.hud-radar-dot-2 { top: 64%; left: 30%; animation-delay: 1.1s; }
+@keyframes hud-radar-blink { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
+
+/* ── 底部扫描线 + 状态 ── */
+.hud-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+}
+.hud-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(0, 229, 255, 0.5) 20%,
+    rgba(0, 229, 255, 0.9) 50%,
+    rgba(0, 229, 255, 0.5) 80%,
+    transparent);
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+  animation: hud-scanline-sweep 6s ease-in-out infinite;
+}
+@keyframes hud-scanline-sweep {
+  0%   { transform: translateX(-40%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(40%); opacity: 0; }
+}
+.hud-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(0, 229, 255, 0.5);
+}
+
+/* ── 动效降级：用户偏好减少动态 ── */
+@media (prefers-reduced-motion: reduce) {
+  #hud-overlay * {
+    animation: none !important;
+  }
+  .hud-radar-sweep { background: conic-gradient(from 45deg, rgba(0,229,255,0.35), transparent 55deg); }
+}
+

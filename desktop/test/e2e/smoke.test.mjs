@@ -93,11 +93,11 @@ const openAppearance = async (window) => {
   await window.waitForTimeout(400);
 };
 
-// ── 3. 设置面板 + 外观 tab + 6 个预设 ──────────────
-test("settings: appearance tab shows 6 preset swatches", async () => {
+// ── 3. 设置面板 + 外观 tab + 7 个预设 ──────────────
+test("settings: appearance tab shows 7 preset swatches", async () => {
   const { app, window } = await launchApp();
   await openAppearance(window);
-  await expect(window.locator(".bg-preset-swatch")).toHaveCount(6);
+  await expect(window.locator(".bg-preset-swatch")).toHaveCount(7);
   await closeApp(app);
 });
 
@@ -162,5 +162,61 @@ test("theme persists to localStorage with correct shape", async () => {
   const parsed = JSON.parse(stored);
   expect(parsed.preset).toBe("gray");
   expect(parsed.bg.toLowerCase()).toBe("#f3f4f6");
+  await closeApp(app);
+});
+
+// ── 7. cyberpunk 预设：点击 → 暗色变量生效 ──────────
+test("cyberpunk preset applies dark bg and neon accent", async () => {
+  const { app, window } = await launchApp();
+  await openAppearance(window);
+
+  await window.locator('[data-preset="cyberpunk"]').click();
+  await window.waitForTimeout(300);
+
+  const bg = await window.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()
+  );
+  const accent = await window.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+  );
+  expect(bg.toLowerCase()).toBe("#0a0a0f");
+  expect(accent.toLowerCase()).toBe("#00e5ff");
+  await closeApp(app);
+});
+
+// ── 8. HUD overlay：默认注入且不拦截交互 ────────────
+test("hud overlay injects by default and ignores pointer events", async () => {
+  const { app, window } = await launchApp();
+
+  const overlay = window.locator("#hud-overlay");
+  await expect(overlay).toBeVisible();
+  const corner = await window.locator(".hud-corner-tl").count();
+  expect(corner).toBe(1);
+
+  const pointerEvents = await window.evaluate(() =>
+    getComputedStyle(document.getElementById("hud-overlay")).pointerEvents
+  );
+  expect(pointerEvents).toBe("none");
+
+  // 默认开启（localStorage 未显式关闭）
+  const on = await window.evaluate(() => document.documentElement.dataset.hud);
+  expect(on).toBe("on");
+  await closeApp(app);
+});
+
+// ── 9. HUD 开关：data-hud="off" 隐藏覆盖层 ──────────
+test("hud overlay hides when data-hud is off", async () => {
+  const { app, window } = await launchApp();
+
+  await window.evaluate(() => {
+    localStorage.setItem("AideAgent_hud", "off");
+    document.documentElement.dataset.hud = "off";
+  });
+  await window.reload();
+  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+  await window.waitForTimeout(500);
+
+  const visible = await window.locator("#hud-overlay").isVisible();
+  expect(visible).toBe(false);
   await closeApp(app);
 });
