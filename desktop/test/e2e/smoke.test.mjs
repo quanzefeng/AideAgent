@@ -324,3 +324,59 @@ test("boot sequence is skipped when HUD is off", async () => {
   expect(bootCount).toBe(0);
   await closeApp(app);
 });
+
+// ── 13. HUD 动画开关：reduced-motion 下强制雷达转动 ──
+test("HUD motion toggle forces radar animation under reduced-motion", async () => {
+  const { app, window } = await launchApp();
+
+  // 模拟系统"减少动态效果"（Playwright 页面级 emulateMedia）
+  await window.emulateMedia({ reducedMotion: "reduce" });
+  await window.waitForTimeout(300);
+
+  // 降级生效：雷达扫掠动画应为 none
+  const before = await window.evaluate(() => {
+    const sweep = document.querySelector(".hud-radar-sweep");
+    if (!sweep) return null;
+    return getComputedStyle(sweep).animationName;
+  });
+  expect(before).toBe("none");
+
+  // 打开设置 → 外观 → HUD 动画开关
+  await window.locator("#settings-btn").click();
+  await window.waitForTimeout(400);
+  await window.locator('#settings-modal [data-tab="appearance"]').click();
+  await window.waitForTimeout(400);
+
+  // input 被 toggle-switch 样式隐藏（opacity:0），改点 label 触发切换
+  await window.locator("label.reasoning-toggle-wide").click();
+
+  // 强制开启：data-hud-motion="on" + 雷达动画恢复运行
+  const forced = await window.evaluate(() => {
+    const sweep = document.querySelector(".hud-radar-sweep");
+    const anim = sweep ? getComputedStyle(sweep).animationName : null;
+    return {
+      attr: document.documentElement.dataset.hudMotion,
+      stored: localStorage.getItem("AideAgent_hud_motion"),
+      anim,
+    };
+  });
+  expect(forced.attr).toBe("on");
+  expect(forced.stored).toBe("on");
+  expect(forced.anim).not.toBe("none");
+
+  // 重新加载后仍保持强制（持久化）
+  await window.reload();
+  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+  await window.waitForTimeout(500);
+  const persisted = await window.evaluate(() => ({
+    attr: document.documentElement.dataset.hudMotion,
+    anim: (() => {
+      const sweep = document.querySelector(".hud-radar-sweep");
+      return sweep ? getComputedStyle(sweep).animationName : null;
+    })(),
+  }));
+  expect(persisted.attr).toBe("on");
+  expect(persisted.anim).not.toBe("none");
+
+  await closeApp(app);
+});

@@ -3061,6 +3061,22 @@ html, body {
   user-select: none;
 }
 
+.form-hint-inline {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-light);
+  opacity: 0.7;
+}
+
+.reasoning-toggle-wide {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
 .toggle-switch-sm {
   position: relative;
   display: inline-block;
@@ -4290,12 +4306,12 @@ html[data-hud="off"] #hud-overlay { display: none; }
   color: rgba(0, 229, 255, 0.5);
 }
 
-/* ── 动效降级：用户偏好减少动态 ── */
+/* ── 动效降级：用户偏好减少动态（HUD 动画开关开启时忽略） ── */
 @media (prefers-reduced-motion: reduce) {
-  #hud-overlay * {
+  html:not([data-hud-motion="on"]) #hud-overlay * {
     animation: none !important;
   }
-  .hud-radar-sweep { background: conic-gradient(from 45deg, rgba(0,229,255,0.35), transparent 55deg); }
+  html:not([data-hud-motion="on"]) .hud-radar-sweep { background: conic-gradient(from 45deg, rgba(0,229,255,0.35), transparent 55deg); }
 }
 
 /* ════════════════════════════════════════════════
@@ -4427,9 +4443,9 @@ html[data-hud="off"] #hud-overlay { display: none; }
 
 /* ── Boot 动效降级 ── */
 @media (prefers-reduced-motion: reduce) {
-  #boot-screen * { animation: none !important; }
-  .boot-caret { display: none; }
-  .boot-progress-bar { transition: none; }
+  html:not([data-hud-motion="on"]) #boot-screen * { animation: none !important; }
+  html:not([data-hud-motion="on"]) .boot-caret { display: none; }
+  html:not([data-hud-motion="on"]) .boot-progress-bar { transition: none; }
 }
 
 /* ════════════════════════════════════════════════

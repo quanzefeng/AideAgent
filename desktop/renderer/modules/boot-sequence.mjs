@@ -9,7 +9,7 @@
  *   5. 任意点击 / 按键 / SKIP 按钮可跳过，fade 后自毁
  */
 
-import { hudEnabled } from "./hud-overlay.mjs";
+import { hudEnabled, hudMotionEnabled } from "./hud-overlay.mjs";
 import { loadAgentName } from "./agent-name.mjs";
 
 /** 阶段定义：每个阶段一条启动日志。delay = 本行完成后的停顿(ms) */
@@ -20,8 +20,9 @@ const STAGES = [
   { key: "boot.auth", delay: 350 },
 ];
 
-/** @returns {boolean} 尊重系统"减少动态"偏好 */
+/** @returns {boolean} 尊重系统"减少动态"偏好（HUD 动画开关强制开启时忽略） */
 function prefersReducedMotion() {
+  if (hudMotionEnabled()) return false;
   try {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch {

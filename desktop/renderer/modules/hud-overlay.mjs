@@ -10,6 +10,13 @@
 
 const HUD_KEY = "AideAgent_hud";
 const HUD_DEFAULT = "on";
+const HUD_MOTION_KEY = "AideAgent_hud_motion";
+
+// 尽早暴露到 documentElement，供 CSS 动效降级块与 boot 序列读取
+try {
+  document.documentElement.dataset.hud = localStorage.getItem(HUD_KEY) === "off" ? "off" : "on";
+  document.documentElement.dataset.hudMotion = localStorage.getItem(HUD_MOTION_KEY) === "on" ? "on" : "auto";
+} catch {}
 
 /** @returns {boolean} 用户是否启用了 HUD 覆盖层 */
 export function hudEnabled() {
@@ -28,6 +35,28 @@ export function hudSetEnabled(on) {
   document.documentElement.dataset.hud = on ? "on" : "off";
   const ov = document.getElementById("hud-overlay");
   if (ov) ov.style.display = on ? "" : "none";
+}
+
+/**
+ * HUD 动画是否被强制开启（"on" = 忽略系统 prefers-reduced-motion，"auto" = 跟随系统）
+ * @returns {boolean}
+ */
+export function hudMotionEnabled() {
+  try {
+    return localStorage.getItem(HUD_MOTION_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+/** @param {boolean} on @returns {void} 强制/取消强制 HUD 动画（忽略系统减少动效偏好） */
+export function hudSetMotionEnabled(on) {
+  try {
+    localStorage.setItem(HUD_MOTION_KEY, on ? "on" : "auto");
+  } catch {}
+  document.documentElement.dataset.hudMotion = on ? "on" : "auto";
+  const cb = document.getElementById("hud-motion-checkbox");
+  if (cb) cb.checked = on;
 }
 
 /** @returns {void} 创建覆盖层 DOM（幂等） */
@@ -66,6 +95,7 @@ function injectHud() {
 
   document.body.appendChild(ov);
   document.documentElement.dataset.hud = hudEnabled() ? "on" : "off";
+  document.documentElement.dataset.hudMotion = hudMotionEnabled() ? "on" : "auto";
   ov.style.display = hudEnabled() ? "" : "none";
 }
 
@@ -88,12 +118,28 @@ export function hudSetData(data = {}) {
   }
 }
 
+/** @returns {void} 绑定设置面板里的 HUD 动画开关（幂等） */
+function bindMotionToggle() {
+  const cb = document.getElementById("hud-motion-checkbox");
+  if (!cb || cb.dataset.bound) return;
+  cb.dataset.bound = "1";
+  cb.checked = hudMotionEnabled();
+  cb.addEventListener("change", () => {
+    hudSetMotionEnabled(cb.checked);
+    // 强制开启时，若系统 reduce 导致 boot 已跳过，不再复现；仅实时反映到 HUD 动效
+  });
+}
+
 /** @returns {void} 自初始化 */
 function init() {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectHud);
+    document.addEventListener("DOMContentLoaded", () => {
+      injectHud();
+      bindMotionToggle();
+    });
   } else {
     injectHud();
+    bindMotionToggle();
   }
 }
 
