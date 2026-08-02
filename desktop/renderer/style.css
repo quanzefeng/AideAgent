@@ -4298,3 +4298,137 @@ html[data-hud="off"] #hud-overlay { display: none; }
   .hud-radar-sweep { background: conic-gradient(from 45deg, rgba(0,229,255,0.35), transparent 55deg); }
 }
 
+/* ════════════════════════════════════════════════
+   Cyberpunk Boot Sequence (Stage 2)
+   ─ 一次性开机画面，覆盖全屏，z-index 高于一切业务层
+   ─ 跟随 HUD 总开关；点击/按键/SKIP 可跳过；fade 后自毁
+   ════════════════════════════════════════════════ */
+
+#boot-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;               /* 高于 modal(1000) 与 HUD overlay(180) */
+  background:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'%3E%3Cpath d='M28 1 L55 15 L55 44 L28 58 L1 44 L1 15 Z' fill='none' stroke='%2300e5ff' stroke-opacity='0.05' stroke-width='1'/%3E%3Cpath d='M28 49 L55 63 L55 92 L28 96 L1 92 L1 63 Z' fill='none' stroke='%2300e5ff' stroke-opacity='0.05' stroke-width='1'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% 45%, rgba(0,229,255,0.07), transparent 70%),
+    #07070b;
+  background-size: 56px 97px, 100% 100%, 100% 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.4s var(--ease-out);
+  font-family: var(--font-mono);
+}
+#boot-screen.boot-done { opacity: 0; pointer-events: none; }
+
+.boot-inner {
+  width: min(560px, 82vw);
+  color: #9ef0ff;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.35);
+}
+
+.boot-head {
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: rgba(0, 229, 255, 0.65);
+  margin-bottom: 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.boot-head::before {
+  content: "";
+  width: 34px;
+  height: 1px;
+  background: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.6);
+}
+
+.boot-log {
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.boot-line,
+.boot-current {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 15px;
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+.boot-line.hidden,
+.boot-current.hidden { display: none; }
+.boot-arrow { color: #00e5ff; text-shadow: 0 0 6px rgba(0, 229, 255, 0.8); }
+
+.boot-text { display: inline-block; }
+.boot-text.typing {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: boot-type var(--boot-dur, 400ms) steps(var(--boot-steps, 20)) forwards;
+}
+@keyframes boot-type { from { width: 0; } to { width: 100%; } }
+
+.boot-caret {
+  display: inline-block;
+  width: 9px;
+  height: 18px;
+  margin-left: 3px;
+  background: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.9);
+  animation: boot-caret-blink 0.9s step-end infinite;
+  vertical-align: text-bottom;
+}
+@keyframes boot-caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.boot-progress {
+  margin-top: 22px;
+  height: 2px;
+  background: rgba(0, 229, 255, 0.12);
+  overflow: hidden;
+}
+.boot-progress-bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #00e5ff, #7afbff);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
+  transition: width 0.3s var(--ease-out);
+}
+
+.boot-foot {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  transition: opacity 0.3s;
+}
+.boot-skip {
+  background: transparent;
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  color: rgba(0, 229, 255, 0.75);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+}
+.boot-skip:hover {
+  border-color: #00e5ff;
+  color: #0a0a0f;
+  background: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+}
+
+/* ── Boot 动效降级 ── */
+@media (prefers-reduced-motion: reduce) {
+  #boot-screen * { animation: none !important; }
+  .boot-caret { display: none; }
+  .boot-progress-bar { transition: none; }
+}
+

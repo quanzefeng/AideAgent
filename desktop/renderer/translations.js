@@ -27,6 +27,14 @@ const translations = {
     "settings.about": "关于",
     "settings.close": "关闭",
 
+    // ── Boot Sequence ──
+    "boot.power_on": "系统供电 · 核心自检",
+    "boot.post": "内存校验 · 通过",
+    "boot.net_init": "网络链路 · 已建立",
+    "boot.auth": "身份认证 · 已验证",
+    "boot.ready": "就绪 · 欢迎回来，{name}",
+    "boot.skip": "跳过",
+
     // ── About / Update ──
     "about.version": "版本 {version}",
     "about.update": "软件更新",
@@ -680,6 +688,14 @@ const translations = {
     "settings.language": "Language",
     "settings.about": "About",
     "settings.close": "Close",
+
+    // ── Boot Sequence ──
+    "boot.power_on": "POWER ON · CORE INIT",
+    "boot.post": "MEMORY CHECK · OK",
+    "boot.net_init": "NETWORK LINK · ESTABLISHED",
+    "boot.auth": "AUTH · VERIFIED",
+    "boot.ready": "READY · WELCOME BACK, {name}",
+    "boot.skip": "SKIP",
 
     // ── About / Update ──
     "about.version": "Version {version}",

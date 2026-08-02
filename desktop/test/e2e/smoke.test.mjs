@@ -220,3 +220,46 @@ test("hud overlay hides when data-hud is off", async () => {
   expect(visible).toBe(false);
   await closeApp(app);
 });
+
+// ── 10. Boot 序列：默认出现并自行结束 ──────────────
+test("boot sequence appears on launch and self-removes", async () => {
+  const { app, window } = await launchApp();
+
+  // launchApp 完成后 boot 仍应存在（POWER_ON 阶段）
+  const boot = window.locator("#boot-screen");
+  await expect(boot).toBeAttached();
+  // boot 尚在时，日志区应有内容（至少一行启动文本）
+  await expect(window.locator("#boot-log .boot-line").first()).toBeVisible({ timeout: 3000 });
+  // 等待自动结束（状态机总时长 < 6s，给足余量）
+  await expect(boot).not.toBeAttached({ timeout: 8000 });
+  await closeApp(app);
+});
+
+// ── 11. Boot 可点击跳过 ───────────────────────────
+test("boot sequence skips on click", async () => {
+  const { app, window } = await launchApp();
+
+  // 立即点击 boot（不等动画跑完），应立即进入 fade 并移除
+  const boot = window.locator("#boot-screen");
+  await expect(boot).toBeAttached();
+  await boot.click({ position: { x: 20, y: 20 }, timeout: 2000 });
+  await expect(boot).not.toBeAttached({ timeout: 3000 });
+  await closeApp(app);
+});
+
+// ── 12. Boot 跟随 HUD 开关：关闭时不出现 ────────────
+test("boot sequence is skipped when HUD is off", async () => {
+  const { app, window } = await launchApp();
+
+  await window.evaluate(() => {
+    localStorage.setItem("AideAgent_hud", "off");
+    document.documentElement.dataset.hud = "off";
+  });
+  await window.reload();
+  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+  await window.waitForTimeout(500);
+
+  const bootCount = await window.locator("#boot-screen").count();
+  expect(bootCount).toBe(0);
+  await closeApp(app);
+});

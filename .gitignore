@@ -8,3 +8,8 @@ desktop/release/
 **/skill-translations.json
 # pdf-parse v1 test data workaround (dummy file for import)
 desktop/test/
+
+desktop/playwright-report/
+desktop/test-results/
+desktop/blob-report/
+desktop/.playwright/

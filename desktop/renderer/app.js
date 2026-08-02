@@ -6,6 +6,7 @@
 import './modules/font-settings.mjs';
 import './modules/bg-settings.mjs';
 import './modules/hud-overlay.mjs';
+import './modules/boot-sequence.mjs';
 import './modules/workspace.mjs';
 import { initKnowledgeBase, loadKnowledgeBasePanel } from './modules/knowledge-base.mjs';
 import { initMemoryPanel } from './modules/memory-panel.mjs';
