@@ -12,13 +12,13 @@ const HUD_KEY = "AideAgent_hud";
 const HUD_DEFAULT = "on";
 const HUD_MOTION_KEY = "AideAgent_hud_motion";
 const HUD_VSCAN_KEY = "AideAgent_hud_vscan";
-const HUD_VSCAN_DEFAULT = "off";
+const HUD_VSCAN_DEFAULT = "on";
 
 // 尽早暴露到 documentElement，供 CSS 动效降级块与 boot 序列读取
 try {
   document.documentElement.dataset.hud = localStorage.getItem(HUD_KEY) === "off" ? "off" : "on";
   document.documentElement.dataset.hudMotion = localStorage.getItem(HUD_MOTION_KEY) === "on" ? "on" : "auto";
-  document.documentElement.dataset.hudVscan = localStorage.getItem(HUD_VSCAN_KEY) === "on" ? "on" : "off";
+  document.documentElement.dataset.hudVscan = localStorage.getItem(HUD_VSCAN_KEY) === "off" ? "off" : "on";
 } catch {}
 
 /** @returns {boolean} 用户是否启用了 HUD 覆盖层 */
@@ -61,7 +61,7 @@ export function hudSetMotionEnabled(on) {
 }
 
 /**
- * HUD 垂直扫描线是否开启（独立子开关，默认关闭；不随总开关/动画开关联动）
+ * HUD 垂直扫描线是否开启（独立子开关，默认开启；不随总开关/动画开关联动）
  * @returns {boolean}
  */
 export function hudVscanEnabled() {
