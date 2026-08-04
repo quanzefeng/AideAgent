@@ -96,12 +96,21 @@ function injectHud() {
     '<span class="hud-corner hud-corner-bl"></span>' +
     '<span class="hud-corner hud-corner-br"></span>' +
     // 左上角标识
-    '<div class="hud-tag" id="hud-tag">AIDeAgent // HUD</div>' +
+    '<div class="hud-tag" id="hud-tag" data-text="AIDeAgent // HUD">AIDeAgent // HUD</div>' +
     // 顶部数据条（阶段3由 IPC 实时填充）
     '<div class="hud-topbar" id="hud-topbar">' +
       '<span class="hud-topbar-item" id="hud-engine">ENGINE: --</span>' +
       '<span class="hud-topbar-item" id="hud-token">TOKEN: --</span>' +
       '<span class="hud-topbar-item" id="hud-ctx">CTX: --%</span>' +
+      '<span class="hud-topbar-item" id="hud-clock">--:--:--</span>' +
+      '<span class="hud-topbar-item" id="hud-fps">-- FPS</span>' +
+    '</div>' +
+    // 上下文占用能量条（右下角，随 ctxPct 填充）
+    '<div class="hud-ctxbar"><span class="hud-ctxbar-fill" id="hud-ctxbar"></span></div>' +
+    // 右下角数据条：坐标 + 会话短哈希
+    '<div class="hud-datastrip">' +
+      '<span class="hud-topbar-item" id="hud-coord">31.23N 121.47E</span>' +
+      '<span class="hud-topbar-item" id="hud-sess">SID: --</span>' +
     '</div>' +
     // 右上雷达扫描
     '<div class="hud-radar hud-radar-right" id="hud-radar">' +
@@ -132,7 +141,7 @@ function injectHud() {
 
 /**
  * 注入 HUD 实时数据（由阶段3 IPC 订阅调用）
- * @param {Record<string, string|number>} data 字段：engine/token/ctx/status/clock
+ * @param {Record<string, string|number>} data 字段：engine/token/ctx/status/sess/clock + ctxBar(0-100 数值)
  * @returns {void}
  */
 export function hudSetData(data = {}) {
@@ -141,11 +150,21 @@ export function hudSetData(data = {}) {
     token: "hud-token",
     ctx: "hud-ctx",
     status: "hud-status",
+    sess: "hud-sess",
+    coord: "hud-coord",
   };
   for (const [key, id] of Object.entries(map)) {
     if (!(key in data)) continue;
     const el = document.getElementById(id);
     if (el) el.textContent = String(data[key]);
+  }
+  // 上下文能量条填充（0-100）
+  if ("ctxBar" in data) {
+    const bar = document.getElementById("hud-ctxbar");
+    if (bar) {
+      const pct = Math.max(0, Math.min(100, Number(data.ctxBar) || 0));
+      bar.style.width = pct + "%";
+    }
   }
 }
 
@@ -178,12 +197,52 @@ function init() {
       injectHud();
       bindMotionToggle();
       bindVscanToggle();
+      startClockFps();
     });
   } else {
     injectHud();
     bindMotionToggle();
     bindVscanToggle();
+    startClockFps();
   }
+}
+
+// ── 时钟 + FPS 自驱动（不依赖 IPC，纯前端） ──
+let _fpsFrames = 0;
+let _fpsLast = performance.now();
+let _clockTimer = null;
+
+/** @returns {void} 每秒刷新本地时钟（跟随系统时区） */
+function tickClock() {
+  const el = document.getElementById("hud-clock");
+  if (!el) return;
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  el.textContent = `${hh}:${mm}:${ss}`;
+}
+
+/** @returns {void} 用 rAF 统计真实 FPS，每 500ms 刷新 */
+function tickFps() {
+  _fpsFrames++;
+  const now = performance.now();
+  if (now - _fpsLast >= 500) {
+    const fps = Math.round((_fpsFrames * 1000) / (now - _fpsLast));
+    const el = document.getElementById("hud-fps");
+    if (el) el.textContent = `${fps} FPS`;
+    _fpsFrames = 0;
+    _fpsLast = now;
+  }
+  requestAnimationFrame(tickFps);
+}
+
+/** @returns {void} 启动时钟 + FPS 循环（幂等） */
+function startClockFps() {
+  if (_clockTimer) return;
+  tickClock();
+  _clockTimer = setInterval(tickClock, 1000);
+  requestAnimationFrame(tickFps);
 }
 
 init();

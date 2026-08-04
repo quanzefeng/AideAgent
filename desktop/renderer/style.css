@@ -578,6 +578,32 @@ html, body {
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
+/* ── E2 边框流光：聚焦时底部一道能量流光扫过（gated on HUD 总开关） ── */
+html[data-hud="on"] .form-input:focus {
+  position: relative;
+}
+html[data-hud="on"] .form-input:focus::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(var(--hud-accent-rgb), 0.9) 50%,
+    transparent);
+  background-size: 200% 100%;
+  background-position: 200% 0;
+  animation: hud-border-sweep 1.6s ease-in-out infinite;
+  border-radius: 0 0 var(--radius-input) var(--radius-input);
+}
+@keyframes hud-border-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .form-select {
   appearance: none;
   cursor: pointer;
@@ -4213,6 +4239,37 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
   text-shadow: 0 0 6px rgba(var(--hud-accent-rgb), 0.6);
 }
 
+/* ── E1 故障文字（glitch）：RGB 错位 + 随机抖动，仅短暂触发 ── */
+.hud-tag::before,
+.hud-tag::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+}
+.hud-tag::before {
+  color: rgba(255, 60, 60, 0.8);   /* 红通道错位 */
+  animation: hud-glitch-a 3.4s infinite steps(1);
+}
+.hud-tag::after {
+  color: rgba(60, 200, 255, 0.8);  /* 青通道错位 */
+  animation: hud-glitch-b 4.1s infinite steps(1);
+}
+@keyframes hud-glitch-a {
+  0%, 91%, 100% { opacity: 0; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
+  92% { opacity: 0.9; transform: translate(-2px, 1px); clip-path: inset(20% 0 55% 0); }
+  94% { opacity: 0.9; transform: translate(2px, -1px); clip-path: inset(60% 0 15% 0); }
+  96% { opacity: 0; transform: translate(0, 0); }
+}
+@keyframes hud-glitch-b {
+  0%, 90%, 100% { opacity: 0; transform: translate(0, 0); clip-path: inset(0 0 0 0); }
+  91% { opacity: 0.9; transform: translate(2px, 1px); clip-path: inset(10% 0 70% 0); }
+  93% { opacity: 0.9; transform: translate(-2px, -1px); clip-path: inset(45% 0 30% 0); }
+  95% { opacity: 0; transform: translate(0, 0); }
+}
+
 /* ── 顶部数据条 ── */
 .hud-topbar {
   position: absolute;
@@ -4228,6 +4285,41 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
   color: rgba(var(--hud-accent-rgb), 0.7);
   text-shadow: 0 0 5px rgba(var(--hud-accent-rgb), 0.45);
   white-space: nowrap;
+}
+
+/* ── 上下文占用能量条（右下角，随 ctxPct 填充） ── */
+.hud-ctxbar {
+  position: absolute;
+  top: 40px;
+  right: 44px;
+  width: 120px;
+  height: 3px;
+  border: 1px solid rgba(var(--hud-accent-rgb), 0.35);
+  border-radius: 1px;
+  background: rgba(var(--hud-accent-rgb), 0.06);
+  overflow: hidden;
+}
+.hud-ctxbar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg,
+    rgba(var(--hud-accent-rgb), 0.5),
+    rgba(var(--hud-accent-rgb), 0.95));
+  box-shadow: 0 0 6px rgba(var(--hud-accent-rgb), 0.5);
+  transition: width 0.4s var(--ease-out);
+}
+
+/* ── 右下角数据条（坐标 + 会话短哈希） ── */
+.hud-datastrip {
+  position: absolute;
+  bottom: 18px;
+  right: 44px;
+  display: flex;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
 }
 
 /* ── 雷达扫描（右上 + 左上镜像） ── */
@@ -4279,6 +4371,24 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
 }
 @keyframes hud-radar-spin { to { --hud-angle: 360deg; } }
 @keyframes hud-radar-spin-reverse { to { --hud-angle: -360deg; } }
+
+/* ── Agent 状态联动（由 hud-telemetry 设置 data-hud-state） ── */
+/* streaming：雷达加速（2.2s） */
+html[data-hud-state="streaming"] .hud-radar-sweep { animation-duration: 2.2s; }
+/* tool：雷达更快（1.3s）+ 四角括号闪烁 */
+html[data-hud-state="tool"] .hud-radar-sweep { animation-duration: 1.3s; }
+html[data-hud-state="tool"] .hud-corner {
+  animation: hud-corner-flash 0.9s ease-in-out infinite;
+}
+@keyframes hud-corner-flash {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(var(--hud-accent-rgb), 0.5)); opacity: 1; }
+  50%      { filter: drop-shadow(0 0 10px rgba(var(--hud-accent-rgb), 0.95)); opacity: 0.7; }
+}
+/* subagent：雷达极速（0.9s）+ 括号常亮 */
+html[data-hud-state="subagent"] .hud-radar-sweep { animation-duration: 0.9s; }
+html[data-hud-state="subagent"] .hud-corner {
+  filter: drop-shadow(0 0 8px rgba(var(--hud-accent-rgb), 0.8));
+}
 .hud-radar-dot {
   position: absolute;
   width: 4px;
@@ -4343,6 +4453,9 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
   }
   html:not([data-hud-motion="on"]) .hud-radar-sweep { background: conic-gradient(from 45deg, rgba(var(--hud-accent-rgb), 0.35), transparent 55deg); }
   html:not([data-hud-motion="on"]) .hud-vscan { opacity: 0.18; transform: translateY(100vh); }
+  html:not([data-hud-motion="on"]) .hud-tag::before,
+  html:not([data-hud-motion="on"]) .hud-tag::after { animation: none; opacity: 0; }
+  html:not([data-hud-motion="on"]) .form-input:focus::after { animation: none; opacity: 0; }
 }
 
 /* ════════════════════════════════════════════════

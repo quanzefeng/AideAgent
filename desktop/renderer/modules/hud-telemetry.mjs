@@ -43,7 +43,17 @@ const _state = {
   status: "idle",
 };
 
-/** @returns {Record<string, string>} 组装 HUD 展示数据 */
+/** 会话 ID → 高对比短哈希（6 位大写 hex，用于 HUD 展示） */
+function shortSessionHash(id) {
+  if (!id) return "--";
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16).toUpperCase().padStart(6, "0").slice(-6);
+}
+
+/** @returns {Record<string, string|number>} 组装 HUD 展示数据 */
 function _snapshot() {
   const engine = RUNTIME_LABEL[/** @type {keyof typeof RUNTIME_LABEL} */ (_state.runtime)] || _state.runtime || "?";
   const model = _state.model ? ` · ${_state.model}` : "";
@@ -51,6 +61,8 @@ function _snapshot() {
     engine: `ENGINE: ${engine}${model}`,
     token: `TOKEN: ${_state.tokens ? _state.tokens.toLocaleString() : "--"}`,
     ctx: `CTX: ${_state.ctxPct ? _state.ctxPct + "%" : "--%"}`,
+    ctxBar: typeof _state.ctxPct === "number" ? _state.ctxPct : 0,
+    sess: `SID: ${shortSessionHash(_state.sessionId)}`,
     status: STATUS_TEXT[/** @type {keyof typeof STATUS_TEXT} */ (_state.status)] || "STANDBY",
   };
 }
@@ -58,6 +70,8 @@ function _snapshot() {
 /** @returns {void} 立即刷入 HUD（仅当 HUD 开启） */
 function flushAll() {
   if (!hudEnabled()) return;
+  // 暴露 agent 状态到 DOM 属性，供 CSS 状态联动（雷达加速 / 角落闪烁等）
+  document.documentElement.dataset.hudState = _state.status;
   const snap = _snapshot();
   hudSetData(snap);
 }
