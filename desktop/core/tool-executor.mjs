@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
 import { homedir } from "node:os";
+import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { safeStorage } from "electron";
 import * as memory from "../memory-store.mjs";
@@ -66,7 +67,7 @@ function runShell(command, opts = {}) {
     try {
       const args = SHELL.buildArgs(command);
       const child = spawn(SHELL.exe, args, {
-        cwd: getWorkspace(), shell: false, timeout: opts.timeout || 60000,
+        cwd: getWorkspace(), shell: false, timeout: opts.timeout ?? 60000,
       });
       const chunks = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
@@ -109,7 +110,7 @@ function runSpawnSafe(exe, args, opts = {}) {
   return new Promise(resolve => {
     try {
       const child = spawn(exe, args, {
-        cwd: getWorkspace(), shell: false, timeout: opts.timeout || 60000,
+        cwd: getWorkspace(), shell: false, timeout: opts.timeout ?? 60000,
       });
       const chunks = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
@@ -202,6 +203,86 @@ async function getBumpVersion() {
 }
 
 /**
+ * Compile a glob pattern (with `**`, `*`, `?`) into a RegExp.
+ * A double-star followed by a slash matches zero or more directory segments;
+ * `**` at the end matches any suffix; `*` matches within one segment only
+ * (no path separators).
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+function globToRegExp(pattern) {
+  const p = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const segs = p.split("/");
+  let re = "";
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    const isLast = i === segs.length - 1;
+    if (seg === "**") {
+      // `**` = zero or more directory segments. As a non-last segment it
+      // matches zero-or-more full segments (`src/**/*.css` matches
+      // `src/a.css`); as the last segment it matches any suffix.
+      // No separator is appended after it — the next fragment binds
+      // directly, so zero-directory matches work (`**/x` matches `x`).
+      re += isLast ? "(?:[^/]*/)*[^/]*" : "(?:[^/]*/)*";
+      continue;
+    }
+    const s = seg.replace(/\*\*/g, "__DOUBLE__");
+    let out = "";
+    for (const ch of s) {
+      if (ch === "*") out += "[^/]*";
+      else if (ch === "?") out += "[^/]";
+      else if (ch === "__DOUBLE__") out += "[^/]*";
+      else out += ch;
+    }
+    re += out;
+    if (!isLast) re += "/";
+  }
+  return new RegExp(`^${re}$`);
+}
+
+// Cache compiled regexes per pattern string (glob calls can repeat).
+const _globReCache = new Map();
+function getGlobRe(pattern) {
+  let re = _globReCache.get(pattern);
+  if (!re) { re = globToRegExp(pattern); _globReCache.set(pattern, re); }
+  return re;
+}
+
+/**
+ * Recursively walk `dir`, returning paths whose RELATIVE (to dir) form
+ * matches the glob pattern. Honors `**`, `*`, `?`. Skips node_modules and
+ * hidden dirs (dot-prefixed) by default to avoid huge walks.
+ * @param {string} dir
+ * @param {string} pattern
+ * @param {number} limit
+ * @returns {Promise<string[]>}
+ */
+async function globWalk(dir, pattern, limit) {
+  const re = getGlobRe(pattern);
+  const results = [];
+  const skipDirs = new Set(["node_modules", ".git", ".aideagent", "models", "release", "dist"]);
+  /** @type {string[]} */
+  const stack = [dir];
+  while (stack.length > 0 && results.length < limit) {
+    const current = stack.pop();
+    let entries;
+    try { entries = await readdir(current, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (results.length >= limit) break;
+      const abs = join(current, e.name);
+      const rel = abs.slice(dir.length).replace(/^[\\/]+/, "").replace(/\\/g, "/");
+      if (e.isDirectory()) {
+        if (skipDirs.has(e.name) || e.name.startsWith(".")) continue;
+        stack.push(abs);
+      } else if (e.isFile() && re.test(rel)) {
+        results.push(abs);
+      }
+    }
+  }
+  return results;
+}
+
+/**
  * Dispatch a single tool call to the appropriate handler.
  *
  * @param {{ function: { name: string; arguments: string } }} tc - Tool call object
@@ -242,7 +323,7 @@ export async function runTool(tc) {
         const ok = await requestPermission(args.command);
         if (!ok) return { error: "User denied this command" };
       }
-      const r = await runShell(args.command);
+      const r = await runShell(args.command, { timeout: args.timeout });
       if (r.error) return { error: r.error };
       // P2: pagination support — let the LLM ask for head/tail/offset slices
       // when the output exceeds MAX_OUTPUT (60KB). Without this, the LLM gets
@@ -398,34 +479,47 @@ export async function runTool(tc) {
       try {
         const dir = args.path || getWorkspace();
         const esc = s => String(s).replace(/'/g, "''");
+        // P: configurable context lines + result cap. Previously hardcoded to
+        // 100 matches with zero context — symbol searches lost surrounding code.
+        const ctx = Number.isFinite(args.context) ? Math.max(0, Math.floor(args.context)) : 2;
+        const maxResults = Number.isFinite(args.max_results) ? Math.max(1, Math.min(500, Math.floor(args.max_results))) : 100;
         let cmd;
         if (IS_WINDOWS) {
           const filter = args.include ? `-Include '${esc(args.include)}'` : "";
-          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}' | Select-Object -First 100 | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }`;
+          // P: honor context on Windows — print each match line, then its
+          // post-context lines indented. (Select-String -Context discards
+          // context if we only project $_.Line, so emit both explicitly.)
+          const ctxArg = ctx > 0 ? ` -Context 0,${ctx}` : "";
+          const ctxEmit = ctx > 0
+            ? `; $_.Context.PostContext | % { "  | " + $_ }`
+            : "";
+          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}'${ctxArg} | Select-Object -First ${maxResults} | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())"${ctxEmit} }`;
         } else {
           // POSIX: grep -rn supports --include='*.ext' glob for filtering
           const include = args.include ? `--include='${esc(args.include)}'` : "";
-          cmd = `grep -rn ${include} '${esc(args.pattern)}' '${esc(dir)}' 2>/dev/null | head -n 100`;
+          const ctxArg = ctx > 0 ? ` -C ${ctx}` : "";
+          cmd = `grep -rn${ctxArg} ${include} '${esc(args.pattern)}' '${esc(dir)}' 2>/dev/null | head -n ${maxResults}`;
         }
-        const r = await runShell(cmd, { timeout: 15000 });
+        const r = await runShell(cmd, { timeout: args.timeout ?? 15000 });
         if (r.error) return { error: r.error };
-        return { matches: r.out.trim().split("\n").filter(Boolean) };
+        const matches = r.out.trim().split("\n").filter(Boolean);
+        return {
+          matches,
+          count: matches.length,
+          ...(matches.length === maxResults ? { hint: `Result cap reached (${maxResults}). Refine the pattern or use max_results to raise the limit (max 500).` } : {}),
+        };
       } catch (e) { return { error: e?.message || String(e) }; }
     }
     case "glob": {
       try {
         const dir = args.path || getWorkspace();
-        const esc = s => String(s).replace(/'/g, "''");
-        let cmd;
-        if (IS_WINDOWS) {
-          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse -Filter '${esc(args.pattern)}' | Select-Object -First 200 -ExpandProperty FullName`;
-        } else {
-          // POSIX: find -name 'pattern' (also use -path for ** support; basic -name is enough here)
-          cmd = `find '${esc(dir)}' -name '${esc(args.pattern)}' 2>/dev/null | head -n 200`;
-        }
-        const r = await runShell(cmd, { timeout: 15000 });
-        if (r.error) return { error: r.error };
-        return { files: r.out.trim().split("\n").filter(Boolean).map(s => s.trim()) };
+        // P: cross-platform glob with `**` support. The old Windows branch
+        // (Get-ChildItem -Filter) treats the pattern literally and can't
+        // expand `**/*.ts`; the POSIX branch (find -name) was no better.
+        // A native recursive walk with a real glob matcher behaves
+        // identically on both platforms and avoids shell quoting entirely.
+        const matches = await globWalk(dir, args.pattern || "**/*", 200);
+        return { files: matches };
       } catch (e) { return { error: e?.message || String(e) }; }
     }
     case "web_fetch": {

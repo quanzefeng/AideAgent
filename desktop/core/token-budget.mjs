@@ -76,6 +76,13 @@ function findProtectedRanges(msgs) {
       protectedSet.add(i); break;
     }
   }
+  // Most recent user message is the LIVE request — keep it through pruning.
+  // Without this, a multi-continuation task loses the current ask, and the
+  // model responds to stale context. Scan from the end.
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role === "user") { protectedSet.add(i); break; }
+  }
   // Any assistant with tool_calls AND the tool results they reference.
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
@@ -122,11 +129,18 @@ export function compressContext(msgs, budget) {
   let removedMessages = 0;
 
   // Step 1: truncate long tool results (cheapest reduction).
+  // Head+tail splice instead of keep-head-only: a long diff/log's tail
+  // (errors, final status) is often the most decision-relevant part.
+  // Split ~60% head / ~30% tail with a marked middle gap.
   for (let i = 1; i < msgs.length - 6; i++) {
     const m = msgs[i];
     if (m.role === "tool" && typeof m.content === "string" && m.content.length > TOOL_RESULT_KEEP_CHARS + 100) {
       const origLen = m.content.length;
-      m.content = m.content.slice(0, TOOL_RESULT_KEEP_CHARS) + `\n...[truncated ${origLen - TOOL_RESULT_KEEP_CHARS} chars]`;
+      const keepHead = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.6);
+      const keepTail = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.3);
+      m.content = m.content.slice(0, keepHead) +
+        `\n\n...(中段已截断: ${origLen - keepHead - keepTail} chars 被丢弃, 保留头尾)...\n\n` +
+        m.content.slice(-keepTail);
     }
   }
 
@@ -167,6 +181,21 @@ export function compressContext(msgs, budget) {
   msgs.splice(0, msgs.length, ...prefix, ...rescued, ...suffix);
 
   const afterPruning = estimateMessageTokens(msgs);
+  if (removedMessages > 0) {
+    // P: inject a visible "compressed" marker so the model knows context was
+    // pruned mid-task. Append to the FIRST system message — stays at index 0
+    // for OpenAI-compatible providers (some reject system mid-array) and
+    // Anthropic merges all system messages to the top-level `system` param,
+    // so both formats stay valid. Guard against duplicate injection on
+    // repeated compressContext calls in the same turn.
+    const firstSystem = msgs.findIndex(m => m.role === "system");
+    const marker = `\n\n[系统] ⚠️ 上下文已自动压缩：${removedMessages} 条早期消息被裁剪（保留任务锚点、最近一次用户请求与所有工具调用对）。如需回顾被裁剪的细节，可要求 agent 重新读取相关文件。`;
+    if (firstSystem !== -1 && typeof msgs[firstSystem].content === "string" && !msgs[firstSystem].content.includes("[系统] ⚠️ 上下文已自动压缩")) {
+      msgs[firstSystem].content += marker;
+    } else if (firstSystem === -1) {
+      msgs.unshift({ role: "system", content: marker.trim() });
+    }
+  }
   return { estimatedTokens: afterPruning.totalTokens, compressed: true, removedMessages };
 }
 

@@ -23,6 +23,7 @@ export const TOOL_DEFS = [
           head: { type: "integer", description: "If set, return only the first N lines (useful for paginating large output)." },
           tail: { type: "integer", description: "If set, return only the last N lines (useful for seeing the end of build/test output)." },
           offset: { type: "integer", description: "If set with `head`, start at line N instead of line 0." },
+          timeout: { type: "integer", description: "Timeout in milliseconds (default: 60000). Use for long-running builds/tests that need more time, or lower it for commands that should fail fast.", default: 60000 },
         },
         required: ["command"],
       },
@@ -86,12 +87,15 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "grep",
-      description: "Search file contents with a regex. Returns file:line matches.\n\nUSE for: finding where a function/symbol/string is defined or used; searching multiple files; code archaeology.\n\nDO NOT use for: finding files by name (use `glob`); reading a known file (use `file_read`); searching the knowledge base (use `kb_search`). Prefer `include` filter to limit scope.",
+      description: "Search file contents with a regex. Returns file:line matches (with optional context lines).\n\nUSE for: finding where a function/symbol/string is defined or used; searching multiple files; code archaeology.\n\nDO NOT use for: finding files by name (use `glob`); reading a known file (use `file_read`); searching the knowledge base (use `kb_search`). Prefer `include` filter to limit scope.\n\n**Context (P3):** pass `context=N` to include N lines after each match — useful when you need the surrounding code, not just the matching line. Default 2, set 0 to disable.",
       parameters: {
         type: "object", properties: {
           pattern: { type: "string", description: "Regex to search" },
           include: { type: "string", description: "File filter (e.g. *.ts)" },
           path: { type: "string", description: "Directory to search (default: workspace)" },
+          context: { type: "integer", description: "Lines of post-match context to include per match (default 2, 0 disables)." },
+          max_results: { type: "integer", description: "Maximum matches to return (default 100, max 500)." },
+          timeout: { type: "integer", description: "Timeout in milliseconds (default: 15000)." },
         }, required: ["pattern"],
       },
     },
@@ -100,10 +104,10 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "glob",
-      description: "Find files by name pattern (glob). Returns file paths.\n\nUSE for: finding files by name (`**/*.ts`, `src/**/*.css`); listing directory contents by extension; locating config files.\n\nDO NOT use for: searching file contents (use `grep`); reading a known file (use `file_read`); recursive directory trees (use `bash Get-ChildItem -Recurse`).",
+      description: "Find files by name pattern (glob). Returns file paths.\n\nUSE for: finding files by name (`**/*.ts`, `src/**/*.css`); listing directory contents by extension; locating config files.\n\nDO NOT use for: searching file contents (use `grep`); reading a known file (use `file_read`); recursive directory trees (use `bash Get-ChildItem -Recurse`).\n\n**Cross-platform `**` (P3):** the matcher runs natively in-process and supports `**` (any depth), `*` and `?` identically on Windows and POSIX — the old Windows `-Filter` could not expand `**/*.ts`. Node's own `node_modules`, `.git` and other heavy dirs are skipped automatically.",
       parameters: {
         type: "object", properties: {
-          pattern: { type: "string", description: "Glob pattern (e.g. **/*.ts, src/**/*.css)" },
+          pattern: { type: "string", description: "Glob pattern with ** support (e.g. **/*.ts, src/**/*.css)" },
           path: { type: "string", description: "Directory (default: workspace)" },
         }, required: ["pattern"],
       },
