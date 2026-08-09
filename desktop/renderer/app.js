@@ -2509,7 +2509,11 @@ window.addEventListener("focus", () => {
 initSettingsTabs();
 initInputMenu();
 filePreviews.init();
-if (ocFileInput) ocFilePreviews.init();
+filePreviews.initPasteSupport(promptInput);
+if (ocFileInput) {
+  ocFilePreviews.init();
+  ocFilePreviews.initPasteSupport(ocPromptInput() || promptInput);
+}
 initOpencodeModeSelector();
 initOpencodeModelSelector();
 setupIPC();

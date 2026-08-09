@@ -9,7 +9,7 @@ import { compressContext, sendContextUsage, estimateTokens, estimateMessageToken
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
-import { writeFileSync, mkdtempSync, unlinkSync } from "node:fs";
+import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getExtractor } from "../kb/extractors/index.mjs";
@@ -70,6 +70,59 @@ export function extractThinkBlocks(text) {
   const cleanText = text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
   return { cleanText, thinkText: blocks.join("\n\n") };
 }
+
+// ── Vision capability: does this model understand image_url blocks? ──
+// Pure-text models (DeepSeek chat, most local GGUF, MiniMax text-only) reject
+// or silently ignore image_url parts. Known-multimodal models are matched by
+// ID patterns; anything unknown defaults to NON-vision (safe): we save the
+// image to disk and hand the model a text directive pointing at the
+// vision-bridge skill instead of sending a block it can't use.
+const VISION_MODEL_PATTERNS = [
+  /^claude/i,              // Anthropic Claude (all multimodal)
+  /glm-4\S*v\S*/i,         // GLM-4V / GLM-4.1V / GLM-4.6V (Zhipu vision)
+  /qwen[23]?.*-?vl/i,      // Qwen-VL / Qwen2-VL / Qwen3-VL
+  /gpt-4o/i, /gpt-4\.1/i, /gpt-4-vision/i, /gpt-5/i, /o[0-9]+/i,
+  /gemini/i, /gemma-3/i,
+  /llava/i, /internvl/i, /minicpm-v/i, /phi-3-vision/i, /qwen-vl/i,
+];
+
+/**
+ * @param {string|null|undefined} model
+ * @returns {boolean} true when the model ID matches a known-multimodal pattern.
+ */
+export function supportsVision(model) {
+  if (!model) return false;
+  return VISION_MODEL_PATTERNS.some(rx => rx.test(model));
+}
+
+/**
+ * Save an image attachment (base64 dataUrl) to a temp file so a non-vision
+ * model can still access it via the vision-bridge skill. Returns the path,
+ * or null when the write fails (caller falls back to image_url).
+ *
+ * @param {{name?: string, dataUrl?: string}} f
+ * @returns {{path: string} | null}
+ */
+function saveImageAttachment(f) {
+  try {
+    const base64Data = (f.dataUrl || "").includes("base64,") ? f.dataUrl.split("base64,")[1] : f.dataUrl || "";
+    if (!base64Data) return null;
+    const buffer = Buffer.from(base64Data, "base64");
+    if (buffer.length === 0) return null;
+    const ext = (f.name || "image").split(".").pop()?.toLowerCase() || "png";
+    const dir = join(tmpdir(), "aideagent-image-attach");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `attach-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
+    writeFileSync(path, buffer);
+    return { path };
+  } catch (/** @type {any} */ e) {
+    console.error("[agent-loop] saveImageAttachment failed:", e.message);
+    return null;
+  }
+}
+
+/** Path to the vision-bridge skill script (powered by local LM Studio or Zhipu cloud). */
+const VISION_BRIDGE_SCRIPT = "C:\\Users\\7\\.agents\\skills\\vision-bridge\\vision_bridge.py";
 
 // Runtime of the active agentLoop call is captured as a closure-local variable
 // inside agentLoop so concurrent calls (or a runtime switch mid-flight) can't
@@ -254,7 +307,27 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
 
     for (const f of files) {
       if (f.type && f.type.startsWith("image/")) {
-        contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+        if (supportsVision(model)) {
+          contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+        } else {
+          // Model can't consume image_url blocks (DeepSeek chat, most local
+          // GGUF, MiniMax text-only, ...). Save the image to disk and inject a
+          // text directive so the model knows the vision-bridge skill can
+          // describe it — sending a raw image_url would be rejected/ignored
+          // by the API. If the write fails, fall back to image_url anyway.
+          const saved = saveImageAttachment(f);
+          if (saved) {
+            contentParts.push({
+              type: "text",
+              text: `\n\n[图片附件: ${f.name}] 当前模型不支持直接读取图片。图片已保存到本地文件：\n${saved.path}\n\n` +
+                    `如需查看图片内容，请使用 vision-bridge 技能，运行：\n` +
+                    `python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请详细描述这张图片的内容"\n` +
+                    `（若图片在剪贴板中，可改为 --clipboard）\n`,
+            });
+          } else {
+            contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+          }
+        }
       } else {
         // Non-image attachments: try to extract readable text via KB
         // extractors. Previously this used `atob()` to decode the base64
@@ -658,13 +731,35 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         // adapter (format-adapters.mjs:76-78) converts image_url → image block.
         // OpenAI-compatible APIs (incl. MiniMax /anthropic) accept this natively.
         if (result?.type === "image" && result?.data && result?.media_type) {
-          msgs.push({
-            role: "user",
-            content: [{
-              type: "image_url",
-              image_url: { url: `data:${result.media_type};base64,${result.data}` },
-            }],
-          });
+          if (supportsVision(model)) {
+            msgs.push({
+              role: "user",
+              content: [{
+                type: "image_url",
+                image_url: { url: `data:${result.media_type};base64,${result.data}` },
+              }],
+            });
+          } else {
+            // Non-vision model can't consume the image block — persist the
+            // image to a temp file and point the model at vision-bridge so it
+            // can still "see" what view_image found.
+            const saved = saveImageAttachment({
+              name: `view-${Date.now()}.${result.media_type.split("/")[1] || "png"}`,
+              dataUrl: `data:${result.media_type};base64,${result.data}`,
+            });
+            if (saved) {
+              msgs.push({
+                role: "user",
+                content: `[view_image 结果] 图片已保存到：${saved.path}\n` +
+                         `如需查看内容，请使用 vision-bridge 技能：python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请描述这张图片的内容"\n`,
+              });
+            } else {
+              msgs.push({
+                role: "user",
+                content: `[view_image 结果] 图片数据已返回（${result.media_type}，${((result.data.length * 3) / 4 / 1024).toFixed(0)}KB base64），但当前模型不支持直接读取图片。图片路径：${/** @type {any} */ (result).description || "(unknown)"}\n`,
+              });
+            }
+          }
         }
 
         // P3: turn-level checkpoint — every 5 turns persist the current

@@ -53,7 +53,7 @@ export class OpencodeAcpClient extends EventEmitter {
     if (!binPath) throw new Error("OpencodeAcpClient: binPath required");
     this.binPath = binPath;
     this.cwd = cwd || process.cwd();
-    this.clientInfo = clientInfo || { name: "AideAgent", version: "1.0.0" };
+    this.clientInfo = clientInfo || { name: "AideAgent", version: "1.0.32" };
     this.mcpServers = mcpServers;
     /**
      * Optional model id forwarded to ACP `session/new`. When null, opencode

@@ -9,8 +9,21 @@
  *
  * 通过依赖注入接收 DOM 引用和 state，避免与 app.js 形成循环依赖。
  *
- * 必须先调 init() 才能监听上传按钮和文件选择。
+ * 必须先调 init() 才能监听上传按钮和文件选择；
+ * 粘贴图片支持通过 initPasteSupport(inputEl) 挂到输入框上。
  */
+
+/** 剪贴板图片 File 没有扩展名时的 fallback 映射（getAsFile 的 name 常为空） */
+const IMAGE_EXT_BY_MIME = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/bmp": "bmp",
+  "image/svg+xml": "svg",
+  "image/avif": "avif",
+  "image/x-icon": "ico",
+};
 
 /**
  * @param {{
@@ -96,7 +109,7 @@ export function createFilePreviews({
   }
 
   /**
-   * @param {FileList | null} files
+   * @param {FileList | File[] | null} files
    */
   async function handleFileUpload(files) {
     if (!files || files.length === 0) return;
@@ -126,6 +139,40 @@ export function createFilePreviews({
     updateSendButton();
   }
 
+  /**
+   * 从剪贴板图片生成一个带合理文件名的 File（getAsFile 的 name 常为空）。
+   * @param {File} file
+   */
+  function fileWithFallbackName(file) {
+    if (file.name && file.name.trim()) return file;
+    const ext = /** @type {Record<string, string>} */ (IMAGE_EXT_BY_MIME)[file.type] || "png";
+    return new File([file], `pasted-image-${Date.now()}.${ext}`, { type: file.type });
+  }
+
+  /**
+   * 在输入框上挂载粘贴图片支持：复制/截图的图片 Ctrl+V 直接进入附件管线。
+   * 只拦截剪贴板里的图片（image/*）；纯文本粘贴保持默认行为。
+   * @param {HTMLTextAreaElement} inputEl
+   */
+  function initPasteSupport(inputEl) {
+    if (!inputEl) return;
+    inputEl.addEventListener("paste", (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      /** @type {File[]} */
+      const imageFiles = [];
+      for (const item of items) {
+        if (item.kind !== "file") continue;
+        const file = item.getAsFile();
+        if (!file || !file.type.startsWith("image/")) continue;
+        imageFiles.push(fileWithFallbackName(file));
+      }
+      if (imageFiles.length === 0) return; // 纯文本 → 交给默认粘贴行为
+      e.preventDefault(); // 阻止图片以 HTML/文本形式插入 textarea
+      handleFileUpload(imageFiles);
+    });
+  }
+
   function init() {
     // uploadBtn click is owned by app.js (toggles the input-menu popover);
     // the "上传文件" item inside the popover triggers `fileInput.click()`.
@@ -135,5 +182,5 @@ export function createFilePreviews({
     });
   }
 
-  return { renderFilePreviews, updateSendButton, handleFileUpload, init };
+  return { renderFilePreviews, updateSendButton, handleFileUpload, initPasteSupport, init };
 }

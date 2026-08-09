@@ -10,7 +10,7 @@ AideAgent is an AI desktop app that runs on your computer (cloud models are supp
 
 If you're the kind of person who wants AI to *do things for you*, not just *talk to you* — this project is for you.
 
-![AideAgent main chat](docs/screenshots/01-主对话界面.png)
+![AideAgent main interface — welcome screen with the AideAgent / OpenCode runtime picker, model selector, and capability toggles](docs/screenshots/01-主对话界面.png)
 
 ---
 
@@ -57,7 +57,7 @@ Your mode choice is persisted (`AideAgent_oc_mode`) and re-applied on the next l
 
 ### OpenCode file upload
 
-OpenCode supports file attachments via the `+` button on its input box — images go inline (`{type:"image"}`) so the model can see them directly; everything else (PDF, Markdown, source, etc.) is written to a temp file and attached as a `resource_link` with a `file://` URI. The model can then call `file_read` on the URI. This is the most reliable path we found against opencode v1.17.9 — the inline-text `{type:"resource"}` route silently stalled the response in our testing, so `resource_link` is the only fallback we ship.
+OpenCode supports file attachments via the `+` button on its input box — images go inline (`{type:"image"}`) so the model can see them directly; everything else (PDF, Markdown, source, etc.) is written to a temp file and attached as a `resource_link` with a `file://` URI. The model can then call `file_read` on the URI. This is the most reliable path we found against opencode v1.18.x — the inline-text `{type:"resource"}` route silently stalled the response in our testing, so `resource_link` is the only fallback we ship.
 
 ### OpenCode model picker
 
