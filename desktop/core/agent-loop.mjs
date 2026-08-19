@@ -9,8 +9,8 @@ import { compressContext, sendContextUsage, estimateTokens, estimateMessageToken
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
-import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { getExtractor } from "../kb/extractors/index.mjs";
 import {
@@ -121,8 +121,19 @@ function saveImageAttachment(f) {
   }
 }
 
-/** Path to the vision-bridge skill script (powered by local LM Studio or Zhipu cloud). */
-const VISION_BRIDGE_SCRIPT = "C:\\Users\\7\\.agents\\skills\\vision-bridge\\vision_bridge.py";
+// ── Vision-bridge skill discovery ──────────────────────────────────────
+// The vision-bridge invoker script lives alongside the user's installed skills
+// (the same directories skill-scanner.mjs scans). Resolve it at runtime — the
+// previous literal `C:\Users\7\...` path only existed on the author's machine
+// and broke image description everywhere else. When no script is found,
+// VISION_BRIDGE_SCRIPT is null and the call sites below degrade gracefully
+// instead of handing the model a python command that cannot run.
+const VISION_BRIDGE_CANDIDATES = [
+  join(homedir(), ".agents", "skills", "vision-bridge", "vision_bridge.py"),
+  join(homedir(), ".claude", "skills", "vision-bridge", "vision_bridge.py"),
+  join(homedir(), ".agents", "vision-bridge", "vision_bridge.py"),
+];
+const VISION_BRIDGE_SCRIPT = VISION_BRIDGE_CANDIDATES.find(p => existsSync(p)) ?? null;
 
 // Runtime of the active agentLoop call is captured as a closure-local variable
 // inside agentLoop so concurrent calls (or a runtime switch mid-flight) can't
@@ -317,12 +328,14 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           // by the API. If the write fails, fall back to image_url anyway.
           const saved = saveImageAttachment(f);
           if (saved) {
+            const visionCmd = VISION_BRIDGE_SCRIPT
+              ? `如需查看图片内容，请使用 vision-bridge 技能，运行：\n` +
+                `python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请详细描述这张图片的内容"\n` +
+                `（若图片在剪贴板中，可改为 --clipboard）\n`
+              : `（本机未检测到 vision-bridge 技能脚本，无法自动描述图片内容——如需此功能，请安装该技能）\n`;
             contentParts.push({
               type: "text",
-              text: `\n\n[图片附件: ${f.name}] 当前模型不支持直接读取图片。图片已保存到本地文件：\n${saved.path}\n\n` +
-                    `如需查看图片内容，请使用 vision-bridge 技能，运行：\n` +
-                    `python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请详细描述这张图片的内容"\n` +
-                    `（若图片在剪贴板中，可改为 --clipboard）\n`,
+              text: `\n\n[图片附件: ${f.name}] 当前模型不支持直接读取图片。图片已保存到本地文件：\n${saved.path}\n\n${visionCmd}`,
             });
           } else {
             contentParts.push({ type: "image_url", image_url: { url: f.dataUrl } });
@@ -748,10 +761,12 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
               dataUrl: `data:${result.media_type};base64,${result.data}`,
             });
             if (saved) {
+              const visionCmd = VISION_BRIDGE_SCRIPT
+                ? `如需查看内容，请使用 vision-bridge 技能：python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请描述这张图片的内容"\n`
+                : `（本机未检测到 vision-bridge 技能脚本，无法自动描述图片内容）\n`;
               msgs.push({
                 role: "user",
-                content: `[view_image 结果] 图片已保存到：${saved.path}\n` +
-                         `如需查看内容，请使用 vision-bridge 技能：python "${VISION_BRIDGE_SCRIPT}" --image "${saved.path}" --prompt "请描述这张图片的内容"\n`,
+                content: `[view_image 结果] 图片已保存到：${saved.path}\n${visionCmd}`,
               });
             } else {
               msgs.push({
