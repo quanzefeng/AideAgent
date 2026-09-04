@@ -359,3 +359,109 @@ export function getRendererBuffer() {
 export function clearRendererBuffer() {
   _rendererBuffer.length = 0;
 }
+
+// ── Dynamic Context Window Detection ─────────────────────────
+// Detects the actual context window size from local model servers
+// (llama.cpp, Ollama, etc.) to prevent exceed_context_size_error.
+
+/**
+ * Detect model context window from API endpoint.
+ * Works with llama.cpp /v1/models and /props endpoints.
+ * 
+ * @param {string} apiUrl - The API endpoint URL
+ * @param {string} model - Model name (optional)
+ * @returns {Promise<number|null>} Detected context window size, or null if detection fails
+ */
+export async function detectModelContextWindow(apiUrl, model) {
+  if (!apiUrl) return null;
+  
+  try {
+    // Try /v1/models first (llama.cpp standard)
+    const modelsUrl = apiUrl.replace(/\/v1\/chat\/completions$/, '/v1/models');
+    const res = await fetch(modelsUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000), // 3s timeout
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+        const modelInfo = data.data[0];
+        // llama.cpp returns meta.n_ctx or meta.n_ctx_train
+        const nCtx = modelInfo.meta?.n_ctx || modelInfo.meta?.n_ctx_train;
+        if (nCtx && Number.isFinite(nCtx)) {
+          console.log(`[context-detect] Detected from /v1/models: n_ctx=${nCtx}`);
+          return nCtx;
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore, try next endpoint
+  }
+  
+  try {
+    // Try /props endpoint (llama.cpp alternative)
+    const propsUrl = apiUrl.replace(/\/v1\/chat\/completions$/, '/props');
+    const res = await fetch(propsUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000),
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      const nCtx = data.default_generation_settings?.n_ctx;
+      if (nCtx && Number.isFinite(nCtx)) {
+        console.log(`[context-detect] Detected from /props: n_ctx=${nCtx}`);
+        return nCtx;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+  
+  return null;
+}
+
+/**
+ * Parse context window from API error response.
+ * Handles exceed_context_size_error from llama.cpp.
+ * 
+ * The llama.cpp error body is pure JSON:
+ *   {"error":{"code":400,"message":"...","type":"exceed_context_size_error",
+ *    "n_prompt_tokens":70372,"n_ctx":65536}}
+ * 
+ * We must handle BOTH the nested JSON shape AND bare text fallbacks.
+ * 
+ * @param {string} errorMessage - The error message from API
+ * @returns {number|null} Extracted context window size, or null
+ */
+export function parseContextWindowFromError(errorMessage) {
+  if (!errorMessage) return null;
+  const minCtx = 1024;
+
+  // 1) Try full JSON.parse first — the raw error body IS the JSON.
+  try {
+    const parsed = JSON.parse(errorMessage);
+    const nCtx = parsed?.error?.n_ctx ?? parsed?.n_ctx;
+    if (Number.isFinite(nCtx) && nCtx >= minCtx) {
+      console.log(`[context-detect] Extracted from error JSON: n_ctx=${nCtx}`);
+      return nCtx;
+    }
+  } catch { /* not pure JSON — fall through to text extraction */ }
+
+  // 2) Text fallback: "n_ctx":65536 or n_ctx=65536 or n_ctx: 65536.
+  // Must NOT be inside a nested {…} (the message field itself contains
+  // "(65536 tokens)" so we anchor on the property name, not a bare number).
+  const nCtxMatch = errorMessage.match(/["']?n_ctx["']?\s*[:=]\s*(\d+)/);
+  if (nCtxMatch) {
+    const nCtx = parseInt(nCtxMatch[1], 10);
+    if (Number.isFinite(nCtx) && nCtx >= minCtx) {
+      console.log(`[context-detect] Extracted from error text: n_ctx=${nCtx}`);
+      return nCtx;
+    }
+  }
+
+  return null;
+}

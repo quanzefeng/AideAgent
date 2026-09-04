@@ -22,6 +22,7 @@ import {
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
   resetSurfacedMemories, bumpTurnCounter,
   getOpencodeAcpClient, setOpencodeAcpClient, isOpencodeAcpClientAlive,
+  detectModelContextWindow, setContextWindow,
 } from "./state.mjs";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
@@ -310,6 +311,21 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     });
   }
 
+  // ── Detect model context window for local models ──
+  // For local models (llama.cpp, Ollama), detect the actual context window
+  // to prevent exceed_context_size_error during long conversations.
+  if (sessionRuntime === "aide" && apiUrl) {
+    try {
+      const detectedCtx = await detectModelContextWindow(apiUrl, model);
+      if (detectedCtx) {
+        setContextWindow(detectedCtx);
+        console.log(`[agent-loop] Set context window to ${detectedCtx} for model: ${model}`);
+      }
+    } catch (e) {
+      console.warn('[agent-loop] Failed to detect context window:', e.message);
+    }
+  }
+
   // ── Build user message with optional file attachments ──
   let userMessage;
   if (files && files.length > 0) {
@@ -589,13 +605,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       sendContextUsage(msgs);
 
       let content, reasoningContent, tcs, finishReason;
+      // Hoist callSignal so the CONTEXT_SIZE_EXCEEDED retry path in the
+      // catch block can reuse the same composed abort signal.
+      const callSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
+        : AbortSignal.timeout(LLM_CALL_TIMEOUT);
       try {
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-        // P1: compose user abort + per-call timeout so a hung API request
-        // doesn't block the agent loop indefinitely. Timeout is 5 min.
-        const callSignal = signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
-          : AbortSignal.timeout(LLM_CALL_TIMEOUT);
         const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled);
         content = result.content;
         reasoningContent = /** @type {any} */ (result).reasoningContent || "";
@@ -638,7 +654,53 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
           return { text: allText, aborted: true };
         }
-        throw err;
+        // Handle context size exceeded - compress and retry
+        if (err.type === 'CONTEXT_SIZE_EXCEEDED' && err.detectedContextWindow) {
+          console.log(`[agent-loop] Context size exceeded. Detected window: ${err.detectedContextWindow}. Compressing and retrying...`);
+          
+          // Force compress context to 50% of detected window. Use 50% (not 60%)
+          // because our token estimation doesn't count tool_defs or the prompt
+          // template overhead — the API-side real token count is always higher.
+          const targetTokens = Math.floor(err.detectedContextWindow * 0.5);
+          let compressAttempt = 0;
+          const MAX_COMPRESS_ATTEMPTS = 3;
+          
+          // Send warning to user
+          sdr("stream:chunk", { text: `⚠️ 上下文超出限制，正在自动压缩后重试...\n`, done: false });
+          
+          // Compress hard + verify the estimate dropped below target before retrying.
+          while (compressAttempt < MAX_COMPRESS_ATTEMPTS) {
+            compressAttempt++;
+            compressContext(msgs, targetTokens);
+            const afterCompress = estimateMessageTokens(msgs);
+            console.log(`[agent-loop] Compress attempt ${compressAttempt}: ${afterCompress.totalTokens} tokens (target ${targetTokens})`);
+            if (afterCompress.totalTokens <= targetTokens) break;
+            // Still over target — cut deeper: drop tool results entirely then retry.
+            for (const m of msgs) {
+              if (m.role === "tool" && typeof m.content === "string" && estimateTokens(m.content) > 1000) {
+                m.content = m.content.slice(0, 500) + "\n...(工具输出已截断)...";
+              }
+            }
+          }
+          
+          // Retry the call
+          try {
+            const retryCallFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
+            const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled);
+            content = retryResult.content;
+            reasoningContent = retryResult.reasoningContent || "";
+            tcs = retryResult.tcs;
+            finishReason = retryResult.finishReason || null;
+            allText += retryResult.content;
+            if (reasoningContent) allReasoning += reasoningContent;
+          } catch (retryErr) {
+            // If retry also fails, throw original error
+            console.error(`[agent-loop] Retry also failed:`, retryErr.message);
+            throw err;
+          }
+        } else {
+          throw err;
+        }
       }
 
       const asst = /** @type {{ role: string, content: string | null, reasoning_content?: string, tool_calls?: Array<any> }} */ ({ role: "assistant", content: content || null });

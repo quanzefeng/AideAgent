@@ -2,7 +2,7 @@
 
 import mcpManager from "../mcp-manager.mjs";
 import { TOOL_DEFS } from "./tool-definitions.mjs";
-import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer } from "./state.mjs";
+import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow } from "./state.mjs";
 
 // ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
 /** @type {null | Array<{type: string, function: {name: string, description: string, parameters: object}}>} */
@@ -122,8 +122,23 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
     signal,
   });
   if (!res.ok) {
-    const body = (await res.text().catch(() => "")).slice(0, 300);
-    throw new Error(`API ${res.status} (${res.statusText})\nURL: ${apiUrl}\nModel: ${model || "deepseek-chat"}\n${body ? "Response: " + body : ""}`);
+    const body = (await res.text().catch(() => "")).slice(0, 500);
+    const errorMsg = `API ${res.status} (${res.statusText})\nURL: ${apiUrl}\nModel: ${model || "deepseek-chat"}\n${body ? "Response: " + body : ""}`;
+    
+    // Check for context size error and extract n_ctx
+    if (body.includes('exceed_context_size_error') || body.includes('exceeds the available context size')) {
+      const detectedCtx = parseContextWindowFromError(body);
+      if (detectedCtx) {
+        // Update context window and throw a special error for retry
+        setContextWindow(detectedCtx);
+        const retryError = new Error(errorMsg);
+        retryError.type = 'CONTEXT_SIZE_EXCEEDED';
+        retryError.detectedContextWindow = detectedCtx;
+        throw retryError;
+      }
+    }
+    
+    throw new Error(errorMsg);
   }
   const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
@@ -256,8 +271,23 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     signal,
   });
   if (!res.ok) {
-    const body = (await res.text().catch(() => "")).slice(0, 300);
-    throw new Error(`API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "claude-sonnet-4-20250514"}\n${body ? "Response: " + body : ""}`);
+    const body = (await res.text().catch(() => "")).slice(0, 500);
+    const errorMsg = `API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "claude-sonnet-4-20250514"}\n${body ? "Response: " + body : ""}`;
+    
+    // Check for context size error and extract n_ctx
+    if (body.includes('exceed_context_size_error') || body.includes('exceeds the available context size')) {
+      const detectedCtx = parseContextWindowFromError(body);
+      if (detectedCtx) {
+        // Update context window and throw a special error for retry
+        setContextWindow(detectedCtx);
+        const retryError = new Error(errorMsg);
+        retryError.type = 'CONTEXT_SIZE_EXCEEDED';
+        retryError.detectedContextWindow = detectedCtx;
+        throw retryError;
+      }
+    }
+    
+    throw new Error(errorMsg);
   }
   const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
