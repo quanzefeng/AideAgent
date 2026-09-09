@@ -128,6 +128,14 @@ export const CONTEXT_COMPRESS_PCT = 0.70;
 export const TOOL_RESULT_KEEP_CHARS = 8000;
 export const LLM_CALL_TIMEOUT = 300_000; // 5 min per LLM API call — prevents infinite hang
 
+// ── API retry (rate limit / transient 5xx) ───────────────────
+// Retry up to 5 times with a growing backoff. The final (5th) retry
+// reserves a fixed 30s wait — like OpenCode — so the provider's rate
+// limit has time to reset before we give up and surface the error.
+export const MAX_API_RETRIES = 5;
+export const RETRY_BACKOFF_MS = [4000, 8000, 15000, 20000, 30000];
+export const RETRY_MAX_SINGLE_WAIT = 30_000; // cap on any single retry wait (Retry-After honored up to this)
+
 export let abortCtrl = null;
 export function setAbortCtrl(ctrl) { abortCtrl = ctrl; }
 export function getAbortCtrl() { return abortCtrl; }

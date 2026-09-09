@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld("aideagent", {
   onStreamReasoning: (/** @type {any} */ cb) => ipcRenderer.on("stream:reasoning", (_event, d) => cb(d)),
   onStreamDone: (/** @type {any} */ cb) => ipcRenderer.on("stream:done", () => cb()),
   onStreamError: (/** @type {any} */ cb) => ipcRenderer.on("stream:error", (_event, d) => cb(d)),
+  // API call is being retried (429 / 5xx / network) — { attempt, maxAttempts, delayMs, status, statusText }
+  onStreamRetrying: (/** @type {any} */ cb) => ipcRenderer.on("stream:retrying", (_event, d) => cb(d)),
   onToolStart: (/** @type {any} */ cb) => ipcRenderer.on("tool:start", (_event, d) => cb(d)),
   onToolResult: (/** @type {any} */ cb) => ipcRenderer.on("tool:result", (_event, d) => cb(d)),
   onSubagentStart: (/** @type {any} */ cb) => ipcRenderer.on("subagent:start", (_event, d) => cb(d)),

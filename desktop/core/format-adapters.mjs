@@ -2,7 +2,135 @@
 
 import mcpManager from "../mcp-manager.mjs";
 import { TOOL_DEFS } from "./tool-definitions.mjs";
-import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow } from "./state.mjs";
+import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.mjs";
+
+// ── API retry helpers (rate limit / transient 5xx) ────────────
+
+/**
+ * Special error carrying the context-window overflow info. Thrown by the
+ * adapters when the API reports the request exceeded the model's context
+ * window; `agent-loop.mjs` catches it (via `err.type ===
+ * 'CONTEXT_SIZE_EXCEEDED'`), compresses, and retries once.
+ * @extends {Error}
+ */
+export class ContextSizeError extends Error {
+  /** @type {string} */
+  type = 'CONTEXT_SIZE_EXCEEDED';
+  /** @type {number} */
+  detectedContextWindow = 0;
+}
+
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+export function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * HTTP statuses that are worth retrying. 429 = rate limit; 500/502/503/529
+ * = provider transient failures. 4xx (400/401/403/404...) are permanent
+ * request errors and must NOT be retried.
+ * @param {number} status
+ * @returns {boolean}
+ */
+export function isRetryableStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 529;
+}
+
+/**
+ * Pick the wait time before the next retry.
+ * - 429 with a `Retry-After` header → honor it, capped at RETRY_MAX_SINGLE_WAIT.
+ * - Otherwise → exponential-ish schedule; the final (5th) retry reserves 30s.
+ * @param {Response | null} res
+ * @param {number} attempt 0-based retry index (0 = 1st retry, MAX_API_RETRIES-1 = final)
+ * @returns {number} delay in ms
+ */
+export function getRetryDelay(res, attempt) {
+  const retryAfter = res?.headers?.get?.("retry-after");
+  if (retryAfter) {
+    const secs = parseInt(retryAfter, 10);
+    if (!isNaN(secs) && secs > 0) return Math.min(secs * 1000, RETRY_MAX_SINGLE_WAIT);
+  }
+  return RETRY_BACKOFF_MS[Math.min(attempt, MAX_API_RETRIES - 1)];
+}
+
+/**
+ * Notify the renderer that we're about to retry a failed API call.
+ * @param {string} source
+ * @param {{attempt: number, maxAttempts: number, delayMs: number, status: number, statusText: string}} info
+ */
+function notifyRetry(source, info) {
+  console.warn(`[${source}] API ${info.status} (${info.statusText}) — retry ${info.attempt}/${info.maxAttempts} in ${Math.round(info.delayMs / 1000)}s`);
+  sendToRenderer("stream:retrying", info);
+}
+
+/**
+ * Run a fetch + non-ok handling loop with backoff retries. Used by both
+ * adapters. Returns the successful Response, or throws:
+ *  - a plain Error for permanent (non-retryable) failures,
+ *  - an Error with type=CONTEXT_SIZE_EXCEEDED for context overflow
+ *    (caller compresses and retries once),
+ *  - an Error whose message records the retry count once retries are
+ *    exhausted. AbortError propagates untouched (user cancel / timeout).
+ *
+ * @param {() => Promise<Response>} doFetch
+ * @param {(res: Response, errText: string) => string} buildErrorMsg
+ * @param {(errText: string, errorMsg: string) => Error | null} [classify] optional classifier — return a special Error to throw immediately
+ * @param {string} [source] log prefix, e.g. "openaiCall"
+ * @returns {Promise<Response>}
+ */
+export async function fetchWithRetry(doFetch, buildErrorMsg, classify, source = "api") {
+  for (let attempt = 0; ; attempt++) {
+    /** @type {Response} */
+    let res;
+    try {
+      res = await doFetch();
+    } catch (err) {
+      // AbortError (user cancel) and TimeoutError (LLM_CALL_TIMEOUT) must
+      // never be retried — the caller handles cancel, and a hung upstream is
+      // not a transient blip worth 5 more attempts.
+      const errName = /** @type {any} */ (err).name;
+      if (errName === "AbortError" || errName === "TimeoutError") throw err;
+      // Network-level failure (fetch TypeError: DNS, refused, reset) — retryable.
+      if (attempt >= MAX_API_RETRIES) {
+        const msg = `已自动重试 ${MAX_API_RETRIES} 次仍失败\n\n${/** @type {any} */ (err).message}`;
+        const finalErr = new Error(msg);
+        finalErr.cause = err;
+        throw finalErr;
+      }
+      const delayMs = RETRY_BACKOFF_MS[Math.min(attempt, MAX_API_RETRIES - 1)];
+      notifyRetry(source, { attempt: attempt + 1, maxAttempts: MAX_API_RETRIES, delayMs, status: 0, statusText: "network error" });
+      await sleep(delayMs);
+      continue;
+    }
+
+    if (res.ok) return res;
+
+    const errText = (await res.text().catch(() => "")).slice(0, 500);
+    const errorMsg = buildErrorMsg(res, errText);
+
+    // Classifier may produce a special error (e.g. CONTEXT_SIZE_EXCEEDED).
+    if (classify) {
+      const special = classify(errText, errorMsg);
+      if (special) throw special;
+    }
+
+    if (!isRetryableStatus(res.status) || attempt >= MAX_API_RETRIES) {
+      if (attempt >= MAX_API_RETRIES) {
+        const finalErr = new Error(`已自动重试 ${MAX_API_RETRIES} 次仍失败\n\n${errorMsg}`);
+        finalErr.cause = res.status;
+        throw finalErr;
+      }
+      throw new Error(errorMsg);
+    }
+
+    const delayMs = getRetryDelay(res, attempt);
+    notifyRetry(source, { attempt: attempt + 1, maxAttempts: MAX_API_RETRIES, delayMs, status: res.status, statusText: res.statusText });
+    await sleep(delayMs);
+  }
+}
 
 // ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
 /** @type {null | Array<{type: string, function: {name: string, description: string, parameters: object}}>} */
@@ -115,31 +243,30 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   /** @type {{ model: string, messages: any[], tools: any[], stream: boolean, max_tokens: number, reasoning_effort?: string }} */
   const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   if (reasoning) body.reasoning_effort = "high";
-  const res = await fetch(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok) {
-    const body = (await res.text().catch(() => "")).slice(0, 500);
-    const errorMsg = `API ${res.status} (${res.statusText})\nURL: ${apiUrl}\nModel: ${model || "deepseek-chat"}\n${body ? "Response: " + body : ""}`;
-    
-    // Check for context size error and extract n_ctx
-    if (body.includes('exceed_context_size_error') || body.includes('exceeds the available context size')) {
-      const detectedCtx = parseContextWindowFromError(body);
-      if (detectedCtx) {
-        // Update context window and throw a special error for retry
-        setContextWindow(detectedCtx);
-        const retryError = new Error(errorMsg);
-        retryError.type = 'CONTEXT_SIZE_EXCEEDED';
-        retryError.detectedContextWindow = detectedCtx;
-        throw retryError;
+  const res = await fetchWithRetry(
+    () => fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    (res, errText) => `API ${res.status} (${res.statusText})\nURL: ${apiUrl}\nModel: ${model || "deepseek-chat"}\n${errText ? "Response: " + errText : ""}`,
+    (errText, errorMsg) => {
+      // Context size error — throw a special error for the agent loop to
+      // compress-and-retry.
+      if (errText.includes('exceed_context_size_error') || errText.includes('exceeds the available context size')) {
+        const detectedCtx = parseContextWindowFromError(errText);
+        if (detectedCtx) {
+          setContextWindow(detectedCtx);
+          const retryError = new ContextSizeError(errorMsg);
+          retryError.detectedContextWindow = detectedCtx;
+          return retryError;
+        }
       }
-    }
-    
-    throw new Error(errorMsg);
-  }
+      return null;
+    },
+    "openaiCall",
+  );
   const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
   let buf = "", content = "", reasoningContent = "";
@@ -259,36 +386,35 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   if (reasoning) {
     body.thinking = { type: "enabled", budget_tokens: 4096 };
   }
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "prompt-caching-2025-03-01",
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok) {
-    const body = (await res.text().catch(() => "")).slice(0, 500);
-    const errorMsg = `API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "claude-sonnet-4-20250514"}\n${body ? "Response: " + body : ""}`;
-    
-    // Check for context size error and extract n_ctx
-    if (body.includes('exceed_context_size_error') || body.includes('exceeds the available context size')) {
-      const detectedCtx = parseContextWindowFromError(body);
-      if (detectedCtx) {
-        // Update context window and throw a special error for retry
-        setContextWindow(detectedCtx);
-        const retryError = new Error(errorMsg);
-        retryError.type = 'CONTEXT_SIZE_EXCEEDED';
-        retryError.detectedContextWindow = detectedCtx;
-        throw retryError;
+  const res = await fetchWithRetry(
+    () => fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "prompt-caching-2025-03-01",
+      },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    (res, errText) => `API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "claude-sonnet-4-20250514"}\n${errText ? "Response: " + errText : ""}`,
+    (errText, errorMsg) => {
+      // Context size error — throw a special error for the agent loop to
+      // compress-and-retry.
+      if (errText.includes('exceed_context_size_error') || errText.includes('exceeds the available context size')) {
+        const detectedCtx = parseContextWindowFromError(errText);
+        if (detectedCtx) {
+          setContextWindow(detectedCtx);
+          const retryError = new ContextSizeError(errorMsg);
+          retryError.detectedContextWindow = detectedCtx;
+          return retryError;
+        }
       }
-    }
-    
-    throw new Error(errorMsg);
-  }
+      return null;
+    },
+    "anthropicCall",
+  );
   const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
   const dec = new TextDecoder();
   let buf = "", content = "", reasoningContent = "";

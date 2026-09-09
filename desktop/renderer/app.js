@@ -1992,6 +1992,9 @@ function setupIPC() {
   onIpc("onStreamChunk", (data) => {
     if (!state.currentAssistantMsg) return;
 
+    // Any chunk means a retry (if any) succeeded — dismiss the banner.
+    hideRetryBanner();
+
     if (!state.isStreaming) {
       state.isStreaming = true;
     }
@@ -2054,6 +2057,7 @@ function setupIPC() {
   });
 
   onIpc("onStreamDone", () => {
+    hideRetryBanner();
     if (state.currentAssistantMsg) {
       if (state.currentText) {
         updateAssistantContent(state.currentAssistantMsg, state.currentText);
@@ -2067,12 +2071,18 @@ function setupIPC() {
   });
 
   onIpc("onStreamError", (data) => {
+    hideRetryBanner();
     if (state.currentAssistantMsg) {
       finishAssistantMessage(state.currentAssistantMsg);
     }
     stopQuery();
     refreshSessionList();
     addErrorMessage(data.message || t("misc.unknown_error"));
+  });
+
+  // API 调用被限流/5xx 自动重试 — 显示带倒计时的横幅
+  onIpc("onStreamRetrying", (data) => {
+    showRetryBanner(data);
   });
 
   window.aideagent.onToolStart((data) => {
@@ -2220,6 +2230,51 @@ function showToast(msg, type) {
   toast.style.backdropFilter = "blur(8px)";
   document.body.appendChild(toast);
   setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+/* ── API retry banner (429 / 5xx auto-retry with countdown) ── */
+let _retryBannerTimer = null;
+let _retryEndsAt = 0;
+
+/**
+ * Show / update the persistent retry banner with a live countdown.
+ * @param {{attempt: number, maxAttempts: number, delayMs: number, status: number, statusText: string}} data
+ */
+function showRetryBanner(data) {
+  let banner = document.getElementById("retry-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "retry-banner";
+    banner.className = "retry-banner";
+    document.body.appendChild(banner);
+  }
+  _retryEndsAt = Date.now() + (data.delayMs || 0);
+  const statusLabel = data.status
+    ? `API ${data.status}${data.statusText ? ` (${data.statusText})` : ""}`
+    : "网络连接失败";
+
+  const render = () => {
+    const remain = Math.max(0, Math.ceil((_retryEndsAt - Date.now()) / 1000));
+    const reason = data.status === 429 ? "请求过于频繁" : "服务器暂时不可用";
+    banner.textContent = `⚠️ ${statusLabel} · ${reason}，正在自动重试（第 ${data.attempt}/${data.maxAttempts} 次），${remain}s 后重连…`;
+  };
+  render();
+
+  if (_retryBannerTimer) clearInterval(_retryBannerTimer);
+  _retryBannerTimer = setInterval(() => {
+    render();
+    if (Date.now() >= _retryEndsAt) {
+      clearInterval(_retryBannerTimer);
+      _retryBannerTimer = null;
+    }
+  }, 1000);
+}
+
+/** Remove the retry banner and stop its countdown. */
+function hideRetryBanner() {
+  if (_retryBannerTimer) { clearInterval(_retryBannerTimer); _retryBannerTimer = null; }
+  const banner = document.getElementById("retry-banner");
+  if (banner) banner.remove();
 }
 
 function resetAvatar() {

@@ -4717,3 +4717,24 @@ html[data-hud="on"] .hljs-selector-id { color: #888fa5; }
 html[data-hud="on"] .hljs-emphasis { font-style: italic; }
 html[data-hud="on"] .hljs-strong { font-weight: bold; }
 
+
+/* ── API 自动重试横幅（429 / 5xx 倒计时） ── */
+.retry-banner {
+  position: fixed;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(180, 130, 30, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.3s;
+  white-space: nowrap;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
