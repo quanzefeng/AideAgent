@@ -10,6 +10,25 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Boot Sequence Overlay（静态注入：HTML 解析即存在，先于主界面 paint，
+       避免"闪一下主界面才出现 boot"。由 boot-sequence.mjs 驱动状态机；
+       HUD 关闭时经 CSS html[data-hud="off"] 隐藏） -->
+  <div id="boot-screen" aria-hidden="true">
+    <div class="boot-inner">
+      <div class="boot-head">AIDEAGENT // BOOT SEQUENCE</div>
+      <div class="boot-log" id="boot-log"></div>
+      <div class="boot-current" id="boot-current">
+        <span class="boot-arrow">&gt;</span>
+        <span class="boot-text" id="boot-text"></span>
+        <span class="boot-caret"></span>
+      </div>
+      <div class="boot-progress"><span class="boot-progress-bar" id="boot-progress-bar"></span></div>
+      <div class="boot-foot">
+        <button class="boot-skip" id="boot-skip" type="button" data-i18n="boot.skip">跳过</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Status Banner (shown when no API config) -->
   <div id="config-banner" class="hidden">
     <span data-i18n="banner.api_required">⚙️ 请先在设置中配置 API</span>

@@ -169,13 +169,30 @@ function createBootScreen() {
 
 /** @returns {void} 挂载并启动 boot（幂等；HUD 关闭时静默跳过） */
 function injectBoot() {
-  if (document.getElementById("boot-screen")) return;
-  if (!hudEnabled()) return;
+  // 幂等：已启动过就不再重复驱动（静态层常驻，不能靠
+  // "document.getElementById('boot-screen')" 判断重复）
+  if (document.body.dataset.bootStarted) return;
+  document.body.dataset.bootStarted = "1";
 
-  const boot = createBootScreen();
+  // 优先复用 index.html 里的静态 #boot-screen（HTML 解析即存在，先于
+  // 主界面 paint，避免"闪一下主界面才出现 boot"）。找不到时才回退
+  // 动态创建（理论上不会发生，防御性兜底）。
+  let boot = document.getElementById("boot-screen");
+  if (boot) {
+    // 静态层已在 DOM：仅当 HUD 关闭时移除（CSS 也会隐藏，这里双保险）
+    if (!hudEnabled()) {
+      boot.remove();
+      return;
+    }
+  } else {
+    if (!hudEnabled()) return;
+    boot = createBootScreen();
+    document.body.appendChild(boot);
+  }
+
   const skipBtn = boot.querySelector("#boot-skip");
   if (skipBtn) skipBtn.textContent = t("boot.skip");
-  document.body.appendChild(boot);
+  boot.removeAttribute("aria-hidden");
 
   const token = { cancelled: false, timers: [], cleanup: null };
   // 任意点击 / 按键 / SKIP 按钮都可跳过

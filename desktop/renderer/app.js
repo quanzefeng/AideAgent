@@ -792,8 +792,20 @@ function updateAssistantContent(msgEl, text) {
   textEl.innerHTML = renderMarkdown(cleanText || text);
 
   // Re-highlight code blocks
+  // 注意：marked v12 已移除 highlight 选项，marked.setOptions({highlight})
+  // 完全不生效，所有代码块必须依赖这里手动高亮。
+  // highlightElement 对残缺/未知语言的代码可能抛异常，单个失败必须
+  // 隔离（try/catch），否则 forEach 中断会导致后续代码块全部不高亮，
+  // 表现为"深色代码块里文字看不清"。
   textEl.querySelectorAll("pre code").forEach((block) => {
-    hljs.highlightElement(block);
+    try {
+      hljs.highlightElement(block);
+    } catch (_e) {
+      // 高亮失败也兜底加上 .hljs 类——HUD 主题对 .hljs 有亮色
+      // 默认文字色（#d6d8e0），否则 code 会继承正文深色 --text
+      // 在深色背景上不可见。
+      if (!block.classList.contains("hljs")) block.classList.add("hljs");
+    }
   });
 
   // Render LaTeX via KaTeX (finds <span class="kp"> markers)

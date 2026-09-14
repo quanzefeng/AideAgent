@@ -4480,6 +4480,10 @@ html[data-hud-state="subagent"] .hud-corner {
   transition: opacity 0.4s var(--ease-out);
   font-family: var(--font-mono);
 }
+/* HUD 关闭时静态 boot 层不出现（HTML 里常驻，必须显式隐藏，
+   否则会永远挡住主界面）。注意不能加 html:not([data-hud="on"])
+   规则——data-hud 由 JS 在 DOM 解析后才设置，paint 时会误伤。 */
+html[data-hud="off"] #boot-screen { display: none !important; }
 #boot-screen.boot-done { opacity: 0; pointer-events: none; }
 
 .boot-inner {
@@ -4678,6 +4682,9 @@ html[data-hud="on"] .message-text pre code,
 html[data-hud="on"] .message-bubble pre code {
   background: #0b0d14;
   border-color: rgba(var(--hud-accent-rgb), 0.18);
+  /* 兜底：即使代码块因任何原因未被 hljs 高亮（无 .hljs 类），
+     文字也必须继承亮色而非正文的深色 --text，否则深字深底不可见 */
+  color: #d6d8e0;
 }
 
 html[data-hud="on"] .hljs {
@@ -4686,7 +4693,7 @@ html[data-hud="on"] .hljs {
 }
 
 html[data-hud="on"] .hljs-comment,
-html[data-hud="on"] .hljs-quote { color: #5d6275; font-style: italic; }
+html[data-hud="on"] .hljs-quote { color: #8b949e; font-style: italic; }
 
 html[data-hud="on"] .hljs-keyword,
 html[data-hud="on"] .hljs-selector-tag,
@@ -4711,8 +4718,25 @@ html[data-hud="on"] .hljs-variable { color: #ff9e64; }
 html[data-hud="on"] .hljs-built_in,
 html[data-hud="on"] .hljs-params { color: #f672a7; }
 
+/* 补齐 atom-one-light 浅色主题遗留的暗色 token——它们原本在深色
+   背景上几乎不可见，统一收编到 HUD 调色板 */
+html[data-hud="on"] .hljs-doctag,
+html[data-hud="on"] .hljs-formula { color: #f672a7; }
+html[data-hud="on"] .hljs-template-variable,
+html[data-hud="on"] .hljs-selector-attr,
+html[data-hud="on"] .hljs-selector-pseudo,
+html[data-hud="on"] .hljs-selector-class { color: #ff9e64; }
+html[data-hud="on"] .hljs-link,
+html[data-hud="on"] .hljs-addition { color: #7ee787; }
+html[data-hud="on"] .hljs-section,
+html[data-hud="on"] .hljs-name { color: #ff7b72; }
+html[data-hud="on"] .hljs-subst,
+html[data-hud="on"] .hljs-deletion { color: #ff7b72; }
+html[data-hud="on"] .hljs-title.class_,
+html[data-hud="on"] .hljs-class .hljs-title { color: #ffd60a; }
+
 html[data-hud="on"] .hljs-meta,
-html[data-hud="on"] .hljs-selector-id { color: #888fa5; }
+html[data-hud="on"] .hljs-selector-id { color: #9aa5b5; }
 
 html[data-hud="on"] .hljs-emphasis { font-style: italic; }
 html[data-hud="on"] .hljs-strong { font-weight: bold; }
