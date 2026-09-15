@@ -119,13 +119,6 @@ function injectHud() {
       '<div class="hud-radar-dot hud-radar-dot-1"></div>' +
       '<div class="hud-radar-dot hud-radar-dot-2"></div>' +
     '</div>' +
-    // 左上雷达扫描（镜像）
-    '<div class="hud-radar hud-radar-left" id="hud-radar-left">' +
-      '<div class="hud-radar-rings"></div>' +
-      '<div class="hud-radar-sweep"></div>' +
-      '<div class="hud-radar-dot hud-radar-dot-1"></div>' +
-      '<div class="hud-radar-dot hud-radar-dot-2"></div>' +
-    '</div>' +
     // 对话区垂直扫描线（仅覆盖对话主界面，不遮侧边栏）
     '<div class="hud-vscan" aria-hidden="true"></div>' +
     // 底部状态

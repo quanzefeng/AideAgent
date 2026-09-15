@@ -6,6 +6,7 @@
 import './modules/font-settings.mjs';
 import './modules/bg-settings.mjs';
 import './modules/hud-overlay.mjs';
+import './modules/sidebar-collapse.mjs';
 import './modules/boot-sequence.mjs';
 import './modules/hud-telemetry.mjs';
 import './modules/workspace.mjs';

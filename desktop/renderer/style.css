@@ -1010,6 +1010,7 @@ html[data-hud="on"] .form-input:focus::after {
 #app {
   display: flex;
   height: 100%;
+  position: relative;
 }
 
 /* ========================================
@@ -1027,6 +1028,71 @@ html[data-hud="on"] .form-input:focus::after {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  /* 折叠过渡：宽度 + 透明度 + 右框线同步淡出，chat 区平滑占满 */
+  transition:
+    width var(--duration-slow) var(--ease-out),
+    min-width var(--duration-slow) var(--ease-out),
+    opacity var(--duration-slow) var(--ease-out),
+    border-color var(--duration-slow) var(--ease-out);
+}
+
+/* ── 侧栏折叠（ChatGPT 式）──
+   收起按钮在侧栏底部；折叠后 #sidebar 宽度归零并淡出，
+   chat 区（flex:1）自动占满。展开按钮由 sidebar-collapse.mjs 切换
+   html[data-sidebar="collapsed"] 驱动显示。 */
+html[data-sidebar="collapsed"] #sidebar {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  border-right-color: transparent;
+  pointer-events: none;
+}
+
+.sidebar-expand-btn {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-light);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.sidebar-expand-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+html[data-sidebar="collapsed"] .sidebar-expand-btn {
+  display: inline-flex;
+}
+
+/* 收起按钮：侧栏底部，弱化描边，hover 加深 */
+.sidebar-collapse-btn {
+  font-size: 13px;
+  padding: 7px 14px;
+  opacity: 0.75;
+  border-color: transparent;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.sidebar-collapse-btn:hover {
+  opacity: 1;
+  border-color: var(--border);
+}
+.sidebar-collapse-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .sidebar-header {
@@ -4520,7 +4586,6 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
   opacity: 0.85;
 }
 .hud-radar-right { right: 16px; }
-.hud-radar-left { left: calc(var(--sidebar-width) + 16px); }
 .hud-radar-rings {
   position: absolute;
   inset: 0;
@@ -4546,11 +4611,7 @@ html[data-hud-vscan="on"] .hud-vscan { display: block; }
     rgba(var(--hud-accent-rgb), 0.55) 0deg, transparent 55deg);
   animation: hud-radar-spin 4s linear infinite;
 }
-.hud-radar-left .hud-radar-sweep {
-  animation-name: hud-radar-spin-reverse;
-}
 @keyframes hud-radar-spin { to { --hud-angle: 360deg; } }
-@keyframes hud-radar-spin-reverse { to { --hud-angle: -360deg; } }
 
 /* ── Agent 状态联动（由 hud-telemetry 设置 data-hud-state） ── */
 /* streaming：雷达加速（2.2s） */
