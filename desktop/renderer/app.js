@@ -922,25 +922,6 @@ function showWelcome() {
         <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="${safeName}" />
       </div>
       <h1>${safeName}</h1>
-      <p class="description">${t("chat.welcome_desc", { name: agentName })}</p>
-      <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
-        <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
-          <span class="runtime-choice-icon runtime-choice-icon-aide">Ⓐ</span>
-          <span class="runtime-choice-body">
-            <span class="runtime-choice-name">${t("runtime.aide")}</span>
-            <span class="runtime-choice-desc">${t("runtime.aide.desc")}</span>
-          </span>
-          <span class="runtime-badge runtime-badge-aide">${t("runtime.detected")}</span>
-        </button>
-        <button class="runtime-choice" data-runtime="opencode" role="tab" aria-selected="false" type="button">
-          <span class="runtime-choice-icon runtime-choice-icon-opencode">⬡</span>
-          <span class="runtime-choice-body">
-            <span class="runtime-choice-name">${t("runtime.opencode")}</span>
-            <span class="runtime-choice-desc">${t("runtime.opencode.desc")}</span>
-          </span>
-          <span class="runtime-badge" id="opencode-status-badge">${t("runtime.detecting")}</span>
-        </button>
-      </div>
     </div>
   `;
   // Re-apply avatar after DOM replacement (DEFAULT_AVATAR fallback if none saved)
@@ -950,10 +931,14 @@ function showWelcome() {
   if (wa) wa.src = src;
   const sp = document.getElementById("settings-preview");
   if (sp) sp.src = src;
-  // Re-bind the runtime cards' click events and re-apply visual state.
-  // showWelcome destroys the old DOM, so the listeners that initRuntimeSelector
-  // attached on first paint are gone. rebindRuntimeCards is the cheap
-  // (no re-detection) refresh path — see runtime-selector.mjs.
+  // Move runtime-select-wrap into welcome area (below h1)
+  const wrap = document.getElementById("runtime-select-wrap");
+  const welcome = document.querySelector(".welcome");
+  if (wrap && welcome) welcome.appendChild(wrap);
+  // Re-apply runtime visual state (dropdown label + menu active + badge).
+  // showWelcome destroys the old message-list DOM; the dropdown itself lives
+  // statically in index.html so its listeners survive, we only need to
+  // re-apply state via rebindRuntimeCards (cheap, no re-detection).
   rebindRuntimeCards();
 }
 
@@ -1390,9 +1375,17 @@ async function submitQuery() {
   state._afterToolCall = false;
   state._reasoningBlockText = "";
 
-  // Hide welcome, show messages
+  // Hide welcome, show messages. 必须从 DOM 移除（而非仅 display:none）：
+  // 空白态居中依赖 #chat-area:has(.welcome)（结构选择器，不看 display），
+  // 仅隐藏会导致输入框停留在中部、不回到底部。
   const welcome = messageList.querySelector(".welcome");
-  if (welcome) welcome.style.display = "none";
+  if (welcome) {
+    // 把引擎选择 pill 从 welcome 区域移回输入区（pill 静态属于 #input-area）
+    const wrap = document.getElementById("runtime-select-wrap");
+    const inputArea = document.getElementById("input-area");
+    if (wrap && inputArea) inputArea.appendChild(wrap);
+    welcome.remove();
+  }
 
   // Add user message (show text + file attachments)
   let userHtml = text ? `<p>${sanitize(text.replace(/</g, "&lt;").replace(/>/g, "&gt;"))}</p>` : "";

@@ -62,7 +62,7 @@
   --sidebar-width: 240px;
   /* 消息列表 + 输入框共用同一个宽度约束（ChatGPT / 豆包风格） */
   --chat-max-width: 52rem;
-  --input-max-width: 50rem;
+  --input-max-width: 54rem;
 }
 
 /* ========================================
@@ -2217,11 +2217,29 @@ html[data-hud="on"] .form-input:focus::after {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  /* 背景：柔光渐变（accent 色渗出的右上/左下微光，随主题变色）+ 纯色基底 */
+  /* 背景：DeepSeek 首页风 —— 浅蓝灰渐变基底 + 断线网格纹理 + 弥散光晕。
+     grid: 72px 方形网格，用 SVG 瓷砖绘制 —— 每条边只画中间一段、
+     四角留空，交叉点无交叉线（"浅到看不见相交"，同 DeepSeek 粒子连线效果）；
+     光晕：右上 + 左下两团柔和浅蓝白。
+     注：HUD on/off 均为浅色背景（HUD overlay 是纯装饰层，不换底色），
+     网格对两种模式通用。 */
   background:
-    radial-gradient(1200px 800px at 85% -10%, rgba(var(--hud-accent-rgb), 0.20), transparent 60%),
-    radial-gradient(1000px 700px at 15% 110%, rgba(var(--hud-accent-rgb), 0.13), transparent 55%),
-    var(--bg);
+    radial-gradient(52rem 34rem at 72% 18%, rgba(191, 219, 254, 0.55), transparent 62%),
+    radial-gradient(44rem 30rem at 18% 82%, rgba(219, 234, 254, 0.50), transparent 60%),
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Cpath%20d='M20%200H52M20%2072H52M0%2020V52M72%2020V52'%20stroke='rgba(120,140,180,0.10)'%20stroke-width='1'%20fill='none'/%3E%3C/svg%3E"),
+    linear-gradient(100deg, #edf2fa 0%, #f5f7fb 48%, #fcfcfd 100%);
+  background-size: auto, auto, 72px 72px, auto;
+}
+
+/* 空白态（存在 .welcome 时）：头像 + 标题 + 引擎 pill + 输入框整体垂直居中，
+   对话态 .welcome 被移除后自动恢复为消息在上、输入框在底的常规布局。 */
+#chat-area:has(.welcome) {
+  justify-content: center;
+}
+#chat-area:has(.welcome) #message-list {
+  flex: none;
+  overflow: visible;
+  padding-bottom: var(--space-sm);
 }
 
 /* ========================================
@@ -2408,7 +2426,7 @@ html[data-hud="on"] .form-input:focus::after {
   margin: 0 auto;
   background: var(--bg-card);
   border: 1.8px solid var(--accent);
-  border-radius: 16px;
+  border-radius: 24px;
   padding: 4px 6px 6px 4px;
   box-sizing: border-box;
   position: relative;
@@ -2436,7 +2454,7 @@ html[data-hud="on"] .form-input:focus::after {
   line-height: 1.5;
   color: var(--text);
   max-height: 200px;
-  min-height: 48px;
+  min-height: 68px;
   padding: 6px 4px;
 }
 #input-wrapper-opencode textarea::placeholder {
@@ -2879,6 +2897,116 @@ html[data-hud="on"] .form-input:focus::after {
 }
 
 /* ========================================
+   Runtime selector (engine pill above input)
+   ======================================== */
+#runtime-select-wrap {
+  position: relative;
+  /* pill 与输入框的间距：稍大使其视觉上"上移一点"，更接近标题区 */
+  margin-bottom: 14px;
+}
+#runtime-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+#runtime-select-btn:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+#runtime-select-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.runtime-select-chevron {
+  color: var(--text-muted);
+}
+.runtime-select-menu {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 向上弹出：引擎 pill 位于输入框上方，向下会遮挡输入区 */
+  bottom: calc(100% + 6px);
+  z-index: 60;
+  min-width: 280px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(20, 24, 50, 0.12),
+    0 2px 4px rgba(20, 24, 50, 0.06);
+}
+.runtime-select-menu li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease-out;
+}
+.runtime-select-menu li:hover { background: var(--accent-dim); }
+.runtime-select-menu li.active { background: var(--accent-light); }
+.runtime-option-icon {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  color: var(--text-light);
+  font-size: 14px;
+}
+.runtime-option-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.runtime-option-name {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+}
+.runtime-option-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.runtime-option-check {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+.runtime-select-menu li.active .runtime-option-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg-card);
+}
+.runtime-option-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+.runtime-option-badge.ok { color: #22c55e; background: rgba(34, 197, 94, 0.12); }
+.runtime-option-badge.missing { color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+.runtime-select-menu li[data-available="false"] { opacity: 0.55; }
+
+/* ========================================
    Input Menu Popover (Stage 1 — UI shell)
    ========================================
    Absolutely positioned above the input area. Anchored to the left so it
@@ -2984,7 +3112,7 @@ html[data-hud="on"] .form-input:focus::after {
   border: 1.8px solid var(--accent);
   /* Override the default 6px so the input box has a ChatGPT-style pill feel
      without changing --radius-sm (which ~7 other elements still rely on). */
-  border-radius: 16px;
+  border-radius: 24px;
   padding: 4px 6px 6px 4px;
   box-sizing: border-box;
   /* Anchor the #input-menu popover; the popover sits just above the upload
@@ -3019,7 +3147,7 @@ html[data-hud="on"] .form-input:focus::after {
   resize: none;
   outline: none;
   max-height: 200px;
-  min-height: 48px;
+  min-height: 68px;
 }
 
 #prompt-input::placeholder {
@@ -3086,6 +3214,58 @@ html[data-hud="on"] .form-input:focus::after {
   gap: 6px;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+/* ── DeepSeek 风格蓝色胶囊开关（对话区计划/知识库/联网/推理）──
+   未选中：透明底 + 深灰字 + 10% 描边；选中：蓝字 + 蓝 12% 淡底 + 蓝 30% 描边。
+   原生 checkbox 视觉隐藏，保留可访问性（1px 可聚焦目标），由 :has 驱动点亮。 */
+.reasoning-pill {
+  position: relative;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text);
+  gap: 5px;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.reasoning-pill:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+}
+.reasoning-pill-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.reasoning-pill-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.reasoning-pill .reasoning-toggle-label {
+  font-size: 12px;
+  color: inherit;
+}
+/* 选中：蓝色点亮 */
+.reasoning-pill:has(.reasoning-pill-input:checked) {
+  color: #4176e6;
+  background-color: rgba(65, 118, 230, 0.12);
+  border-color: rgba(65, 118, 230, 0.3);
+}
+.reasoning-pill:has(.reasoning-pill-input:checked) .reasoning-pill-icon {
+  opacity: 1;
+}
+.reasoning-pill:has(.reasoning-pill-input:focus-visible) {
+  outline: 2px solid rgba(65, 118, 230, 0.35);
+  outline-offset: 1px;
 }
 
 .reasoning-toggle-label {

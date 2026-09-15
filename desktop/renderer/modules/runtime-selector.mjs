@@ -64,36 +64,56 @@ let _pendingOpencodeRequest = false;
 let _pendingRuntimeIntent = /** @type {Runtime} */ ("aide");
 
 /**
- * Reflect detection status into the OpenCode card badge + disabled state.
+ * Reflect detection status into the OpenCode option's badge + availability.
+ * Drives both the dropdown menu option (primary, in the input area) and the
+ * legacy welcome-screen card if it still exists (null-safe).
  * @param {{ installed: boolean, path: string|null, version: string|null, available: boolean, reason?: string } | null} st
  */
 function applyOpencodeStatus(st) {
   _opencodeStatus = st;
-  const badge = document.getElementById("opencode-status-badge");
-  const card = document.querySelector('.runtime-choice[data-runtime="opencode"]');
-  if (!badge || !card) return;
 
-  badge.classList.remove("ok", "missing", "detecting");
+  const badges = [
+    document.getElementById("runtime-select-opencode-badge"),
+    document.getElementById("opencode-status-badge"),
+  ].filter(Boolean);
+  const option = document.querySelector('.runtime-select-menu li[data-runtime="opencode"]');
+  const card = document.querySelector('.runtime-choice[data-runtime="opencode"]');
+
+  for (const badge of badges) {
+    badge.classList.remove("ok", "missing", "detecting");
+  }
   if (!st || !st.installed) {
-    badge.classList.add("missing");
-    badge.textContent = t("runtime.not_installed");
-    card.setAttribute("data-available", "false");
+    for (const badge of badges) {
+      badge.classList.add("missing");
+      badge.textContent = t("runtime.not_installed");
+    }
+    option?.setAttribute("data-available", "false");
+    card?.setAttribute("data-available", "false");
   } else if (!st.available) {
-    badge.classList.add("missing");
-    badge.textContent = t("runtime.version_bad");
-    card.setAttribute("data-available", "false");
+    for (const badge of badges) {
+      badge.classList.add("missing");
+      badge.textContent = t("runtime.version_bad");
+    }
+    option?.setAttribute("data-available", "false");
+    card?.setAttribute("data-available", "false");
   } else {
-    badge.classList.add("ok");
-    // Use a `v` prefix for the version (universal across zh/en) instead of
-    // a CJK middle dot which looks out of place in English UIs.
-    badge.textContent = st.version ? `${t("runtime.detected")} v${st.version}` : t("runtime.detected");
-    card.setAttribute("data-available", "true");
+    for (const badge of badges) {
+      badge.classList.add("ok");
+      // Use a `v` prefix for the version (universal across zh/en) instead of
+      // a CJK middle dot which looks out of place in English UIs.
+      badge.textContent = st.version ? `${t("runtime.detected")} v${st.version}` : t("runtime.detected");
+    }
+    option?.setAttribute("data-available", "true");
+    card?.setAttribute("data-available", "true");
   }
 }
 
 async function detectOpencode() {
-  const badge = document.getElementById("opencode-status-badge");
-  if (badge) {
+  const badges = [
+    document.getElementById("runtime-select-opencode-badge"),
+    document.getElementById("opencode-status-badge"),
+  ].filter(Boolean);
+  for (const badge of badges) {
     badge.classList.remove("ok", "missing");
     badge.classList.add("detecting");
     badge.textContent = t("runtime.detecting");
@@ -285,6 +305,16 @@ export function setRuntime(rt, persist = true, allowUnavailable = false) {
 
 /** @param {Runtime} rt */
 function setActiveCard(rt) {
+  // 下拉按钮标签（主路径）
+  const label = document.getElementById("runtime-select-label");
+  if (label) label.textContent = rt === "opencode" ? t("runtime.opencode") : t("runtime.aide");
+  // 下拉菜单项选中态
+  document.querySelectorAll('.runtime-select-menu li[role="option"]').forEach((el) => {
+    const match = el.getAttribute("data-runtime") === rt;
+    el.classList.toggle("active", match);
+    el.setAttribute("aria-selected", match ? "true" : "false");
+  });
+  // 兼容：欢迎页卡片若仍存在（旧 DOM / 未来恢复）
   document.querySelectorAll(".runtime-choice").forEach((el) => {
     const match = el.getAttribute("data-runtime") === rt;
     el.classList.toggle("active", match);
@@ -293,18 +323,59 @@ function setActiveCard(rt) {
 }
 
 /**
+ * Wire up the dropdown menu interactions (engine pill above the input box).
+ * The dropdown DOM lives statically in index.html (never rebuilt by
+ * showWelcome), so this runs exactly once at app init.
+ * @returns {void}
+ */
+function bindDropdown() {
+  const btn = document.getElementById("runtime-select-btn");
+  const menu = document.getElementById("runtime-select-menu");
+  if (!btn || !menu) return;
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !willOpen);
+    btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  });
+
+  menu.querySelectorAll('li[role="option"]').forEach((li) => {
+    li.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.add("hidden");
+      btn.setAttribute("aria-expanded", "false");
+      const rt = /** @type {Runtime} */ (li.getAttribute("data-runtime") || "aide");
+      setRuntime(rt);
+    });
+  });
+
+  // 点击下拉外部任意处关闭
+  document.addEventListener("click", () => {
+    menu.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+  });
+  // Esc 关闭
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.classList.contains("hidden")) {
+      menu.classList.add("hidden");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+/**
  * Wire up card clicks and re-apply visual state from the current cached
  * values. Cheap and idempotent — safe to call every time the welcome
- * screen is rebuilt (showWelcome replaces messageList.innerHTML, which
- * destroys the previously-bound card elements + listeners + badge).
+ * screen is rebuilt (showWelcome replaces messageList.innerHTML).
  *
  * Does NOT trigger a fresh opencode detection — that should only happen
  * once at app init (or via the install-guide "Re-detect" button). We
  * re-apply the cached `_opencodeStatus` to the new badge element instead.
  */
 export function rebindRuntimeCards() {
-  const cards = document.querySelectorAll(".runtime-choice");
-  cards.forEach((card) => {
+  // 兼容：欢迎页卡片（若仍存在）
+  document.querySelectorAll(".runtime-choice").forEach((card) => {
     card.addEventListener("click", () => {
       const rt = /** @type {Runtime} */ (card.getAttribute("data-runtime") || "aide");
       setRuntime(rt);
@@ -316,12 +387,14 @@ export function rebindRuntimeCards() {
 }
 
 /**
- * Wire up card clicks + run initial detection. Called once at app init.
- * On subsequent showWelcome() calls (new conversation, session switch,
- * etc.) call rebindRuntimeCards() instead — it re-binds without paying
- * the cost of another `opencode --version` subprocess.
+ * Wire up the dropdown menu + card clicks + run initial detection. Called
+ * once at app init. On subsequent showWelcome() calls (new conversation,
+ * session switch, etc.) call rebindRuntimeCards() instead — it re-applies
+ * visual state without paying the cost of another `opencode --version`
+ * subprocess.
  */
 export function initRuntimeSelector() {
+  bindDropdown();
   rebindRuntimeCards();
 
   // Kick off detection (async, non-blocking). Only at app init.

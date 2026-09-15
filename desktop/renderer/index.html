@@ -920,31 +920,37 @@ brew install opencode</pre>
             <img id="welcome-avatar" class="avatar avatar-welcome" src="avatar.jpg" alt="AideAgent" />
           </div>
           <h1 data-i18n="chat.welcome_title">AideAgent</h1>
-          <p class="description" data-i18n="chat.welcome_desc">Any task you need done, ask AideAgent</p>
-          <div class="runtime-choices" id="runtime-choices" role="tablist" aria-label="Runtime selector">
-            <button class="runtime-choice active" data-runtime="aide" role="tab" aria-selected="true" type="button">
-              <span class="runtime-choice-icon runtime-choice-icon-aide">Ⓐ</span>
-              <span class="runtime-choice-body">
-                <span class="runtime-choice-name" data-i18n="runtime.aide">AideAgent</span>
-                <span class="runtime-choice-desc" data-i18n="runtime.aide.desc">使用当前 API 配置</span>
-              </span>
-              <span class="runtime-badge runtime-badge-aide" data-i18n="runtime.detected">已检测</span>
-            </button>
-            <button class="runtime-choice" data-runtime="opencode" role="tab" aria-selected="false" type="button">
-              <span class="runtime-choice-icon runtime-choice-icon-opencode">⬡</span>
-              <span class="runtime-choice-body">
-                <span class="runtime-choice-name" data-i18n="runtime.opencode">OpenCode</span>
-                <span class="runtime-choice-desc" data-i18n="runtime.opencode.desc">本地 OpenCode CLI</span>
-              </span>
-              <span class="runtime-badge" id="opencode-status-badge" data-i18n="runtime.detecting">检测中…</span>
-            </button>
-          </div>
         </div>
       </div>
 
       <!-- Input Area -->
       <div id="input-area">
         <div id="file-preview-area" class="hidden"></div>
+        <!-- Runtime selector (engine pill above the input box) -->
+        <div id="runtime-select-wrap">
+          <button type="button" id="runtime-select-btn" aria-haspopup="listbox" aria-expanded="false" title="切换引擎">
+            <span id="runtime-select-label" data-i18n="runtime.aide">AideAgent</span>
+            <svg class="runtime-select-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <ul id="runtime-select-menu" class="runtime-select-menu hidden" role="listbox" aria-label="Runtime selector">
+            <li role="option" data-runtime="aide" aria-selected="true">
+              <span class="runtime-option-icon runtime-option-icon-aide">Ⓐ</span>
+              <span class="runtime-option-body">
+                <span class="runtime-option-name" data-i18n="runtime.aide">AideAgent</span>
+                <span class="runtime-option-desc" data-i18n="runtime.aide.desc">使用当前 API 配置</span>
+              </span>
+              <span class="runtime-option-check"></span>
+            </li>
+            <li role="option" data-runtime="opencode" aria-selected="false">
+              <span class="runtime-option-icon runtime-option-icon-opencode">⬡</span>
+              <span class="runtime-option-body">
+                <span class="runtime-option-name" data-i18n="runtime.opencode">OpenCode</span>
+                <span class="runtime-option-desc" data-i18n="runtime.opencode.desc">本地 OpenCode CLI</span>
+              </span>
+              <span class="runtime-option-badge" id="runtime-select-opencode-badge" data-i18n="runtime.detecting">检测中…</span>
+            </li>
+          </ul>
+        </div>
         <div id="input-wrapper" data-runtime="aide">
           <div class="input-row">
             <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.json,.md,.mdown,.mkd,.mkdn,.markdown,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log" />
@@ -971,33 +977,25 @@ brew install opencode</pre>
             <span id="token-budget" class="token-budget hidden"></span>
             <span id="context-usage" class="context-usage hidden" data-i18n-title="chat.context_usage" title="上下文使用量"><span class="context-usage-bar"></span><span class="context-usage-text">0%</span></span>
             <div class="toggle-group">
-              <label class="reasoning-toggle" data-i18n-title="chat.plan_hint" title="计划模式：只读分析，不修改文件">
+              <label class="reasoning-toggle reasoning-pill" data-i18n-title="chat.plan_hint" title="计划模式：只读分析，不修改文件">
+                <input type="checkbox" id="plan-mode-checkbox" class="reasoning-pill-input" />
+                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 <span class="reasoning-toggle-label" data-i18n="chat.plan">计划</span>
-                <div class="toggle-switch toggle-switch-sm">
-                  <input type="checkbox" id="plan-mode-checkbox" />
-                  <span class="toggle-slider"></span>
-                </div>
               </label>
-              <label class="reasoning-toggle" data-i18n-title="chat.kb_hint" title="知识库 RAG 检索">
+              <label class="reasoning-toggle reasoning-pill" data-i18n-title="chat.kb_hint" title="知识库 RAG 检索">
+                <input type="checkbox" id="kb-toggle" class="reasoning-pill-input" />
+                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                 <span class="reasoning-toggle-label" data-i18n="chat.kb_toggle">知识库</span>
-                <div class="toggle-switch toggle-switch-sm">
-                  <input type="checkbox" id="kb-toggle" />
-                  <span class="toggle-slider"></span>
-                </div>
               </label>
-              <label class="reasoning-toggle" data-i18n-title="chat.web_search_hint" title="Web search: when disabled, agent cannot use web_search and web_fetch tools">
+              <label class="reasoning-toggle reasoning-pill" data-i18n-title="chat.web_search_hint" title="Web search: when disabled, agent cannot use web_search and web_fetch tools">
+                <input type="checkbox" id="web-search-toggle" class="reasoning-pill-input" checked />
+                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <span class="reasoning-toggle-label" data-i18n="chat.web_search">联网搜索</span>
-                <div class="toggle-switch toggle-switch-sm">
-                  <input type="checkbox" id="web-search-toggle" checked />
-                  <span class="toggle-slider"></span>
-                </div>
               </label>
-              <label id="reasoning-toggle" class="reasoning-toggle" data-i18n-title="chat.reasoning_hint" title="深度推理">
+              <label id="reasoning-toggle" class="reasoning-toggle reasoning-pill" data-i18n-title="chat.reasoning_hint" title="深度推理">
+                <input type="checkbox" id="reasoning-checkbox" class="reasoning-pill-input" checked />
+                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <span class="reasoning-toggle-label" data-i18n="chat.reasoning">深度推理</span>
-                <div class="toggle-switch toggle-switch-sm">
-                  <input type="checkbox" id="reasoning-checkbox" checked />
-                  <span class="toggle-slider"></span>
-                </div>
               </label>
             </div>
           </div>
