@@ -126,8 +126,20 @@ export function registerIpcHandlers() {
     const sessionId = getSessionId();
     const history = getHistory();
     if (sessionId && history.length > 0) {
-      const title = getHistoryTitle(history);
-      await saveSession(sessionId, history, title);
+      // agent-loop's persistSession already saved the FULL history (incl.
+      // tool calls) when the run completed. getHistory() only holds
+      // user+assistant text — overwriting would strip the tool calls from
+      // the saved session. Only fall back to getHistory() when the DB has
+      // no messages for this session yet (e.g. persistSession was skipped).
+      let hasSaved = false;
+      try {
+        const existing = sessionDb.loadSession(sessionId);
+        hasSaved = !!(existing && existing.history && existing.history.length > 0);
+      } catch { /* ignore */ }
+      if (!hasSaved) {
+        const title = getHistoryTitle(history);
+        await saveSession(sessionId, history, title);
+      }
       // P2: persist the current task/todo state before clearing in-memory
       try {
         sessionDb.saveSessionTasks(sessionId, Array.from(taskStore.values()).filter(t => t.status !== "deleted"));

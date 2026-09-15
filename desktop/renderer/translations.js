@@ -478,6 +478,20 @@ const translations = {
     "thinking.title": "🧠 推理过程",
     "thinking.running": "运行中...",
     "thinking.done": "完成",
+    "thinking.thought": "思考",
+
+    // ── Tool Call 描述标签 ──
+    "tool.label.search": "搜索内容",
+    "tool.label.fetch": "抓取网页",
+    "tool.label.read": "读取文件",
+    "tool.label.write": "写入文件",
+    "tool.label.task": "任务管理",
+    "tool.label.agent": "子智能体",
+    "tool.label.command": "执行命令",
+    "tool.label.skill": "调用技能",
+    "tool.label.search_generic": "搜索",
+    "tool.label.mcp": "MCP 工具",
+    "tool.label.generic": "工具调用",
 
     // ── File Upload ──
     "file.remove": "移除",
@@ -1150,6 +1164,20 @@ const translations = {
     "thinking.title": "🧠 Reasoning",
     "thinking.running": "Running...",
     "thinking.done": "Done",
+    "thinking.thought": "Thinking",
+
+    // ── Tool Call labels ──
+    "tool.label.search": "Search",
+    "tool.label.fetch": "Fetch page",
+    "tool.label.read": "Read file",
+    "tool.label.write": "Write file",
+    "tool.label.task": "Task",
+    "tool.label.agent": "Agent",
+    "tool.label.command": "Run command",
+    "tool.label.skill": "Skill",
+    "tool.label.search_generic": "Search",
+    "tool.label.mcp": "MCP tool",
+    "tool.label.generic": "Tool call",
 
     // ── File Upload ──
     "file.remove": "Remove",

@@ -2283,6 +2283,12 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Bugfix: flex 子项默认 min-height:auto 会阻止收缩。当消息内容超高时
+     #message-list 被撑高、chat-area 被撑出 #app，外层滚动失效（"滑动卡住"）。
+     这里允许 chat-area 收缩，并把溢出裁剪掉 —— 滚动只发生在
+     #message-list（overflow-y:auto）内。 */
+  min-height: 0;
+  overflow: hidden;
   /* 背景：DeepSeek 首页风 —— 浅蓝灰渐变基底 + 断线网格纹理 + 弥散光晕。
      grid: 72px 方形网格，用 SVG 瓷砖绘制 —— 每条边只画中间一段、
      四角留空，交叉点无交叉线（"浅到看不见相交"，同 DeepSeek 粒子连线效果）；
@@ -2667,17 +2673,172 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 }
 
 /* ========================================
-   思考过程 + 工具调用 · 可折叠
+   思考过程 + 工具调用 · 扁平独立行
    ======================================== */
-.thinking-collapsible {
+
+/* ── 思考段落（独立可折叠 details） ── */
+.thinking-details {
   margin: 0;
-  font-size: 13px;
   font-family: var(--chat-font, var(--font-sans));
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
+  font-size: 13px;
+}
+.thinking-details summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  color: var(--text-light);
+  user-select: none;
+}
+.thinking-details summary::-webkit-details-marker { display: none; }
+.thinking-details summary:hover { color: var(--text); }
+.thinking-chevron {
+  display: inline-block;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.thinking-details[open] > summary .thinking-chevron {
+  transform: rotate(90deg);
+}
+.thinking-label {
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  user-select: none;
+}
+.thinking-body {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+  margin-top: 2px;
+}
+.thinking-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-light);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-/* KaTeX 回退：公式渲染失败时显示原始 LaTeX 源码，无红色错误 */
+/* ── 工具调用条目（扁平行，绿框，可展开详情） ── */
+.tool-entry {
+  margin: 4px 0;
+  padding: 2px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tool-entry summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+}
+.tool-entry summary::-webkit-details-marker { display: none; }
+.tool-entry summary:hover { opacity: 0.8; }
+
+.tool-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+}
+
+/* 类型图标（emoji） */
+.tool-entry-type {
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.tool-entry-name {
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+/* 工具运行时：名称文字一闪一闪（与思考中指示符一致）。
+   完成时 completeToolCall 移除 .running → :has() 不再命中 → 自动停止 */
+.tool-entry:has(.tool-entry-status.running) .tool-entry-name {
+  color: var(--accent, #3b82f6);
+  animation: blink 1s step-end infinite;
+}
+.tool-entry-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tool-entry-status.running {
+  color: var(--accent, #3b82f6);
+}
+.tool-entry-status.done {
+  color: var(--success, #22c55e);
+}
+.tool-entry-status.error {
+  color: var(--danger, #ef4444);
+}
+.tool-entry-duration {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* 展开后的参数+结果 */
+.tool-entry-body {
+  padding: 2px 0 2px 16px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.tool-entry-args {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tool-arg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.tool-arg-key {
+  color: var(--accent);
+  margin-right: 2px;
+  font-weight: var(--fw-semibold);
+}
+.tool-arg-val {
+  color: var(--text-light);
+}
+.tool-entry-result {
+  margin-top: 4px;
+  font-size: 11px;
+}
+.tool-result-error {
+  color: var(--danger);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-result-ok {
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 完成态 */
+.tool-entry.tool-done .tool-entry-status {
+  color: var(--success);
+}
+
+/* KaTeX 回退 */
 .katex-raw {
   color: var(--text);
   font-size: inherit;
@@ -2685,127 +2846,6 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   background: var(--bg-dim);
   padding: 0 4px;
   border-radius: 3px;
-}
-
-.thinking-collapsible summary {
-  cursor: pointer;
-  color: var(--text-light);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: var(--fw-medium);
-  user-select: none;
-  padding: 2px 0;
-}
-
-.thinking-collapsible summary:hover {
-  color: var(--text);
-}
-
-.thinking-collapsible[open] summary {
-  margin-bottom: 6px;
-}
-
-.thinking-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* 推理文字（thinking / reasoning_content） */
-.thinking-reasoning {
-  color: var(--text-light);
-  font-size: 13px;
-  font-family: var(--chat-font, var(--font-sans));
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-}
-
-.tool-entry {
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
-  background: rgba(34, 197, 94, 0.04);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.tool-entry-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.tool-entry-icon {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--accent, #3b82f6);
-  border-top-color: transparent;
-  flex-shrink: 0;
-}
-.tool-entry-icon.spinning {
-  animation: spin-tool 0.8s linear infinite;
-}
-.tool-entry-icon.done {
-  border: none;
-  background: var(--success, #22c55e);
-}
-.tool-entry-icon.error {
-  border: none;
-  background: var(--danger, #ef4444);
-}
-@keyframes spin-tool {
-  to { transform: rotate(360deg); }
-}
-
-.tool-entry-name {
-  font-weight: var(--fw-semibold);
-  color: var(--text);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-.tool-entry-status {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tool-entry-args {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tool-arg {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-}
-
-.tool-entry-args .tool-arg-key {
-  color: var(--accent);
-  margin-right: 2px;
-  font-weight: var(--fw-semibold);
-}
-
-.tool-entry-args .tool-arg-val {
-  color: var(--text-light);
-}
-
-.tool-entry-result {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 /* 流式光标 */

@@ -536,6 +536,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   let allText = "", allReasoning = "";
   let continuation = 0;
   let agentFinished = false;
+  /** @type {Array<{id:string,name:string,args?:any,result?:any}>} Collect tool calls so the final session save (line ~1077) can persist them alongside the text — getHistory() only carries user+assistant text, so without this the tool calls vanish on session reload. */
+  const mainToolCalls = [];
   // ── P0 fix: rebuild context block from LIVE state on every continuation. ──
   // Previously this was a single-shot snapshot, so any task/todo changes that
   // happened mid-conversation were lost when the context was rebuilt.
@@ -777,9 +779,12 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           const result = settled.status === "fulfilled"
             ? settled.value
             : { error: settled.reason?.message || "Sub-agent failed" };
+          let aArgs;
+          try { aArgs = JSON.parse(tc.function.arguments); } catch { aArgs = { raw: tc.function.arguments }; }
           let rStr = JSON.stringify(result);
           if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
           sdr("tool:result", { name: "Agent", result });
+          mainToolCalls.push({ id: tc.id, name: "Agent", args: aArgs, result });
           msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
           hookManager.fire("PostToolUse", { tool: "Agent", result }).catch(() => {});
         }
@@ -796,6 +801,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         let rStr = JSON.stringify(result);
         if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
         sdr("tool:result", { name: tc.function.name, result });
+        mainToolCalls.push({ id: tc.id, name: tc.function.name, args, result });
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
         hookManager.fire("PostToolUse", { tool: tc.function.name, result }).catch(() => {});
 
@@ -1070,11 +1076,34 @@ ${convText}
     setHistory(recent);
   }
 
-  // Auto-save after each turn
+  // Auto-save after each turn. Build a full history (user + each tool call
+  // as a flat role:"tool" entry + final assistant text) so the saved session
+  // keeps the tool calls — getHistory() only carries user+assistant text.
   const finalSessionId = getSessionId();
   if (finalSessionId) {
     const title = getHistoryTitle(getHistory());
-    saveSession(finalSessionId, getHistory(), title).catch(() => {});
+    const saveHistory = [{ role: "user", content: prompt || "" }];
+    for (const tc of mainToolCalls) {
+      const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
+      const resultStr = tc.result != null
+        ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
+        : "";
+      saveHistory.push({
+        role: "tool",
+        content: resultStr,
+        tool_calls: [{
+          id: tc.id,
+          type: "function",
+          function: { name: tc.name, arguments: argsStr },
+        }],
+      });
+    }
+    saveHistory.push({
+      role: "assistant",
+      content: cleanText || allText || "",
+      reasoning_content: combinedReasoning || undefined,
+    });
+    saveSession(finalSessionId, saveHistory, title).catch(() => {});
   }
 
   hookManager.fire("SessionEnd", { sessionId: finalSessionId, aborted: false }).catch(() => {});
@@ -1508,8 +1537,14 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
           history.push({
             role: "tool",
             content: resultStr,
-            tool_name: tc.name,
-            tool_args: argsStr,
+            // Encode the tool name/args into the `tool_calls` column so they
+            // survive the round-trip (saveSession only persists role/content/
+            // reasoning_content/tool_calls — tool_name/tool_args are dropped).
+            tool_calls: [{
+              id: tc.id,
+              type: "function",
+              function: { name: tc.name, arguments: argsStr },
+            }],
           });
         }
         history.push({

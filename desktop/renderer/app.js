@@ -80,6 +80,7 @@ const state = {
   _toolCallCount: 0,
   _afterToolCall: false,  // true after a tool call completes, triggers new reasoning block
   _reasoningBlockText: "", // text of the current reasoning block
+  _currentThinkingEl: null, // current thinking details element for appending text
   attachedFiles: [],       // {name, size, type, dataUrl}
   _streamStartTime: 0,
   _streamCharCount: 0,
@@ -740,35 +741,31 @@ function extractThinkingBlocks(text) {
 
 function updateThinkingSection(msgEl, text) {
   if (!text) return;
-  const section = getOrCreateThinkingSection(msgEl);
-  if (!section) return;
-  if (!section.hasAttribute("open")) section.setAttribute("open", "");
-  const tc = section.querySelector(".thinking-content");
+  const el = msgEl || state.currentAssistantMsg;
+  if (!el) return;
+  const content = el.querySelector(".message-content");
+  if (!content) return;
 
-  // After a tool call, start a new reasoning block
-  if (state._afterToolCall) {
+  // After a tool call or after previous block was collapsed, start a new thinking block
+  const needNew = state._afterToolCall
+    || !state._currentThinkingEl
+    || !state._currentThinkingEl.isConnected
+    || !state._currentThinkingEl.hasAttribute("open");
+  if (needNew) {
     state._afterToolCall = false;
     state._reasoningBlockText = "";
+    state._currentThinkingEl = _appendThinkingBlock(content);
   }
 
   state._reasoningBlockText = text;
 
-  // Find or create the last reasoning div
-  let el = null;
-  const children = tc.children;
-  for (let i = children.length - 1; i >= 0; i--) {
-    if (children[i].classList.contains("thinking-reasoning")) {
-      el = children[i];
-      break;
-    }
-  }
-  // If no reasoning div, or last child is a tool-entry, create new
-  if (!el || (tc.lastElementChild && tc.lastElementChild.classList.contains("tool-entry"))) {
-    el = document.createElement("div");
-    el.className = "thinking-reasoning";
-    tc.appendChild(el);
-  }
-  el.textContent = text;
+  const thinkingEl = state._currentThinkingEl;
+
+  const textEl = thinkingEl.querySelector(".thinking-text");
+  if (textEl) textEl.textContent = text;
+  // Auto-scroll the inner thinking body so the latest text is visible
+  const bodyEl = thinkingEl.querySelector(".thinking-body");
+  if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
 }
 
 function updateAssistantContent(msgEl, text) {
@@ -788,6 +785,16 @@ function updateAssistantContent(msgEl, text) {
       ? state.currentReasoning + "\n\n" + thinkingText
       : thinkingText;
     updateThinkingSection(msgEl, fullThinking);
+  }
+
+  // When the final answer text starts streaming (after reasoning_content),
+  // collapse the current thinking block — its segment is done.
+  // Only applies to the reasoning_content path (state.currentReasoning non-empty),
+  // not to inline <think> tag extraction.
+  if (cleanText && cleanText.trim() && state.currentReasoning) {
+    if (state._currentThinkingEl && state._currentThinkingEl.hasAttribute("open")) {
+      state._currentThinkingEl.removeAttribute("open");
+    }
   }
 
   textEl.innerHTML = renderMarkdown(cleanText || text);
@@ -815,9 +822,8 @@ function updateAssistantContent(msgEl, text) {
 
 function finishAssistantMessage(msgEl) {
   msgEl.classList.remove("streaming");
-  // 思考过程折叠起来（移除 open 属性）
-  const thinking = msgEl.querySelector(".thinking-collapsible");
-  if (thinking) thinking.removeAttribute("open");
+  // 折叠所有展开的 thinking details
+  msgEl.querySelectorAll(".thinking-details[open]").forEach(d => d.removeAttribute("open"));
 
   // If message only has thinking indicator (no content), replace it
   const textEl = msgEl.querySelector(".message-text");
@@ -915,6 +921,12 @@ function finishAssistantMessage(msgEl) {
 
 /* ── Show welcome ─────────────────────────────────────── */
 function showWelcome() {
+  // Protect the runtime-select pill: it may currently live inside an old
+  // .welcome div (child of message-list). Move it back to #input-area BEFORE
+  // wiping messageList, otherwise the pill is destroyed with the old DOM and
+  // the engine switcher disappears (regression when "+新对话" is clicked
+  // twice in a row, or when a session is loaded right after reset).
+  protectRuntimePill();
   const agentName = loadAgentName();
   const safeName = escapeHtml(agentName);
   messageList.innerHTML = `
@@ -1375,6 +1387,7 @@ async function submitQuery() {
   state._toolCallCount = 0;
   state._afterToolCall = false;
   state._reasoningBlockText = "";
+  state._currentThinkingEl = null;
 
   // Hide welcome, show messages. 必须从 DOM 移除（而非仅 display:none）：
   // 空白态居中依赖 #chat-area:has(.welcome)（结构选择器，不看 display），
@@ -1452,6 +1465,16 @@ function abortQuery() {
     finishAssistantMessage(state.currentAssistantMsg);
   }
   stopQuery();
+  // If user had clicked "+新对话" during streaming, clean up and reset
+  if (_pendingNewSession) {
+    _streamingHolder.innerHTML = "";
+    window.aideagent.resetSession();
+    state.sessionId = null;
+    _loadedSessionId = null;
+    state.currentAssistantMsg = null;
+    _pendingNewSession = false;
+  }
+  refreshSessionList();
 }
 
 function stopQuery() {
@@ -1484,13 +1507,14 @@ function processQueryQueue() {
 
 function resetChat() {
   if (state.isStreaming) {
-    // Don't abort — hold streaming DOM, show welcome
+    // Don't abort — hold streaming DOM, show welcome.
+    // The stream continues updating the held DOM in the background.
+    // When it finishes (onStreamDone), we create a fresh backend session
+    // so the next query starts a new chat.
     holdStreamingDom();
-    state.isStreaming = false;
-    // Reset backend session so next query starts fresh
-    window.aideagent.resetSession();
-    _loadedSessionId = null;
-    state.currentAssistantMsg = null;
+    _pendingNewSession = true;
+    // Keep state.isStreaming = true and state.currentAssistantMsg pointing
+    // to the held DOM so streaming chunks continue updating it.
     _queryQueue.length = 0;
     showWelcome();
     state.attachedFiles = [];
@@ -1522,6 +1546,7 @@ function resetChat() {
   state._toolCallCount = 0;
   state._afterToolCall = false;
   state._reasoningBlockText = "";
+  state._currentThinkingEl = null;
   state.attachedFiles = [];
   _loadedSessionId = null;
   _taskCache.clear();
@@ -1545,6 +1570,28 @@ function resetChat() {
 /* ── Session List ──────────────────────────────────────────── */
 let _loadedSessionId = null;
 
+// True when user clicked "+新对话" during streaming — stream continues in
+// the hidden holder, and a fresh backend session is created after it finishes.
+let _pendingNewSession = false;
+
+/**
+ * Protect the runtime-select pill before any `messageList.innerHTML = ""`.
+ * showWelcome() moves the pill INTO the welcome div (a child of message-list);
+ * if that list is then wiped (rebuildMessages / restoreHeldDom / clear-all),
+ * the pill is destroyed with it and the engine switcher disappears forever.
+ * Move it back to #input-area first so it survives the wipe.
+ */
+function protectRuntimePill() {
+  const wrap = document.getElementById("runtime-select-wrap");
+  if (!wrap) return;
+  const inputArea = document.getElementById("input-area");
+  if (!inputArea) return;
+  // Only move if it currently lives inside message-list (i.e. the welcome div)
+  if (messageList.contains(wrap) && wrap !== inputArea) {
+    inputArea.appendChild(wrap);
+  }
+}
+
 // ── Holding container for streaming DOM when switching sessions ────
 let _streamingHolder = document.createElement("div");
 _streamingHolder.style.display = "none";
@@ -1552,6 +1599,7 @@ document.body.appendChild(_streamingHolder);
 
 function holdStreamingDom() {
   if (!state.currentAssistantMsg) return;
+  protectRuntimePill();  // don't sweep the pill into the hidden holder
   while (messageList.firstChild) {
     _streamingHolder.appendChild(messageList.firstChild);
   }
@@ -1559,6 +1607,7 @@ function holdStreamingDom() {
 
 function restoreHeldDom() {
   if (!_streamingHolder.firstChild) return false;
+  protectRuntimePill();  // don't destroy the pill with message-list
   messageList.innerHTML = "";
   while (_streamingHolder.firstChild) {
     messageList.appendChild(_streamingHolder.firstChild);
@@ -1572,6 +1621,8 @@ function restoreHeldDom() {
     }
   }
   state._toolCallCount = messageList.querySelectorAll(".tool-entry").length;
+  // User switched back to the streaming session — no new chat pending
+  _pendingNewSession = false;
   return true;
 }
 
@@ -1698,20 +1749,55 @@ function loadChat(sessionId) {
 }
 
 function rebuildMessages(data) {
+  protectRuntimePill();  // don't destroy the pill with message-list
   messageList.innerHTML = "";
+  state._toolCallCount = 0;
   const hist = data.history || [];
+  // Format B (state.history / session:reset): assistant carries tool_calls,
+  // then a paired role:"tool" message follows with the result. Map the
+  // tool_call_id to its rendered entry so the result can be filled in.
+  const toolEntryById = new Map();
+  // Format A (agent-loop persistSession): role:"tool" flat messages precede
+  // the assistant they belong to ([user, tool, tool, assistant]).
+  let pendingTools = [];
   for (const m of hist) {
     if (m.role === "user") {
       const el = addUserMessage(m.content);
       if (m.id) el.dataset.msgId = m.id;
+    } else if (m.role === "tool") {
+      // If this tool's entry was already rendered (format B), fill its result.
+      const entry = m.tool_call_id ? toolEntryById.get(String(m.tool_call_id)) : null;
+      if (entry) {
+        _fillToolResult(entry, m.content);
+      } else {
+        pendingTools.push(m);
+      }
     } else if (m.role === "assistant") {
       const el = addAssistantMessage();
       if (m.id) el.dataset.msgId = m.id;
       state.currentAssistantMsg = el;
+      const tools = pendingTools;
+      pendingTools = [];
       requestAnimationFrame(() => {
+        const content = el.querySelector(".message-content");
+        // Order matters: both thinking blocks and tool entries are inserted
+        // before .message-text, so insert thinking FIRST (it ends up above),
+        // then tool entries → final DOM order: thinking → tools → answer.
         if (m.reasoning_content) {
           state.currentReasoning = m.reasoning_content;
           updateThinkingSection(el, m.reasoning_content);
+        }
+        // Format A: pending flat tool messages saved by agent-loop
+        for (const t of tools) {
+          const entry = _rebuildToolEntry(content, t.tool_calls || [], t.content);
+          if (t.tool_call_id) toolEntryById.set(String(t.tool_call_id), entry);
+        }
+        // Format B: assistant messages carry tool_calls inline (session:reset)
+        if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+          for (const tc of m.tool_calls) {
+            const entry = _rebuildToolEntry(content, [tc], "");
+            if (tc.id) toolEntryById.set(String(tc.id), entry);
+          }
         }
         updateAssistantContent(el, m.content || "");
         finishAssistantMessage(el);
@@ -1719,6 +1805,44 @@ function rebuildMessages(data) {
     }
   }
   state.currentAssistantMsg = null;
+}
+
+/* ── Rebuild a completed tool-entry from saved history ── */
+function _rebuildToolEntry(content, toolCalls, resultText) {
+  if (!content) return null;
+  const tc = Array.isArray(toolCalls) && toolCalls.length > 0 ? toolCalls[0] : null;
+  const name = tc?.function?.name || tc?.name || t("tool.label.generic");
+  const argsRaw = tc?.function?.arguments || tc?.arguments || "";
+  let args = {};
+  try { args = JSON.parse(argsRaw || "{}"); } catch { args = {}; }
+  const argsStr = Object.entries(args)
+    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${sanitize(k)}</span><span class="tool-arg-val">${sanitize(String(v).slice(0, 120))}</span></span>`)
+    .join("");
+  const meta = toolMeta(name);
+  const entry = _appendToolEntry(content, name, meta, argsStr);
+  state._toolCallCount++;
+  entry.id = `tool-${state._toolCallCount}`;
+  entry.classList.add("tool-done");  // Status → done
+  const statusEl = entry.querySelector(".tool-entry-status");
+  if (statusEl) {
+    statusEl.textContent = `✓ ${t("thinking.done")}`;
+    statusEl.classList.remove("running");
+    statusEl.classList.add("done");
+  }
+  // Result summary
+  if (resultText != null && String(resultText).trim()) {
+    _fillToolResult(entry, resultText);
+  }
+  return entry;
+}
+
+/* ── Fill a rendered tool-entry's result summary ── */
+function _fillToolResult(entry, resultText) {
+  if (!entry) return;
+  const resultEl = entry.querySelector(".tool-entry-result");
+  if (resultEl && resultText != null && String(resultText).trim()) {
+    resultEl.innerHTML = `<span class="tool-result-ok">${sanitize(String(resultText).slice(0, 200))}</span>`;
+  }
 }
 
 // Delegate click events on session-list (handles load, delete, export)
@@ -1801,45 +1925,85 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-/* ── Tool call display (collapsible inside assistant message) ─ */
-function getOrCreateThinkingSection(msgEl) {
-  const el = msgEl || state.currentAssistantMsg;
-  if (!el) return null;
-  let section = el.querySelector(".thinking-collapsible");
-  if (!section) {
-    const content = el.querySelector(".message-content");
-    if (!content) return null;
-    section = document.createElement("details");
-    section.className = "thinking-collapsible";
-    section.innerHTML = `<summary>${t("thinking.title")}</summary><div class="thinking-content"></div>`;
-    content.insertBefore(section, content.firstChild);
+/* ── 工具分类元数据 ────────────────────────────────── */
+// 根据工具名归类：emoji 图标 + 人类可读描述（i18n key）
+function toolMeta(name) {
+  const n = String(name || "").toLowerCase();
+  const rules = [
+    { re: /web[_ ]?search/i,                    icon: "🔍", label: "tool.label.search" },
+    { re: /web[_ ]?fetch|fetch/i,               icon: "🌐", label: "tool.label.fetch" },
+    { re: /file[_ ]?read|read[_ ]?file/i,       icon: "📄", label: "tool.label.read" },
+    { re: /file[_ ]?write|write[_ ]?file|edit|patch/i, icon: "✏️", label: "tool.label.write" },
+    { re: /task/i,                              icon: "📋", label: "tool.label.task" },
+    { re: /agent|subagent/i,                    icon: "🤖", label: "tool.label.agent" },
+    { re: /bash|command|exec|shell|terminal/i,  icon: "💻", label: "tool.label.command" },
+    { re: /skill/i,                             icon: "🎯", label: "tool.label.skill" },
+    { re: /search|query|grep/i,                 icon: "🔎", label: "tool.label.search_generic" },
+    { re: /^mcp__/i,                            icon: "🔌", label: "tool.label.mcp" },
+  ];
+  for (const r of rules) {
+    if (r.re.test(n)) return r;
   }
-  return section;
+  return { icon: "⚙️", label: "tool.label.generic" };
 }
 
+/** 毫秒 → 人类可读耗时（<1s 显示 ms，<60s 显示 s，否则 m+s） */
+function formatDuration(ms) {
+  if (!ms) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rs = Math.round(s % 60);
+  return `${m}m${rs}s`;
+}
+
+/* ── Helper: append a thinking details block to message-content ── */
+function _appendThinkingBlock(content) {
+  const details = document.createElement("details");
+  details.className = "thinking-details";
+  details.setAttribute("open", "");
+  details.innerHTML = `<summary class="thinking-summary"><span class="thinking-chevron"></span><span class="thinking-label">💭 ${t("thinking.thought")}</span></summary><div class="thinking-body"><div class="thinking-text"></div></div>`;
+  // Insert BEFORE .message-text so thinking appears above the final answer
+  const textEl = content.querySelector(".message-text");
+  if (textEl) content.insertBefore(details, textEl);
+  else content.appendChild(details);
+  return details;
+}
+
+/* ── Helper: append a flat tool-entry line to message-content ── */
+function _appendToolEntry(content, name, meta, argsStr) {
+  const entry = document.createElement("details");
+  entry.className = "tool-entry";
+  entry.dataset.tool = String(name || "");
+  entry.innerHTML = `<summary class="tool-entry-head"><span class="tool-entry-type">${meta.icon}</span><span class="tool-entry-name">${sanitize(t(meta.label) || name)}</span><span class="tool-entry-status running">${t("mcp.running")}</span><span class="tool-entry-duration"></span></summary><div class="tool-entry-body"><div class="tool-entry-args">${argsStr || ""}</div><div class="tool-entry-result"></div></div>`;
+  // Insert BEFORE .message-text so tool calls appear above the final answer
+  const textEl = content.querySelector(".message-text");
+  if (textEl) content.insertBefore(entry, textEl);
+  else content.appendChild(entry);
+  return entry;
+}
+
+/* ── Tool call display (flat lines inside assistant message) ── */
 function addToolCall(name, args) {
   state._toolCallCount++;
+  // Collapse the current thinking block — its segment is done
+  if (state._currentThinkingEl && state._currentThinkingEl.hasAttribute("open")) {
+    state._currentThinkingEl.removeAttribute("open");
+  }
   state._afterToolCall = true;
-  const section = getOrCreateThinkingSection();
-  if (!section) return;
+  state._currentThinkingEl = null;  // next reasoning starts a new thinking block
+  if (!state.currentAssistantMsg) return;
+  const content = state.currentAssistantMsg.querySelector(".message-content");
+  if (!content) return;
 
-  const tc = section.querySelector(".thinking-content");
-  const entry = document.createElement("div");
-  entry.className = "tool-entry";
-  entry.id = `tool-${state._toolCallCount}`;
+  const meta = toolMeta(name);
   const argsStr = Object.entries(args || {})
-    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${k}</span><span class="tool-arg-val">${sanitize(String(v).slice(0, 120))}</span></span>`)
+    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${sanitize(k)}</span><span class="tool-arg-val">${sanitize(String(v).slice(0, 120))}</span></span>`)
     .join("");
-  entry.innerHTML = `
-    <div class="tool-entry-head">
-      <span class="tool-entry-icon spinning"></span>
-      <span class="tool-entry-name">${sanitize(name.toLowerCase())}</span>
-      <span class="tool-entry-status">${t("mcp.running")}</span>
-    </div>
-    <div class="tool-entry-args">${argsStr || ""}</div>
-    <div class="tool-entry-result"></div>
-  `;
-  tc.appendChild(entry);
+  const entry = _appendToolEntry(content, name, meta, argsStr);
+  entry.id = `tool-${state._toolCallCount}`;
+  entry.dataset.start = String(Date.now());
   scrollToBottom();
   return entry;
 }
@@ -1847,15 +2011,26 @@ function addToolCall(name, args) {
 function completeToolCall(name, result) {
   const el = document.getElementById(`tool-${state._toolCallCount}`);
   if (!el) return;
-  const icon = el.querySelector(".tool-entry-icon");
-  if (icon) {
-    icon.classList.remove("spinning");
-    icon.classList.add(result?.error ? "error" : "done");
+  // 耗时
+  const start = Number(el.dataset.start || 0);
+  const dur = start ? formatDuration(Date.now() - start) : "";
+  const durEl = el.querySelector(".tool-entry-duration");
+  if (durEl && dur) durEl.textContent = dur;
+  // 状态文字
+  const statusEl = el.querySelector(".tool-entry-status");
+  if (statusEl) {
+    statusEl.textContent = `${result?.error ? "❌" : "✓"} ${t("thinking.done")}`;
+    statusEl.classList.remove("running");
+    statusEl.classList.add(result?.error ? "error" : "done");
   }
-  const statusIcon = result?.error ? "❌" : "";
-  el.querySelector(".tool-entry-status").textContent = `${statusIcon} ${t("thinking.done")}`;
-  if (result?.error) {
-    el.querySelector(".tool-entry-result").innerHTML = `<span style="color:var(--danger);">${sanitize(String(result.error).slice(0, 200))}</span>`;
+  // 结果摘要
+  const resultEl = el.querySelector(".tool-entry-result");
+  if (resultEl) {
+    if (result?.error) {
+      resultEl.innerHTML = `<span class="tool-result-error">${sanitize(String(result.error).slice(0, 200))}</span>`;
+    } else if (result?.result !== undefined && result?.result !== null && String(result.result).trim()) {
+      resultEl.innerHTML = `<span class="tool-result-ok">${sanitize(String(result.result).slice(0, 200))}</span>`;
+    }
   }
   el.classList.add("tool-done");
   scrollToBottom();
@@ -2030,35 +2205,28 @@ function setupIPC() {
   onIpc("onStreamReasoning", (data) => {
     if (!state.currentAssistantMsg) return;
     state.currentReasoning += data.text;
-    const section = getOrCreateThinkingSection();
-    if (!section) return;
-    if (!section.hasAttribute("open")) section.setAttribute("open", "");
-    const tc = section.querySelector(".thinking-content");
+    const content = state.currentAssistantMsg.querySelector(".message-content");
+    if (!content) return;
 
-    // After a tool call, start a new reasoning block
-    if (state._afterToolCall) {
+    // After a tool call or after previous block was collapsed, start a new thinking block
+    const needNew = state._afterToolCall
+      || !state._currentThinkingEl
+      || !state._currentThinkingEl.isConnected
+      || !state._currentThinkingEl.hasAttribute("open");
+    if (needNew) {
       state._afterToolCall = false;
       state._reasoningBlockText = "";
+      state._currentThinkingEl = _appendThinkingBlock(content);
     }
 
     state._reasoningBlockText += data.text;
 
-    // Find or create the last reasoning div in thinking-content
-    let reasoningEl = null;
-    const children = tc.children;
-    for (let i = children.length - 1; i >= 0; i--) {
-      if (children[i].classList.contains("thinking-reasoning")) {
-        reasoningEl = children[i];
-        break;
-      }
-    }
-    // If no reasoning div exists, or the last child is a tool-entry, create new
-    if (!reasoningEl || (tc.lastElementChild && tc.lastElementChild.classList.contains("tool-entry"))) {
-      reasoningEl = document.createElement("div");
-      reasoningEl.className = "thinking-reasoning";
-      tc.appendChild(reasoningEl);
-    }
-    reasoningEl.textContent = state._reasoningBlockText;
+    const thinkingEl = state._currentThinkingEl;
+    const textEl = thinkingEl.querySelector(".thinking-text");
+    if (textEl) textEl.textContent = state._reasoningBlockText;
+    // Auto-scroll the inner thinking body so the latest text is visible
+    const bodyEl = thinkingEl.querySelector(".thinking-body");
+    if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
     scrollToBottom();
   });
 
@@ -2071,6 +2239,17 @@ function setupIPC() {
       finishAssistantMessage(state.currentAssistantMsg);
     }
     stopQuery();
+    // If user clicked "+新对话" during streaming, the stream finished in
+    // the hidden holder. Clean up held DOM and start a fresh backend session
+    // so any queued query lands in a new chat.
+    if (_pendingNewSession) {
+      _streamingHolder.innerHTML = "";
+      window.aideagent.resetSession();
+      state.sessionId = null;
+      _loadedSessionId = null;
+      state.currentAssistantMsg = null;
+      _pendingNewSession = false;
+    }
     refreshSessionList();
     // Process queued queries
     processQueryQueue();
@@ -2082,6 +2261,14 @@ function setupIPC() {
       finishAssistantMessage(state.currentAssistantMsg);
     }
     stopQuery();
+    if (_pendingNewSession) {
+      _streamingHolder.innerHTML = "";
+      window.aideagent.resetSession();
+      state.sessionId = null;
+      _loadedSessionId = null;
+      state.currentAssistantMsg = null;
+      _pendingNewSession = false;
+    }
     refreshSessionList();
     addErrorMessage(data.message || t("misc.unknown_error"));
   });
@@ -2112,12 +2299,16 @@ function setupIPC() {
     window.aideagent.onSubagentProgress?.((data) => {
       if (data.done) return;
       // Find the running Agent tool entry and update its status
-      const thinkingContent = state.currentAssistantMsg?.querySelector?.(".thinking-content");
-      if (!thinkingContent) return;
-      const entries = thinkingContent.querySelectorAll(".tool-entry");
+      const content = state.currentAssistantMsg?.querySelector?.(".message-content");
+      if (!content) return;
+      const entries = content.querySelectorAll(".tool-entry");
       for (const entry of entries) {
+        // 匹配 agent 类工具：优先看 dataset.tool（原始工具名），兼容旧结构回退 textContent
+        const rawTool = String(entry.dataset?.tool || "").toLowerCase();
         const nameEl = entry.querySelector(".tool-entry-name");
-        if (nameEl && nameEl.textContent.includes("agent") && entry.querySelector(".tool-entry-status")?.textContent?.includes("running")) {
+        const isAgent = rawTool.includes("agent")
+          || (!rawTool && nameEl && nameEl.textContent.toLowerCase().includes("agent"));
+        if (isAgent && entry.querySelector(".tool-entry-status.running")) {
           const statusEl = entry.querySelector(".tool-entry-status");
           if (statusEl && data.description) {
             statusEl.textContent = `${data.description} (turn ${data.turn + 1})`;
@@ -2487,6 +2678,7 @@ deleteAllBtn?.addEventListener("click", async () => {
     }
     state.sessionId = null;
     _loadedSessionId = null;
+    protectRuntimePill();  // don't destroy the pill with message-list
     messageList.innerHTML = "";
     showWelcome();
     refreshSessionList();
