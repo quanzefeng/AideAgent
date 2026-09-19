@@ -1816,7 +1816,7 @@ function _rebuildToolEntry(content, toolCalls, resultText) {
   let args = {};
   try { args = JSON.parse(argsRaw || "{}"); } catch { args = {}; }
   const argsStr = Object.entries(args)
-    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${sanitize(k)}</span><span class="tool-arg-val">${sanitize(String(v).slice(0, 120))}</span></span>`)
+    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${escapeHtml(k)}</span><span class="tool-arg-val">${escapeHtml(String(v).slice(0, 120))}</span></span>`)
     .join("");
   const meta = toolMeta(name);
   const entry = _appendToolEntry(content, name, meta, argsStr);
@@ -1841,7 +1841,7 @@ function _fillToolResult(entry, resultText) {
   if (!entry) return;
   const resultEl = entry.querySelector(".tool-entry-result");
   if (resultEl && resultText != null && String(resultText).trim()) {
-    resultEl.innerHTML = `<span class="tool-result-ok">${sanitize(String(resultText).slice(0, 200))}</span>`;
+    resultEl.innerHTML = `<span class="tool-result-ok">${escapeHtml(String(resultText).slice(0, 200))}</span>`;
   }
 }
 
@@ -1999,7 +1999,7 @@ function addToolCall(name, args) {
 
   const meta = toolMeta(name);
   const argsStr = Object.entries(args || {})
-    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${sanitize(k)}</span><span class="tool-arg-val">${sanitize(String(v).slice(0, 120))}</span></span>`)
+    .map(([k, v]) => `<span class="tool-arg"><span class="tool-arg-key">${escapeHtml(k)}</span><span class="tool-arg-val">${escapeHtml(String(v).slice(0, 120))}</span></span>`)
     .join("");
   const entry = _appendToolEntry(content, name, meta, argsStr);
   entry.id = `tool-${state._toolCallCount}`;
@@ -2027,9 +2027,9 @@ function completeToolCall(name, result) {
   const resultEl = el.querySelector(".tool-entry-result");
   if (resultEl) {
     if (result?.error) {
-      resultEl.innerHTML = `<span class="tool-result-error">${sanitize(String(result.error).slice(0, 200))}</span>`;
+      resultEl.innerHTML = `<span class="tool-result-error">${escapeHtml(String(result.error).slice(0, 200))}</span>`;
     } else if (result?.result !== undefined && result?.result !== null && String(result.result).trim()) {
-      resultEl.innerHTML = `<span class="tool-result-ok">${sanitize(String(result.result).slice(0, 200))}</span>`;
+      resultEl.innerHTML = `<span class="tool-result-ok">${escapeHtml(String(result.result).slice(0, 200))}</span>`;
     }
   }
   el.classList.add("tool-done");
