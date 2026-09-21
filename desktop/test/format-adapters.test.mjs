@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toAnthropicMessages } from "../core/format-adapters.mjs";
+import { toAnthropicMessages } from "../core/format-adapters.ts";
 
 describe("Format Adapters", () => {
   describe("toAnthropicMessages", () => {

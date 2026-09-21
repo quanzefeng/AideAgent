@@ -1,5 +1,5 @@
 // @ts-check
-// Unit tests for core/opencode-detector.mjs
+// Unit tests for core/opencode-detector.ts
 //
 // Tests the pure-logic surface (resolveHome, candidatePaths) via env-var
 // stubs, plus tryRun against a fake opencode binary so we can prove the
@@ -52,7 +52,7 @@ describe("detectOpencode", () => {
     // Strip PATH so we don't accidentally pick up a real opencode elsewhere.
     vi.stubEnv("PATH", "");
 
-    const { detectOpencode } = await import("../core/opencode-detector.mjs");
+    const { detectOpencode } = await import("../core/opencode-detector.ts");
     const result = await detectOpencode();
     expect(result.installed).toBe(true);
     expect(result.available).toBe(true);
@@ -72,7 +72,7 @@ describe("detectOpencode", () => {
       // Also wipe PATH so the global `where`/`which` lookup misses too.
       vi.stubEnv("PATH", "");
 
-      const { detectOpencode } = await import("../core/opencode-detector.mjs");
+      const { detectOpencode } = await import("../core/opencode-detector.ts");
       const result = await detectOpencode();
       expect(result.installed).toBe(false);
       expect(result.reason).toBe("not_found");
@@ -93,7 +93,7 @@ describe("detectOpencode", () => {
       vi.stubEnv("LOCALAPPDATA", join(EMPTY_HOME, "AppData", "Local"));
       vi.stubEnv("PATH", "");
 
-      const { detectOpencode } = await import("../core/opencode-detector.mjs");
+      const { detectOpencode } = await import("../core/opencode-detector.ts");
       const result = await detectOpencode();
       // The first entry should be the PATH probe summary.
       expect(result.triedPaths?.[0]).toMatch(/where|which/);
@@ -156,7 +156,7 @@ describe("Windows PATH lookup prefers .cmd / .exe over extensionless", () => {
       const probe = spawnSync(
         process.execPath,
         ["-e", `
-          const { detectOpencode } = await import(${JSON.stringify(new URL("../core/opencode-detector.mjs", import.meta.url).pathname)});
+          const { detectOpencode } = await import(${JSON.stringify(new URL("../core/opencode-detector.ts", import.meta.url).pathname)});
           const r = await detectOpencode();
           console.log("__RESULT__" + JSON.stringify(r));
         `],

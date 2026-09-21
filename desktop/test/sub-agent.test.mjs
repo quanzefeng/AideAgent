@@ -19,7 +19,7 @@ const stateMock = {
 vi.mock("../core/state.ts", () => stateMock);
 
 // Mock format-adapters.mjs
-vi.mock("../core/format-adapters.mjs", () => ({
+vi.mock("../core/format-adapters.ts", () => ({
   getAllToolDefs: () => [
     { function: { name: "bash", description: "Run shell", parameters: { type: "object" } } },
     { function: { name: "file_read", description: "Read file", parameters: { type: "object" } } },

@@ -2,7 +2,7 @@
 
 import sessionDb from "../session-db.mjs";
 import { buildSystemPrompt } from "./system-prompt.mjs";
-import { openaiCall, anthropicCall } from "./format-adapters.mjs";
+import { openaiCall, anthropicCall } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.mjs";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
@@ -1169,7 +1169,7 @@ export function resetPromptCache() {
  */
 async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false, opencodeModelId }) {
   const { OpencodeAcpClient } = await import("./opencode-acp-client.mjs");
-  const { detectOpencode } = await import("./opencode-detector.mjs");
+  const { detectOpencode } = await import("./opencode-detector.ts");
 
   // 1. Locate the opencode binary. If it's not installed, surface as a stream
   // error so the renderer's onStreamError handler can show a friendly message

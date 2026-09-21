@@ -610,7 +610,7 @@ export async function runTool(tc) {
       // provides a structured summary with category breakdown and shadowing
       // detection (built-in tool names that are also exposed by MCP).
       try {
-        const { getAllToolDefs } = await import("./format-adapters.mjs");
+        const { getAllToolDefs } = await import("./format-adapters.ts");
         const defs = getAllToolDefs(true, true) || [];
         // Categorize by inspecting name + description
         const categorize = (name) => {

@@ -365,7 +365,7 @@ You can use the MCP tools listed above just like any other tool.`;
   // Tools
   let toolShadowLine = "";
   try {
-    const { getAllToolDefs } = await import("./format-adapters.mjs");
+    const { getAllToolDefs } = await import("./format-adapters.ts");
     const allDefs = getAllToolDefs(true, true) || [];
     const BUILTIN_NAMES = new Set(["bash","file_read","file_write","file_edit","grep","glob","lsp","web_search","web_fetch","write_memory","skill","invoke_skill","create_skill","TaskCreate","TaskUpdate","TaskList","TodoWrite","AskUserQuestion","Agent","kb_search","kb_write","kb_get_note","git_diff","git_commit","git_branch","gh_pr","gh_issue","gh_repo","list_skills","list_memories","list_kb","list_mcp","list_tools"]);
     const builtin = allDefs.filter(d => BUILTIN_NAMES.has(d.function.name)).length;

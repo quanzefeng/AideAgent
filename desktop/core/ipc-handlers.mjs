@@ -12,7 +12,7 @@ import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
 import { scanSkills } from "./skill-scanner.ts";
-import { detectOpencode, listOpencodeModels } from "./opencode-detector.mjs";
+import { detectOpencode, listOpencodeModels } from "./opencode-detector.ts";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
