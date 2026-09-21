@@ -110,10 +110,11 @@ async function wxPollLoop() {
     console.log("[wechat] poll loop already running, skipping duplicate");
     return;
   }
-  setWxPollAbort(new AbortController());
+  const pollAbort = new AbortController();
+  setWxPollAbort(pollAbort);
   let buf = "", fails = 0;
   console.log("[wechat] poll loop started");
-  while (!getWxPollAbort().signal.aborted) {
+  while (!pollAbort.signal.aborted) {
     try {
       const resp = await wxApi("ilink/bot/getupdates", { get_updates_buf: buf, base_info: { channel_version: "1.0.0" } });
       fails = 0; if (resp.get_updates_buf) buf = resp.get_updates_buf;

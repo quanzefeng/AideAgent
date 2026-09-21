@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 /** @type {Record<string, any> | null} */
 let _cache = null;   // { PreToolUse: [...], PostToolUse: [...], SessionEnd: [...] }
 let _workspace = "";
+const GLOBAL_HOOKS_DIR = join(homedir(), ".aideagent");
 
 /** @param {string} dir */
 function loadConfig(dir) {
@@ -72,15 +73,44 @@ function runScript(script, data, timeoutMs = 5000) {
   });
 }
 
-// Resolve script path safely — must stay within workspace or global hooks dir
-/** @param {string} script */
+// Resolve script path safely — must stay within workspace or the global
+// hooks dir. Global hooks (from ~/.aideagent/hooks/hooks.json) live outside
+// the project workspace, so they'd be wrongly rejected by a workspace-only
+// check. `resolve(dir, script)` also anchors relative scripts to the right
+// base: project hooks → workspace, global hooks → ~/.aideagent.
+/** @param {string} script @param {string} base */
+function resolveScriptPath(script, base) {
+  if (!script || typeof script !== "string") return null;
+  const abs = resolve(base, script);
+  return abs;
+}
+
+/** @param {string} abs @param {string} base */
+function withinBase(abs, base) {
+  const root = resolve(base);
+  return abs === root || abs.startsWith(root + "/") || abs.startsWith(root + "\\");
+}
+
+/**
+ * Resolve a hook script path, rejecting path traversal outside the allowed
+ * roots (project workspace + global hooks dir). Project-level hooks resolve
+ * relative to the workspace; global hooks resolve relative to ~/.aideagent.
+ * @param {string} script
+ */
 function safeScriptPath(script) {
   if (!script || typeof script !== "string") return null;
-  const abs = resolve(_workspace, script);
-  if (!abs.startsWith(resolve(_workspace) + "/") && !abs.startsWith(resolve(_workspace) + "\\")) {
-    return null; // path traversal attempt
+  // Absolute scripts: allow when inside workspace or global hooks dir.
+  if (script.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(script)) {
+    return withinBase(script, _workspace) || withinBase(script, GLOBAL_HOOKS_DIR)
+      ? script
+      : null;
   }
-  return abs;
+  // Relative scripts: try workspace first (project hooks), then global dir.
+  const wsPath = resolveScriptPath(script, _workspace);
+  if (wsPath && withinBase(wsPath, _workspace)) return wsPath;
+  const globalPath = resolveScriptPath(script, GLOBAL_HOOKS_DIR);
+  if (globalPath && withinBase(globalPath, GLOBAL_HOOKS_DIR)) return globalPath;
+  return null;
 }
 
 /**

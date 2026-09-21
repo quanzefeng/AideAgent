@@ -8,6 +8,10 @@ import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiCo
 import { getAllToolDefs } from "./format-adapters.mjs";
 import { runTool } from "./tool-executor.mjs";
 
+// Hard cap on a single sub-agent LLM request so a hung API never blocks the
+// parent agent loop indefinitely (parent uses Promise.allSettled on sub-agents).
+const SUB_AGENT_LLM_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * @param {string} description
  * @param {string} prompt
@@ -104,7 +108,9 @@ export async function runSubAgent(description, prompt, subAgentId = null) {
       const res = await fetch(endpoint, {
         method: "POST", headers,
         body: JSON.stringify(body),
-        signal,
+        // Combine user abort with a hard LLM timeout so a hung API never
+        // blocks the parent agent loop indefinitely.
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(SUB_AGENT_LLM_TIMEOUT_MS)]) : AbortSignal.timeout(SUB_AGENT_LLM_TIMEOUT_MS),
       });
 
       if (!res.ok) {

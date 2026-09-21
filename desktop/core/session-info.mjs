@@ -24,8 +24,10 @@ import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, platform, arch, release } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 /* ── Module state ──────────────────────────────────────── */
 

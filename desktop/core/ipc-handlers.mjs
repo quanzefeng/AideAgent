@@ -764,15 +764,21 @@ export function registerIpcHandlers() {
     for (const p of [join(HOME, ".claude", ".mcp.json"), join(HOME, ".claude", "settings.json")]) {
       found.push(...readMcpServers(p, "Claude Code"));
     }
-    // OpenCode uses ~/.config/opencode on macOS/Linux but %APPDATA%/opencode on
-    // Windows. Probe both candidate directories so the "import from OpenCode"
-    // button works on every platform.
-    const opencodeConfigDirs = PLATFORM === "win32"
-      ? [join(process.env.APPDATA || join(HOME, "AppData", "Roaming"), "opencode")]
-      : [join(HOME, ".config", "opencode")];
+    // OpenCode stores config at ~/.config/opencode/opencode.json (and
+    // optional mcp.json) on ALL platforms, including Windows — the docs
+    // use the XDG-style path regardless of OS. Older Windows builds also
+    // wrote to %APPDATA%/opencode, so probe both so the "import from
+    // OpenCode" button works everywhere.
+    const opencodeConfigDirs = [
+      join(HOME, ".config", "opencode"),
+      ...(PLATFORM === "win32"
+        ? [join(process.env.APPDATA || join(HOME, "AppData", "Roaming"), "opencode")]
+        : []),
+    ];
     for (const dir of opencodeConfigDirs) {
       found.push(...readMcpServers(join(dir, "mcp.json"), "OpenCode"));
-      found.push(...readMcpServers(join(dir, "opencode.json"), "OpenCode", { keys: ["m"] }));
+      // opencode.json uses the "mcp" top-level key; tolerate "mcpServers" too.
+      found.push(...readMcpServers(join(dir, "opencode.json"), "OpenCode", { keys: ["mcp", "mcpServers"] }));
     }
 
     // Claude Desktop config paths (cross-platform)

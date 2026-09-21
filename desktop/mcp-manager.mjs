@@ -622,6 +622,24 @@ class McpManager {
       await this.stopServer(name);
     }
   }
+
+  /**
+   * A compact signature of the current running MCP server + tool set. Used
+   * by format-adapters as part of the tool-defs cache key so that adding,
+   * removing, restarting, or toggling an MCP server invalidates the cached
+   * LLM tool list (previously the cache only keyed on kbEnabled /
+   * webSearchEnabled / planMode, so the model kept seeing stale tools).
+   * @returns {string}
+   */
+  serverSignature() {
+    const parts = [];
+    for (const [name, server] of Object.entries(this.servers)) {
+      if (server.status !== "running") continue;
+      const toolNames = (server.tools || []).map(t => t.name).sort();
+      parts.push(`${name}[${toolNames.join(",")}]`);
+    }
+    return parts.sort().join("|");
+  }
 }
 
 // Singleton — imported by main.mjs

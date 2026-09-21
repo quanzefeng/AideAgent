@@ -365,7 +365,13 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         // models can't parse. Now we route .pdf/.docx/.pptx/.xlsx through
         // the proper extractors; pure-text files (.md/.txt/.json/.csv...)
         // fall back to utf-8 decoding.
-        const base64Data = f.dataUrl.includes("base64,") ? f.dataUrl.split("base64,")[1] : f.dataUrl;
+        const base64Data = (f.dataUrl || "").includes("base64,") ? f.dataUrl.split("base64,")[1] : (f.dataUrl || "");
+        if (!base64Data) {
+          // Attachment without a readable dataUrl (e.g. aborted read) — skip
+          // extraction instead of crashing the whole turn.
+          contentParts.push({ type: "text", text: `[附件 ${f.name || "file"} 无法读取，已跳过]` });
+          continue;
+        }
         const buffer = Buffer.from(base64Data, "base64");
         let fileText = "";
         let extractionNote = "";
@@ -585,7 +591,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     if (continuation > 1) {
       const banner = `\n\n--- 第 ${continuation} 次自动继续 ---\n`;
       allText += banner;
-      sdr("stream:chunk", { content: banner });
+      sdr("stream:chunk", { text: banner });
     }
 
     while (turns < MAX_TURNS) {
@@ -614,7 +620,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         : AbortSignal.timeout(LLM_CALL_TIMEOUT);
       try {
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-        const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled);
+        const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled, silent);
         content = result.content;
         reasoningContent = /** @type {any} */ (result).reasoningContent || "";
         allText += result.content;
@@ -685,10 +691,16 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             }
           }
           
-          // Retry the call
+          // Retry the call — use a FRESH timeout signal. The original
+          // `callSignal`'s 5-minute AbortSignal.timeout may be nearly spent
+          // after the first (failed) call, so reusing it could abort the
+          // retry almost immediately.
           try {
+            const retrySignal = signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
+              : AbortSignal.timeout(LLM_CALL_TIMEOUT);
             const retryCallFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-            const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled);
+            const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, retrySignal, reasoning, kbEnabled, webSearchEnabled, silent);
             content = retryResult.content;
             reasoningContent = retryResult.reasoningContent || "";
             tcs = retryResult.tcs;
@@ -1296,9 +1308,10 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     // is the same.
   } else {
     // Cold path: spawn a fresh subprocess + initialize + session/new.
-    // If a stale cached client exists (dead/different binPath/cwd), tear it
-    // down before replacing so we don't leak the old subprocess.
-    if (cached && !isOpencodeAcpClientAlive(cached)) {
+    // If a stale cached client exists (dead OR alive-but-not-reusable, e.g.
+    // different binPath/cwd or no session), tear it down before replacing so
+    // we don't leak the old subprocess.
+    if (cached && !canReuse) {
       try { await cached.stop(); } catch { /* ignore */ }
       setOpencodeAcpClient(null);
     }

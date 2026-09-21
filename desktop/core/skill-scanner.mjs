@@ -65,7 +65,7 @@ export function scanSkills() {
           description: meta.description || "",
           version: meta.version || "",
           triggers: Array.isArray(meta.triggers) ? meta.triggers : [],
-          allowedTools: Array.isArray(meta["allowed-tools"]) ? meta["allowed-tools"] : [],
+          allowedTools: Array.isArray(meta["allowed-tools"]) ? meta["allowed-tools"] : Array.isArray(meta.allowed_tools) ? meta.allowed_tools : [],
           path: skillPath,
           source: dir.includes(".agents") ? "agents" : "claude",
         });

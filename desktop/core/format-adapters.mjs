@@ -145,7 +145,9 @@ let _cachedToolKey = null;
  */
 export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   const planMode = getPlanMode();
-  const key = `${kbEnabled}|${webSearchEnabled}|${planMode}`;
+  // Include the MCP server signature so adding/removing/restarting/toggling
+  // a server busts the cache even when kb/web/plan flags are unchanged.
+  const key = `${kbEnabled}|${webSearchEnabled}|${planMode}|${mcpManager.serverSignature()}`;
   if (_cachedToolKey === key && _cachedToolDefs) {
     return _cachedToolDefs;
   }
@@ -237,7 +239,7 @@ export function toAnthropicMessages(msgs) {
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
+export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false) {
   const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
   /** @type {{ model: string, messages: any[], tools: any[], stream: boolean, max_tokens: number, reasoning_effort?: string }} */
@@ -295,8 +297,8 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
         const delta = j.choices?.[0]?.delta || {};
         finishReason = j.choices?.[0]?.finish_reason;
         if (j.usage) usage = j.usage; // last chunk carries cache metrics
-        if (delta.content) { content += delta.content; sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
-        if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
+        if (delta.content) { content += delta.content; if (!silent) sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
+        if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; if (!silent) sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
         if (debugReasoning) {
           // Log every field the delta exposes (once per unique shape) so we
           // can spot the field name MiniMax M3 / similar providers actually
@@ -348,7 +350,7 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true) {
+export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false) {
   const { messages, system } = toAnthropicMessages(msgs);
   // ── Cache the first message (first history entry) → caches system + entire history prefix ──
   // After reordering, messages[0] is the first history item — stable across turns.
@@ -447,7 +449,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
             // thinking block started
           } else if (j.type === "content_block_delta" && j.delta?.type === "text_delta") {
             content += j.delta.text;
-            sendToRenderer("stream:chunk", { text: j.delta.text, done: false });
+            if (!silent) sendToRenderer("stream:chunk", { text: j.delta.text, done: false });
           } else if (j.type === "content_block_delta" && j.delta?.type === "thinking_delta") {
             // BUGFIX: anthropicCall used to only forward `stream:reasoning` to
             // the renderer (so live chat could show thinking) but never
@@ -457,7 +459,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
             // when reloading historical conversations. Now we accumulate
             // alongside the live event so save path can persist it.
             reasoningContent += j.delta.thinking;
-            sendToRenderer("stream:reasoning", { text: j.delta.thinking });
+            if (!silent) sendToRenderer("stream:reasoning", { text: j.delta.thinking });
           } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
             tcAccum[j.index] = { id: j.content_block.id, name: j.content_block.name, input: "" };
           } else if (j.type === "content_block_delta" && j.delta?.type === "input_json_delta") {
