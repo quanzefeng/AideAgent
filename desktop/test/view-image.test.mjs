@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runTool } from "../core/tool-executor.mjs";
+import { runTool } from "../core/tool-executor.ts";
 
 const TEST_DIR = join(tmpdir(), `aideagent-view-image-${Date.now()}`);
 

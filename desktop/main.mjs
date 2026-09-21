@@ -16,7 +16,7 @@ import * as skills from "./skills-store.mjs";
 import * as kb from "./knowledge-store.mjs";
 
 import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.ts";
-import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
+import { registerIpcHandlers } from "./core/ipc-handlers.ts";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.mjs";
 import { initUpdateManager } from "./update-manager.mjs";
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractThinkBlocks } from "../core/agent-loop.mjs";
+import { extractThinkBlocks } from "../core/agent-loop.ts";
 
 describe("extractThinkBlocks", () => {
   it("returns empty for null/empty input", () => {

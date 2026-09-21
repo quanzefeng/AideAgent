@@ -10,7 +10,7 @@ import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
-import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
+import { agentLoop, resetPromptCache } from "./agent-loop.ts";
 import { scanSkills } from "./skill-scanner.ts";
 import { detectOpencode, listOpencodeModels } from "./opencode-detector.ts";
 import {

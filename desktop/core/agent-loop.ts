@@ -4,7 +4,7 @@ import sessionDb from "../session-db.mjs";
 import { buildSystemPrompt } from "./system-prompt.mjs";
 import { openaiCall, anthropicCall } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
-import { runTool } from "./tool-executor.mjs";
+import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";

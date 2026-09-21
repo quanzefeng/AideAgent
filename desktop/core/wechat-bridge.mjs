@@ -179,7 +179,7 @@ async function generateWxReply(prompt) {
   setHistory([]);
 
   // Lazy import to avoid circular dependency
-  const { agentLoop, resetPromptCache } = await import("./agent-loop.mjs");
+  const { agentLoop, resetPromptCache } = await import("./agent-loop.ts");
   try {
     const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], false, "", undefined, false, true, true);
     return result.text || "";

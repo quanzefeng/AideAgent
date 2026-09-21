@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { SHELL, IS_WINDOWS, DANGEROUS, PS_UTF8_PREFIX, PS_EXE } from "../core/state.ts";
-import { runShell, runPowerShell } from "../core/tool-executor.mjs";
+import { runShell, runPowerShell } from "../core/tool-executor.ts";
 
 describe("Cross-platform shell (state.mjs)", () => {
   describe("IS_WINDOWS / PS_EXE / SHELL constants", () => {

@@ -33,7 +33,7 @@ vi.mock("../core/format-adapters.ts", () => ({
 
 // Mock tool-executor.mjs
 const runToolMock = vi.fn();
-vi.mock("../core/tool-executor.mjs", () => ({
+vi.mock("../core/tool-executor.ts", () => ({
   runTool: (...args) => runToolMock(...args),
 }));
 

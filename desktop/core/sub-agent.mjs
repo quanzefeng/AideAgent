@@ -6,7 +6,7 @@
 
 import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer } from "./state.ts";
 import { getAllToolDefs } from "./format-adapters.ts";
-import { runTool } from "./tool-executor.mjs";
+import { runTool } from "./tool-executor.ts";
 
 // Hard cap on a single sub-agent LLM request so a hung API never blocks the
 // parent agent loop indefinitely (parent uses Promise.allSettled on sub-agents).
