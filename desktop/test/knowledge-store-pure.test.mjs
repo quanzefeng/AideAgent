@@ -34,7 +34,7 @@ import {
   isSafeVaultPath,
   setVault,
   getVault,
-} from "../knowledge-store.mjs";
+} from "../knowledge-store.ts";
 
 // ── isSafeVaultPath needs a vault set up; capture & restore state ──
 let tempVault;

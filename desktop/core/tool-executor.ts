@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { safeStorage } from "electron";
 import * as memory from "../memory-store.ts";
 import * as skills from "../skills-store.ts";
-import * as kb from "../knowledge-store.mjs";
+import * as kb from "../knowledge-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { scanSkills } from "./skill-scanner.ts";
 import { searchMeta } from "../search-engine/index.mjs";

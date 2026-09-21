@@ -13,7 +13,7 @@ import mcpManager from "./mcp-manager.ts";
 import lspManager from "./lsp-manager.ts";
 import sessionDb from "./session-db.ts";
 import * as skills from "./skills-store.ts";
-import * as kb from "./knowledge-store.mjs";
+import * as kb from "./knowledge-store.ts";
 
 import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.ts";
 import { registerIpcHandlers } from "./core/ipc-handlers.ts";
@@ -259,7 +259,7 @@ app.whenReady().then(async () => {
   });
   // KB: stop the file watcher
   addShutdownFn("kb-watcher", async () => {
-    const ks = await import("./knowledge-store.mjs");
+    const ks = await import("./knowledge-store.ts");
     try { ks.stopWatcher(); } catch { /* not watching — fine */ }
   });
   // KB SQLite: close the handle so WAL is checkpointed

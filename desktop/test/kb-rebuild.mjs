@@ -7,7 +7,7 @@
  *
  * Usage: node test/kb-rebuild.mjs
  */
-import { rebuildIndex, getStatus } from "../knowledge-store.mjs";
+import { rebuildIndex, getStatus } from "../knowledge-store.ts";
 
 console.log("Pre-rebuild status:");
 console.log(JSON.stringify(getStatus(), null, 2));

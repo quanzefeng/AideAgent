@@ -100,7 +100,7 @@ describe("KB RAG quality gate", () => {
     }
     cases = loadEvalSet(setPath);
     // Lazy-import the store so any init errors show a clear stack
-    ks = await import("../knowledge-store.mjs");
+    ks = await import("../knowledge-store.ts");
     const status = ks.getStatus();
     if (!status.vault) {
       skipReason = "Knowledge base vault not configured (run `kb setVault` in your app first)";

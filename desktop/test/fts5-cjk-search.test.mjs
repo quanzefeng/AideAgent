@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { setVault, getVault } from "../knowledge-store.mjs";
+import { setVault, getVault } from "../knowledge-store.ts";
 import { _setDbPath } from "../kb/db.mjs";
 import { ftsInsertChunk, ftsSearch } from "../kb/search.mjs";
 import { makeIsoKb } from "./helpers/iso-kb.mjs";

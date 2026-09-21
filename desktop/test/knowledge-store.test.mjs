@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getVault, getConfig, setConfig, getStatus } from "../knowledge-store.mjs";
+import { getVault, getConfig, setConfig, getStatus } from "../knowledge-store.ts";
 
 describe("Knowledge Store", () => {
   it("getVault returns string", () => {

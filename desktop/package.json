@@ -7,7 +7,7 @@
   "homepage": "https://github.com/quanzefeng/AideAgent",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "main.mjs",
+  "main": "main.ts",
   "scripts": {
     "start": "cross-env ELECTRON_DISABLE_SANDBOX=1 electron .",
     "dev": "electron . --dev",
@@ -15,8 +15,8 @@
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux deb AppImage",
     "dist:all": "electron-builder --win nsis --mac dmg --linux deb AppImage",
-    "lint": "eslint *.mjs core/*.mjs",
-    "lint:fix": "eslint --fix *.mjs core/*.mjs",
+    "lint": "eslint *.mjs *.ts core/*.ts",
+    "lint:fix": "eslint --fix *.mjs *.ts core/*.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -42,6 +42,7 @@
     ],
     "files": [
       "*.mjs",
+      "*.ts",
       "kb/**",
       "preload.cjs",
       "renderer/**",

@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import sessionDb from "../session-db.ts";
 import * as memory from "../memory-store.ts";
 import * as skills from "../skills-store.ts";
-import * as kb from "../knowledge-store.mjs";
+import * as kb from "../knowledge-store.ts";
 import * as prompts from "../prompts-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { agentLoop, resetPromptCache } from "./agent-loop.ts";

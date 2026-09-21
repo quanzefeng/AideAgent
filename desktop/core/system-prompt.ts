@@ -7,7 +7,7 @@ import os from "node:os";
 import sessionDb from "../session-db.ts";
 import * as memory from "../memory-store.ts";
 import * as skills from "../skills-store.ts";
-import * as kb from "../knowledge-store.mjs";
+import * as kb from "../knowledge-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { scanSkills } from "./skill-scanner.ts";
 import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.ts";
@@ -215,7 +215,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   let skillMatchWarning = null;
   if (userPrompt && userPrompt.trim() && filterSkills.length > 0) {
     try {
-      const { embedText } = await import("../knowledge-store.mjs");
+      const { embedText } = await import("../knowledge-store.ts");
       const matches = await skills.matchSkills(userPrompt, filterSkills, {
         embedFn: embedText,
         semanticThreshold: 0.5,

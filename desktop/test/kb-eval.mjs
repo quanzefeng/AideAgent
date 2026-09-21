@@ -123,7 +123,7 @@ function checkMustContain(results, mustContain, mustContainAny) {
 
 async function run({ topK, setPath, output, limit, verbose }) {
   // Lazy-import knowledge-store so any init errors show clear stack
-  const ks = await import("../knowledge-store.mjs");
+  const ks = await import("../knowledge-store.ts");
   const { search, getStatus } = ks;
 
   const status = getStatus();

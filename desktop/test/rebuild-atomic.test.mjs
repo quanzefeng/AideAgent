@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setVault, getVault } from "../knowledge-store.mjs";
+import { setVault, getVault } from "../knowledge-store.ts";
 import { rebuildIndex } from "../kb/indexer.mjs";
 import { _setDbPath, getDb } from "../kb/db.mjs";
 import { makeIsoKb } from "./helpers/iso-kb.mjs";
