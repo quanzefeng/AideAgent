@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateTokens, trimToBudget, estimateMessageTokens, compressContext, summarizeForContinuation } from "../core/token-budget.mjs";
+import { estimateTokens, trimToBudget, estimateMessageTokens, compressContext, summarizeForContinuation } from "../core/token-budget.ts";
 
 describe("Token Budget", () => {
   describe("estimateTokens", () => {

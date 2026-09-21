@@ -5,7 +5,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
-import { loadWorkspaceConfig, saveWorkspaceConfig } from "./workspace-config.mjs";
+import { loadWorkspaceConfig, saveWorkspaceConfig } from "./workspace-config.ts";
 
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = dirname(__dirname);

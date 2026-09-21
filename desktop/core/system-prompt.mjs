@@ -9,9 +9,9 @@ import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
-import { scanSkills } from "./skill-scanner.mjs";
-import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.mjs";
-import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN } from "./token-budget.mjs";
+import { scanSkills } from "./skill-scanner.ts";
+import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.ts";
+import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN } from "./token-budget.ts";
 
 /**
  * @param {string} ver
@@ -227,7 +227,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
       }
       // P1: surface match outcomes to the renderer so silent zero-match is visible
       try {
-        const { sendToRenderer } = await import("./state.mjs");
+        const { sendToRenderer } = await import("./state.ts");
         sendToRenderer("skill:match-result", {
           userPrompt: userPrompt.slice(0, 200),
           totalSkills: filterSkills.length,
@@ -242,7 +242,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
       console.error(msg);
       skillMatchWarning = `⚠️ 技能自动匹配失败 (${e.message})。LLM 将仅从全列表自选——可能错过相关技能。如持续失败请检查 embedding 服务（Ollama / 本地 MiniLM）。`;
       try {
-        const { sendToRenderer } = await import("./state.mjs");
+        const { sendToRenderer } = await import("./state.ts");
         sendToRenderer("skill:match-error", { error: e.message, userPrompt: userPrompt.slice(0, 200) });
       } catch { /* renderer may not be ready */ }
     }
@@ -407,7 +407,7 @@ Working directory: ${WORKSPACE}`;
   try {
     const episodicSearched = _episodicSearched;
     if (userPrompt && !episodicSearched) {
-      import("./state.mjs").then(m => m.setEpisodicSearched(true));
+      import("./state.ts").then(m => m.setEpisodicSearched(true));
       const results = sessionDb.searchMessages(userPrompt, 8);
       if (results.length > 0) {
         const lines = results.map(r =>

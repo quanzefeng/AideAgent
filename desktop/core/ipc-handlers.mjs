@@ -11,7 +11,7 @@ import * as kb from "../knowledge-store.mjs";
 import * as prompts from "../prompts-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { agentLoop, resetPromptCache } from "./agent-loop.mjs";
-import { scanSkills } from "./skill-scanner.mjs";
+import { scanSkills } from "./skill-scanner.ts";
 import { detectOpencode, listOpencodeModels } from "./opencode-detector.mjs";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
@@ -26,11 +26,11 @@ import {
   setLastApiConfig, getLastApiConfig,
   sendToRenderer, getRendererBuffer, clearRendererBuffer,
   getOpencodeAcpClient, setOpencodeAcpClient,
-} from "./state.mjs";
+} from "./state.ts";
 import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
-import { hasPersistedWorkspace } from "./workspace-config.mjs";
-import { setRendererSnapshot } from "./session-info.mjs";
-import { updateContextWindowForModel } from "./context-window.mjs";
+import { hasPersistedWorkspace } from "./workspace-config.ts";
+import { setRendererSnapshot } from "./session-info.ts";
+import { updateContextWindowForModel } from "./context-window.ts";
 
 /** @type {Map<string, AbortController>} */
 const _subAgentCtrls = _subAgentCtrlsRaw;

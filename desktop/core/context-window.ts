@@ -19,7 +19,7 @@
 // Native-only values (max_context_length, Ollama model_info) overstate what
 // the server actually allows, so they are capped at the old fixed window.
 
-import { DEFAULT_CONTEXT_WINDOW, setContextWindow } from "./state.mjs";
+import { DEFAULT_CONTEXT_WINDOW, setContextWindow } from "./state.ts";
 
 /** Native-only probe results never exceed the old fixed window for local servers. */
 const LOCAL_NATIVE_CAP = DEFAULT_CONTEXT_WINDOW;

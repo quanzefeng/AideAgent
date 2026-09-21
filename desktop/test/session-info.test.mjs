@@ -1,5 +1,5 @@
 // @ts-check
-// Tests for core/session-info.mjs.
+// Tests for core/session-info.ts.
 //
 // Strategy: inject a temp `homedir` + `userData` via _setTestPaths so we
 // can synthesize fake config files in a sandboxed temp dir. Verifies
@@ -47,7 +47,7 @@ beforeAll(async () => {
     profiles: { default: {}, strict: {} },
   }));
 
-  mod = await import("../core/session-info.mjs");
+  mod = await import("../core/session-info.ts");
   mod._setTestPaths({ homedir: tmpHome, userData: tmpUserData });
 });
 

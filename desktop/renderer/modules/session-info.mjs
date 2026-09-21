@@ -2,7 +2,7 @@
 //
 // Builds a complete snapshot of every user-visible setting stored in
 // localStorage, then pushes it to the main process via IPC. The main
-// process holds the latest snapshot in `core/session-info.mjs` and
+// process holds the latest snapshot in `core/session-info.ts` and
 // returns it (merged with file-based config) when the AI calls
 // `get_session_info`.
 //

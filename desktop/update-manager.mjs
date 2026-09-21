@@ -3,7 +3,7 @@
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
 import { ipcMain, app } from "electron";
-import { sendToRenderer } from "./core/state.mjs";
+import { sendToRenderer } from "./core/state.ts";
 
 let _mainWindow = null;
 let _checking = false;

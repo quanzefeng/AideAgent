@@ -15,7 +15,7 @@ import sessionDb from "./session-db.mjs";
 import * as skills from "./skills-store.mjs";
 import * as kb from "./knowledge-store.mjs";
 
-import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.mjs";
+import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.ts";
 import { registerIpcHandlers } from "./core/ipc-handlers.mjs";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.mjs";
 import { initUpdateManager } from "./update-manager.mjs";
@@ -251,7 +251,7 @@ app.whenReady().then(async () => {
   addShutdownFn("mcp", () => mcpManager.shutdown());
   // WeChat: abort the poll loop
   addShutdownFn("wechat", async () => {
-    const { getWxPollAbort } = await import("./core/state.mjs");
+    const { getWxPollAbort } = await import("./core/state.ts");
     const c = /** @type {AbortController | null | undefined} */ (getWxPollAbort());
     if (c) {
       try { c.abort(); } catch { /* already aborted */ }
@@ -274,7 +274,7 @@ app.whenReady().then(async () => {
   });
   // OpenCode ACP: stop the cached subprocess if any
   addShutdownFn("opencode-acp", async () => {
-    const { getOpencodeAcpClient, setOpencodeAcpClient } = await import("./core/state.mjs");
+    const { getOpencodeAcpClient, setOpencodeAcpClient } = await import("./core/state.ts");
     const c = getOpencodeAcpClient();
     if (c) {
       try { await c.stop(); } catch { /* already dead */ }

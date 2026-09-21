@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFrontMatter } from "../core/skill-scanner.mjs";
+import { parseFrontMatter } from "../core/skill-scanner.ts";
 
 describe("Skill Scanner", () => {
   describe("parseFrontMatter", () => {

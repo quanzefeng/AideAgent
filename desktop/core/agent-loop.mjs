@@ -3,9 +3,9 @@
 import sessionDb from "../session-db.mjs";
 import { buildSystemPrompt } from "./system-prompt.mjs";
 import { openaiCall, anthropicCall } from "./format-adapters.mjs";
-import { selectRelevantMemories } from "./memory-selection.mjs";
+import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.mjs";
-import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.mjs";
+import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
 import * as hookManager from "./hook-manager.mjs";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
@@ -23,7 +23,7 @@ import {
   resetSurfacedMemories, bumpTurnCounter,
   getOpencodeAcpClient, setOpencodeAcpClient, isOpencodeAcpClientAlive,
   detectModelContextWindow, setContextWindow,
-} from "./state.mjs";
+} from "./state.ts";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
 /** @type {string | null} */

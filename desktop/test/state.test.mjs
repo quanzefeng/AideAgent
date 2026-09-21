@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { genId, DANGEROUS, GIT_SAFE, GH_SAFE, PLAN_MODE_READONLY, SUB_AGENT_TOOL_NAMES, MAX_TURNS, CONTEXT_WINDOW, IS_WINDOWS } from "../core/state.mjs";
+import { genId, DANGEROUS, GIT_SAFE, GH_SAFE, PLAN_MODE_READONLY, SUB_AGENT_TOOL_NAMES, MAX_TURNS, CONTEXT_WINDOW, IS_WINDOWS } from "../core/state.ts";
 
 describe("State", () => {
   describe("genId", () => {

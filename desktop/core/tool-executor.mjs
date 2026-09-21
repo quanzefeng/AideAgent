@@ -12,7 +12,7 @@ import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
-import { scanSkills } from "./skill-scanner.mjs";
+import { scanSkills } from "./skill-scanner.ts";
 import { searchMeta } from "../search-engine/index.mjs";
 import * as hookManager from "./hook-manager.mjs";
 import sessionDb from "../session-db.mjs";
@@ -22,7 +22,7 @@ import {
   taskStore, getTodoList, setTodoList,
   _askResolvers, nextAskId,
   getLastApiConfig, getSessionId,
-} from "./state.mjs";
+} from "./state.ts";
 
 /** Persist current task/todo state to the session DB (P2). Fire-and-forget. */
 function persistSessionState() {
@@ -600,7 +600,7 @@ export async function runTool(tc) {
       // workspace-config.json, ~/.aideagent/skills/, ~/.aideagent/memory/).
       // Optional `keys` arg filters top-level sections for narrow questions.
       try {
-        const { getSessionInfo } = await import("./session-info.mjs");
+        const { getSessionInfo } = await import("./session-info.ts");
         return getSessionInfo(args || {});
       } catch (e) { return { error: e.message }; }
     }

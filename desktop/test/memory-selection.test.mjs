@@ -10,7 +10,7 @@
  * and `balanceByType` helpers indirectly via `selectRelevantMemories` with
  * `candidates.length <= 8` (fast path) and a fake LLM (mocked fetch).
  *
- * NOTE: selectRelevantMemories imports from `core/state.mjs` which uses
+ * NOTE: selectRelevantMemories imports from `core/state.ts` which uses
  * `_currentTurn` and `_surfacedMemories`. We reset both between tests so
  * the order in this file doesn't affect outcomes.
  */
@@ -26,8 +26,8 @@ import {
   markSurfaced, isSurfaced, pruneSurfacedMemories, getCurrentTurn,
   bumpTurnCounter, resetSurfacedMemories, resetTurnCounter,
   getSurfacedMemoriesSnapshot,
-} from "../core/state.mjs";
-import { selectRelevantMemories } from "../core/memory-selection.mjs";
+} from "../core/state.ts";
+import { selectRelevantMemories } from "../core/memory-selection.ts";
 import * as memory from "../memory-store.mjs";
 
 // Mock listMemories so we can control the candidate pool without polluting

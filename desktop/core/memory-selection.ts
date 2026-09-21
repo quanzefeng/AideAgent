@@ -1,7 +1,7 @@
 // ── AI Semantic Memory Selection ────────────────────────────
 
 import * as memory from "../memory-store.mjs";
-import { markSurfaced, isSurfaced, pruneSurfacedMemories, getCurrentTurn } from "./state.mjs";
+import { markSurfaced, isSurfaced, pruneSurfacedMemories, getCurrentTurn } from "./state.ts";
 
 // P3方案3(b): hard limits on user / feedback inclusion in each selection.
 // Without this, the LLM-side picker sometimes skips user preferences entirely

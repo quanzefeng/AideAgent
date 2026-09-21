@@ -15,8 +15,8 @@ import {
   getHistory, setHistory,
   getSessionId, setSessionId,
   getAbortCtrl, setAbortCtrl,
-} from "./state.mjs";
-import { updateContextWindowForModel } from "./context-window.mjs";
+} from "./state.ts";
+import { updateContextWindowForModel } from "./context-window.ts";
 
 function randomWxUin() {
   return Buffer.from(String(Math.floor(Math.random() * 4294967296)), "utf-8").toString("base64");

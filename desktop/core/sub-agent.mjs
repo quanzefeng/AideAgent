@@ -4,7 +4,7 @@
  * @typedef {{ apiKey?: string, apiUrl?: string, model?: string, apiFormat?: string }} ApiConfig
  */
 
-import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer } from "./state.mjs";
+import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer } from "./state.ts";
 import { getAllToolDefs } from "./format-adapters.mjs";
 import { runTool } from "./tool-executor.mjs";
 

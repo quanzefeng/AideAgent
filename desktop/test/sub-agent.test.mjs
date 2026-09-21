@@ -16,7 +16,7 @@ const stateMock = {
   getLastApiConfig: vi.fn(),
   sendToRenderer: vi.fn(),
 };
-vi.mock("../core/state.mjs", () => stateMock);
+vi.mock("../core/state.ts", () => stateMock);
 
 // Mock format-adapters.mjs
 vi.mock("../core/format-adapters.mjs", () => ({

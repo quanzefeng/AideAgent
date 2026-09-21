@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { getWorkspace } from "./core/state.mjs";
+import { getWorkspace } from "./core/state.ts";
 
 /**
  * @typedef {Object} LangServerConfig

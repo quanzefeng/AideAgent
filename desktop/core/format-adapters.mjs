@@ -2,7 +2,7 @@
 
 import mcpManager from "../mcp-manager.mjs";
 import { TOOL_DEFS } from "./tool-definitions.mjs";
-import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.mjs";
+import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.ts";
 
 // ── API retry helpers (rate limit / transient 5xx) ────────────
 
