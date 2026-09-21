@@ -159,7 +159,7 @@ export function getSessionId() { return sessionId; }
  * The cached instance is only "alive" when `!_closed && proc && !proc.killed`.
  * Consumers must check `isOpencodeAcpClientAlive(cached)` before reuse.
  *
- * @type {import("./opencode-acp-client.mjs").OpencodeAcpClient|null}
+ * @type {import("./opencode-acp-client.ts").OpencodeAcpClient|null}
  */
 export let opencodeAcpClient = null;
 export function setOpencodeAcpClient(c) { opencodeAcpClient = c; }

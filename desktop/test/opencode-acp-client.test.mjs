@@ -1,5 +1,5 @@
 // @ts-check
-// Unit tests for core/opencode-acp-client.mjs.
+// Unit tests for core/opencode-acp-client.ts.
 //
 // These tests spawn test/fixtures/fake-acp-server.mjs as a child process and
 // drive the client through real JSON-RPC traffic over stdio. The fake server
@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { OpencodeAcpClient } from "../core/opencode-acp-client.mjs";
+import { OpencodeAcpClient } from "../core/opencode-acp-client.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

@@ -14,7 +14,7 @@ import * as kb from "../knowledge-store.mjs";
 import mcpManager from "../mcp-manager.mjs";
 import { scanSkills } from "./skill-scanner.ts";
 import { searchMeta } from "../search-engine/index.mjs";
-import * as hookManager from "./hook-manager.mjs";
+import * as hookManager from "./hook-manager.ts";
 import sessionDb from "../session-db.mjs";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
@@ -178,7 +178,7 @@ function isSafeUrl(u) {
 let _runSubAgent = null;
 async function getRunSubAgent() {
   if (!_runSubAgent) {
-    const mod = await import("./sub-agent.mjs");
+    const mod = await import("./sub-agent.ts");
     _runSubAgent = mod.runSubAgent;
   }
   return _runSubAgent;
@@ -187,7 +187,7 @@ async function getRunSubAgent() {
 let _loadWxConfig = null;
 async function getLoadWxConfig() {
   if (!_loadWxConfig) {
-    const mod = await import("./wechat-bridge.mjs");
+    const mod = await import("./wechat-bridge.ts");
     _loadWxConfig = mod.loadWxConfig;
   }
   return _loadWxConfig;
@@ -196,7 +196,7 @@ async function getLoadWxConfig() {
 let _bumpVersion = null;
 async function getBumpVersion() {
   if (!_bumpVersion) {
-    const mod = await import("./system-prompt.mjs");
+    const mod = await import("./system-prompt.ts");
     _bumpVersion = mod.bumpVersion;
   }
   return _bumpVersion;

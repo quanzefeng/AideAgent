@@ -113,10 +113,10 @@ afterEach(() => {
 // Tests
 // ─────────────────────────────────────────────────────────────
 
-describe("sub-agent.mjs", () => {
+describe("sub-agent.ts", () => {
   it("returns early when API is not configured", async () => {
     stateMock.getLastApiConfig.mockReturnValue({});
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("test", "do something");
     expect(result.text).toContain("子代理不可用");
     expect(fetchCalls).toHaveLength(0);
@@ -135,7 +135,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("greet", "say hi");
 
     expect(result.text).toBe("Hello world");
@@ -164,7 +164,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("greet", "say hi");
 
     expect(result.text).toBe("Anthropic says hi");
@@ -211,7 +211,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("read", "read /tmp/x.txt");
 
     expect(runToolMock).toHaveBeenCalledTimes(1);
@@ -248,7 +248,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("test", "do bad thing");
 
     expect(runToolMock).not.toHaveBeenCalled();
@@ -280,7 +280,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("search", "search KB for test");
 
     expect(runToolMock).toHaveBeenCalledTimes(1);
@@ -310,7 +310,7 @@ describe("sub-agent.mjs", () => {
     runToolMock.mockResolvedValue({ ok: true });
     for (let i = 0; i < 12; i++) mockFetchNext([infiniteToolResponse()]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("loop", "loop forever");
 
     // After 12 turns with persistent tool_calls, the loop exits (no tcs OR turns >= 12)
@@ -335,7 +335,7 @@ describe("sub-agent.mjs", () => {
     });
     fetchQueue.push({ ok: true, status: 200, body: slowBody, text: async () => "" });
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const promise = runSubAgent("slow", "test slow");
 
     // Wait a tick, then abort the active sub-agent
@@ -359,7 +359,7 @@ describe("sub-agent.mjs", () => {
       text: async () => "Invalid API key",
     });
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("err", "do thing");
 
     expect(result.text).toContain("子代理错误");
@@ -391,7 +391,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     await runSubAgent("big", "read big file");
 
     const lastCall = fetchCalls[1];
@@ -416,7 +416,7 @@ describe("sub-agent.mjs", () => {
       ]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     await runSubAgent("test", "hello");
 
     const body = JSON.parse(fetchCalls[0].init.body);
@@ -434,7 +434,7 @@ describe("sub-agent.mjs", () => {
       sseResponse([openaiSseChunk({ content: "ok" }), openaiDone()]),
     ]);
 
-    const { runSubAgent } = await import("../core/sub-agent.mjs");
+    const { runSubAgent } = await import("../core/sub-agent.ts");
     await runSubAgent("desc", "prompt", "my_custom_id");
 
     expect(stateMock.sendToRenderer).toHaveBeenCalledWith(

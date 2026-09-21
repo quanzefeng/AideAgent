@@ -1,12 +1,12 @@
 // ── Agent Loop — Main conversation loop + session compression ──
 
 import sessionDb from "../session-db.mjs";
-import { buildSystemPrompt } from "./system-prompt.mjs";
+import { buildSystemPrompt } from "./system-prompt.ts";
 import { openaiCall, anthropicCall } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
-import * as hookManager from "./hook-manager.mjs";
+import * as hookManager from "./hook-manager.ts";
 import * as memory from "../memory-store.mjs";
 import * as skills from "../skills-store.mjs";
 import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
@@ -1168,7 +1168,7 @@ export function resetPromptCache() {
  * @returns {Promise<{ text: string }>}
  */
 async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false, opencodeModelId }) {
-  const { OpencodeAcpClient } = await import("./opencode-acp-client.mjs");
+  const { OpencodeAcpClient } = await import("./opencode-acp-client.ts");
   const { detectOpencode } = await import("./opencode-detector.ts");
 
   // 1. Locate the opencode binary. If it's not installed, surface as a stream
@@ -1294,7 +1294,7 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     && cached.cwd === targetCwd
     && cached._sessionId;
 
-  /** @type {import("./opencode-acp-client.mjs").OpencodeAcpClient} */
+  /** @type {import("./opencode-acp-client.ts").OpencodeAcpClient} */
   let client;
   let clientOwnedByCache = false;  // true if we created a new client this turn
 

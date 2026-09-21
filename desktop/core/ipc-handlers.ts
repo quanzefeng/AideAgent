@@ -27,7 +27,7 @@ import {
   sendToRenderer, getRendererBuffer, clearRendererBuffer,
   getOpencodeAcpClient, setOpencodeAcpClient,
 } from "./state.ts";
-import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.mjs";
+import { loadPromptProfiles, savePromptProfiles, DEFAULT_PROMPT } from "./system-prompt.ts";
 import { hasPersistedWorkspace } from "./workspace-config.ts";
 import { setRendererSnapshot } from "./session-info.ts";
 import { updateContextWindowForModel } from "./context-window.ts";
