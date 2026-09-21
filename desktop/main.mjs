@@ -9,16 +9,16 @@ const _aideagentInternal = (/** @type {any} */ (globalThis)).__aideagentInternal
 
 import { app, BrowserWindow, session, Menu, nativeImage } from "electron";
 import { join } from "node:path";
-import mcpManager from "./mcp-manager.mjs";
-import lspManager from "./lsp-manager.mjs";
-import sessionDb from "./session-db.mjs";
-import * as skills from "./skills-store.mjs";
+import mcpManager from "./mcp-manager.ts";
+import lspManager from "./lsp-manager.ts";
+import sessionDb from "./session-db.ts";
+import * as skills from "./skills-store.ts";
 import * as kb from "./knowledge-store.mjs";
 
 import { setMainWindow, PROJECT_ROOT, initWorkspaceFromConfig, sendToRenderer, getMainWindow } from "./core/state.ts";
 import { registerIpcHandlers } from "./core/ipc-handlers.ts";
 import { registerWechatIpc, autoStartWechat } from "./core/wechat-bridge.ts";
-import { initUpdateManager } from "./update-manager.mjs";
+import { initUpdateManager } from "./update-manager.ts";
 
 const isDev = process.argv.includes("--dev");
 
@@ -269,7 +269,7 @@ app.whenReady().then(async () => {
   });
   // Memory: close FTS DB
   addShutdownFn("memory-db", async () => {
-    const ms = await import("./memory-store.mjs");
+    const ms = await import("./memory-store.ts");
     try { ms.closeFtsDb(); } catch { /* ignored */ }
   });
   // OpenCode ACP: stop the cached subprocess if any

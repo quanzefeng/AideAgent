@@ -1,14 +1,14 @@
 // ── Agent Loop — Main conversation loop + session compression ──
 
-import sessionDb from "../session-db.mjs";
+import sessionDb from "../session-db.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { openaiCall, anthropicCall } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
 import * as hookManager from "./hook-manager.ts";
-import * as memory from "../memory-store.mjs";
-import * as skills from "../skills-store.mjs";
+import * as memory from "../memory-store.ts";
+import * as skills from "../skills-store.ts";
 import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";

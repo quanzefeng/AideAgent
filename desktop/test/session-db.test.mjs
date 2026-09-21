@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import sessionDb from "../session-db.mjs";
+import sessionDb from "../session-db.ts";
 
 describe("Session DB", () => {
   let createdId;

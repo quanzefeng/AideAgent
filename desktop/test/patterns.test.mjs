@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { detectPatterns } from "../skills-store.mjs";
+import { detectPatterns } from "../skills-store.ts";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "path";
 import { homedir } from "os";

@@ -1,6 +1,6 @@
 // ── Format Adapters — OpenAI/Anthropic API calls ────────────
 
-import mcpManager from "../mcp-manager.mjs";
+import mcpManager from "../mcp-manager.ts";
 import { TOOL_DEFS } from "./tool-definitions.ts";
 import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.ts";
 

@@ -11,7 +11,7 @@ import {
   MAX_BODY_BYTES,
   MAX_TITLE_LENGTH,
   getPromptsDir,
-} from "../prompts-store.mjs";
+} from "../prompts-store.ts";
 
 // ── Test isolation strategy ─────────────────────────────────
 //

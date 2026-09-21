@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from "vitest";
-import sessionDb from "../session-db.mjs";
-import * as memory from "../memory-store.mjs";
-import * as skills from "../skills-store.mjs";
+import sessionDb from "../session-db.ts";
+import * as memory from "../memory-store.ts";
+import * as skills from "../skills-store.ts";
 
 describe("Session DB E2E", () => {
   let sessionId;

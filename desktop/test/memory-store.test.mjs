@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, searchMemory, purgeByType, tokenizeForMemory, checkDuplicate } from "../memory-store.mjs";
+import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, searchMemory, purgeByType, tokenizeForMemory, checkDuplicate } from "../memory-store.ts";
 
 describe("Memory Store", () => {
   let createdFilename;

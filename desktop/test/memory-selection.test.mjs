@@ -28,7 +28,7 @@ import {
   getSurfacedMemoriesSnapshot,
 } from "../core/state.ts";
 import { selectRelevantMemories } from "../core/memory-selection.ts";
-import * as memory from "../memory-store.mjs";
+import * as memory from "../memory-store.ts";
 
 // Mock listMemories so we can control the candidate pool without polluting
 // the user's real memory store (which has 30+ project memories on disk).

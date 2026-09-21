@@ -8,14 +8,14 @@ import { homedir } from "node:os";
 import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { safeStorage } from "electron";
-import * as memory from "../memory-store.mjs";
-import * as skills from "../skills-store.mjs";
+import * as memory from "../memory-store.ts";
+import * as skills from "../skills-store.ts";
 import * as kb from "../knowledge-store.mjs";
-import mcpManager from "../mcp-manager.mjs";
+import mcpManager from "../mcp-manager.ts";
 import { scanSkills } from "./skill-scanner.ts";
 import { searchMeta } from "../search-engine/index.mjs";
 import * as hookManager from "./hook-manager.ts";
-import sessionDb from "../session-db.mjs";
+import sessionDb from "../session-db.ts";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
@@ -1120,7 +1120,7 @@ export async function runTool(tc) {
     }
     case "lsp": {
       try {
-        const { default: lspManager } = await import("../lsp-manager.mjs");
+        const { default: lspManager } = await import("../lsp-manager.ts");
         const op = args.operation;
         let result;
         if (op === "goToDefinition") result = await lspManager.goToDefinition(args.filePath, args.line, args.character);

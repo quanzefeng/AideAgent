@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listSkills, saveSkill, loadSkill, deleteSkill, setSkillStatus, getUsageScore, buildSkillsContext, getCuratorStatus, searchSkills, translateDisplayName, heuristicDisplayName, setTranslation, getMissingTranslations } from "../skills-store.mjs";
+import { listSkills, saveSkill, loadSkill, deleteSkill, setSkillStatus, getUsageScore, buildSkillsContext, getCuratorStatus, searchSkills, translateDisplayName, heuristicDisplayName, setTranslation, getMissingTranslations } from "../skills-store.ts";
 
 describe("Skills Store", () => {
   let testSkillName = "test-skill-vitest";

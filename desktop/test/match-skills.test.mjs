@@ -1,6 +1,6 @@
 // ── Unit tests for matchSkills() — Phase 2 trigger + embedding hybrid ──
 import { describe, it, expect } from "vitest";
-import { matchSkills } from "../skills-store.mjs";
+import { matchSkills } from "../skills-store.ts";
 
 describe("matchSkills (hybrid trigger + embedding)", () => {
   // Sample skill set covering trigger variety

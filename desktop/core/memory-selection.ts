@@ -1,6 +1,6 @@
 // ── AI Semantic Memory Selection ────────────────────────────
 
-import * as memory from "../memory-store.mjs";
+import * as memory from "../memory-store.ts";
 import { markSurfaced, isSurfaced, pruneSurfacedMemories, getCurrentTurn } from "./state.ts";
 
 // P3方案3(b): hard limits on user / feedback inclusion in each selection.
