@@ -3,6 +3,15 @@
 import * as memory from "../memory-store.ts";
 import { markSurfaced, isSurfaced, pruneSurfacedMemories, getCurrentTurn } from "./state.ts";
 
+interface MemoryEntry {
+  filename: string;
+  name: string;
+  description: string;
+  type: string;
+  body: string;
+  mtimeMs: number;
+}
+
 // P3方案3(b): hard limits on user / feedback inclusion in each selection.
 // Without this, the LLM-side picker sometimes skips user preferences entirely
 // in favor of project context, leading to the Agent "forgetting" user
@@ -12,14 +21,7 @@ const HARD_USER_LIMIT = 1;
 const HARD_FEEDBACK_LIMIT = 2;
 const HARD_PROJECT_LIMIT = 8 - HARD_USER_LIMIT - HARD_FEEDBACK_LIMIT; // 5
 
-/**
- * @param {string} query
- * @param {string} apiKey
- * @param {string} apiUrl
- * @param {string} model
- * @param {string} apiFormat
- */
-export async function selectRelevantMemories(query, apiKey, apiUrl, model, apiFormat) {
+export async function selectRelevantMemories(query: string, apiKey: string, apiUrl: string, model: string, apiFormat: string) {
   const memories = memory.listMemories();
   if (memories.length === 0) return "";
 
@@ -74,8 +76,7 @@ ${manifest}
 Return: {"selected_memories": ["file1.md", "file2.md", "file3.md"]}`;
 
   try {
-    /** @type {{ model: string, messages: { role: string, content: string }[], max_tokens: number, stream: boolean, system?: string }} */
-    const body = {
+    const body: Record<string, any> = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: selectPrompt }],
       max_tokens: 256,
@@ -84,8 +85,7 @@ Return: {"selected_memories": ["file1.md", "file2.md", "file3.md"]}`;
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
-    /** @type {Record<string, string>} */
-    const headers = apiFormat === "anthropic"
+    const headers: Record<string, string> = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 
@@ -101,15 +101,14 @@ Return: {"selected_memories": ["file1.md", "file2.md", "file3.md"]}`;
     });
     if (res.ok) {
       const data = await res.json();
-      /** @type {string} */
-      const selectedText = apiFormat === "anthropic"
+      const selectedText: string = apiFormat === "anthropic"
         ? (data.content?.[0]?.text || "")
         : (data.choices?.[0]?.message?.content || "");
 
-      let selectedNames = [];
+      let selectedNames: string[] = [];
       try {
-        const parsed = JSON.parse(selectedText);
-        selectedNames = (/** @type {string[]} */ (parsed.selected_memories || parsed || [])).map(s => String(s).trim().replace(/\.md$/, ""));
+        const parsed: any = JSON.parse(selectedText);
+        selectedNames = ((parsed.selected_memories || parsed || []) as string[]).map(s => String(s).trim().replace(/\.md$/, ""));
       } catch {
         selectedNames = selectedText.split(/[,，\n]/).map(s => s.trim().replace(/\.md$/, "")).filter(Boolean);
       }
@@ -133,7 +132,7 @@ Return: {"selected_memories": ["file1.md", "file2.md", "file3.md"]}`;
         return renderMemories(final);
       }
     }
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[memory] semantic selection failed:", e.message);
   }
 
@@ -143,12 +142,8 @@ Return: {"selected_memories": ["file1.md", "file2.md", "file3.md"]}`;
   return renderMemories(fallback);
 }
 
-/**
- * Order memories so user > feedback > project > reference, then
- * keep the first `limit`. Preserves mtime-desc order within each bucket.
- */
-function balanceByType(candidates, limit) {
-  const byType = { user: [], feedback: [], project: [], reference: [] };
+function balanceByType(candidates: MemoryEntry[], limit: number): MemoryEntry[] {
+  const byType: Record<string, MemoryEntry[]> = { user: [], feedback: [], project: [], reference: [] };
   for (const m of candidates) {
     if (byType[m.type]) byType[m.type].push(m);
     else byType.project.push(m); // unknown types count as project
@@ -157,13 +152,7 @@ function balanceByType(candidates, limit) {
   return ordered.slice(0, limit);
 }
 
-/**
- * P3方案3(b): enforce hard caps on user/feedback/project types in the
- * final selection. LLM often skips user/feedback when there are many
- * project memories to choose from — this guarantees at least the cap
- * is met (when available) by swapping out lowest-priority project entries.
- */
-function enforceTypeCaps(llmPicked, allCandidates, totalLimit) {
+function enforceTypeCaps(llmPicked: MemoryEntry[], allCandidates: MemoryEntry[], totalLimit: number): MemoryEntry[] {
   const picked = [...llmPicked];
   const pickedSet = new Set(picked.map(m => m.filename));
 
@@ -201,7 +190,7 @@ function enforceTypeCaps(llmPicked, allCandidates, totalLimit) {
       .filter(x => x.m.type === "project")
       .sort((a, b) => a.m.mtimeMs - b.m.mtimeMs); // oldest first → drop first
     let overflow = picked.length - totalLimit;
-    const dropIdx = new Set();
+    const dropIdx = new Set<number>();
     for (const x of projects) {
       if (overflow <= 0) break;
       dropIdx.add(x.i);
@@ -212,7 +201,7 @@ function enforceTypeCaps(llmPicked, allCandidates, totalLimit) {
   return picked.slice(0, totalLimit);
 }
 
-function renderMemories(memories) {
+function renderMemories(memories: MemoryEntry[]): string {
   return memories.map(m => {
     const ageNote = memory.memoryFreshnessNote(m.mtimeMs);
     return `\n### [${m.type}] ${m.name}${ageNote}\n${m.body}`;

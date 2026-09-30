@@ -27,7 +27,7 @@ declare global {
     registerLanguage(name: string, language: unknown): void;
   };
 
-  /** KaTeX — math rendering. Loaded from CDN as global `katex`. */
+  /** KaTeX — math rendering. Loaded from renderer/vendor/katex.min.js as global `katex`. */
   const katex: {
     render(expression: string, element: HTMLElement, options?: object): void;
     renderToString(expression: string, options?: object): string;
@@ -98,8 +98,8 @@ declare global {
       kbGetVault(): Promise<string>;
       kbSetVault(path: string): Promise<void>;
       kbPickVault(): Promise<{ canceled?: boolean; ok?: boolean; vault?: string; error?: string }>;
-      kbConfig(): Promise<{ embeddingProvider: string; ollamaEmbedModel: string; maxNotes: number; maxChars: number; maxBodyChars: number }>;
-      kbSetConfig(cfg: Partial<{ embeddingProvider: string; ollamaEmbedModel: string; maxNotes: number; maxChars: number; maxBodyChars: number }>): Promise<void>;
+      kbConfig(): Promise<{ embeddingProvider: string; ollamaEmbedModel: string; maxNotes: number; maxChars: number; maxBodyChars: number; enabledFormats?: Record<string, boolean> }>;
+      kbSetConfig(cfg: Partial<{ embeddingProvider: string; ollamaEmbedModel: string; maxNotes: number; maxChars: number; maxBodyChars: number; enabledFormats?: Record<string, boolean> }>): Promise<void>;
       kbStatus(): Promise<{ noteCount: number; embeddedCount: number; autoDetectedMaxBodyChars: number }>;
       kbScan(): Promise<{ indexed: number; embedded: number; error?: string }>;
       kbSearch(query: string, limit: number): Promise<Array<{ title?: string; rel_path: string; snippet?: string }>>;
@@ -123,6 +123,7 @@ declare global {
       memoryRead(filename: string): Promise<string>;
       memoryReadOne(filename: string): Promise<{ filename: string; name: string; description: string; type: string; body: string } | null>;
       memoryCreate(name: string, description: string, type: string, body: string): Promise<{ success: boolean; error?: string }>;
+      memoryPurgeByType(type: string): Promise<{ ok: boolean; removed?: number; error?: string }>;
 
       // Skills
       listSkills(): Promise<Array<{ name: string; source?: string; version?: string; triggers?: string[]; allowedTools?: string[]; body?: string }>>;
@@ -133,6 +134,7 @@ declare global {
       skillsSetStatus(name: string, status: string): Promise<void>;
       skillsDelete(name: string): Promise<{ success: boolean; error?: string }>;
       skillsDetectPatterns(): Promise<Array<{ phrase: string; count: number }>>;
+      onPatternsDetected(cb: (...args: any[]) => void): void;
       skillsCuratorStatus(): Promise<{ activeSkills: number; archivedSkills: number; lastRun?: string; archiveAfterDays?: number; pendingMerges?: any[] }>;
       skillsCuratorConfig(cfg: { archiveAfterDays: number }): Promise<{ success: boolean; error?: string }>;
       skillsCuratorRun(): Promise<{ archived: number; dupes: number }>;
@@ -144,8 +146,19 @@ declare global {
       deletePromptProfile(id: string): Promise<{ success: boolean; error?: string }>;
       activatePromptProfile(id: string): Promise<void>;
 
+      // Prompt content files (prompts-settings / prompts-modal)
+      promptsList(): Promise<Array<{ id: string; title?: string; body?: string; created?: string; updated?: string; filename?: string; mtimeMs?: number }>>;
+      promptsRead(id: string): Promise<any>;
+      promptsCreate(input: { title: string; body: string }): Promise<{ ok: boolean; error?: string }>;
+      promptsUpdate(id: string, input: { title: string; body: string }): Promise<{ ok: boolean; error?: string }>;
+      promptsDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+
+      // Session info
+      sessionInfoUpdate(snapshot: any): void;
+
       // App-level
       appGetApiConfig(): Promise<any>;
+      fetchModels(baseUrl: string, apiKey: string): Promise<{ models: Array<{ id: string; label: string }>; errors: string[] }>;
       appSaveApiConfig(cfg: any): Promise<{ success: boolean; error?: string }>;
       appGetAvatarConfig(): Promise<any>;
       appSaveAvatarConfig(cfg: any): Promise<void>;
@@ -188,6 +201,10 @@ declare global {
       settingsReset(): Promise<void>;
       exportDiagnostics(): Promise<{ success: boolean; path?: string; error?: string }>;
     };
+    __refreshOpencodeModels?: () => void;
+    __aideagentSessionInfoHookInstalled?: boolean;
+    __aideagentSkillListenerAttached?: boolean;
+    __aideagentTranslationListenerAttached?: boolean;
   }
 }
 

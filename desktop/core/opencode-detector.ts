@@ -33,11 +33,11 @@ const VERSION_TIMEOUT_MS = 3000;
  * preserved even when other env vars aren't. We try all candidates and pick
  * the first non-empty one.
  */
-function resolveHome() {
+function resolveHome(): string {
   if (IS_WIN) {
     return process.env.USERPROFILE
       || process.env.HOME
-      || process.env.HOMEDRIVE + process.env.HOMEPATH
+      || (process.env.HOMEDRIVE || "") + (process.env.HOMEPATH || "")
       || "";
   }
   return process.env.HOME
@@ -120,7 +120,7 @@ function candidatePaths() {
  * @param {string[]} [args]
  * @param {number} [timeoutMs]
  */
-async function runCmd(cmd, args = [], timeoutMs = DETECT_TIMEOUT_MS) {
+async function runCmd(cmd: string, args: string[] = [], timeoutMs: number = DETECT_TIMEOUT_MS): Promise<string | null> {
   try {
     const { stdout } = await execFileP(cmd, args, {
       encoding: "utf-8",
@@ -135,33 +135,16 @@ async function runCmd(cmd, args = [], timeoutMs = DETECT_TIMEOUT_MS) {
   }
 }
 
-/**
- * Try to actually run `<path> --version`. Returns the version string on
- * success, null on any failure (ENOENT, exec format error, timeout, …).
- * This is the source of truth for "available" — `existsSync` is unreliable
- * on Windows because of PATHEXT / extensionless shims.
- * @param {string} binPath
- */
-async function tryRun(binPath) {
+async function tryRun(binPath: string): Promise<string | null> {
   const out = await runCmd(binPath, ["--version"], VERSION_TIMEOUT_MS);
   if (!out) return null;
   const m = out.match(/(\d+\.\d+\.\d+[^\s]*)/);
   return m ? m[1] : out.slice(0, 40);
 }
 
-/**
- * Reorder PATH candidates to prefer executable extensions (`.cmd`, `.exe`,
- * `.bat`, `.ps1`) over extensionless entries. On Windows, `where.exe` may
- * list the extensionless shim before the real `.cmd` — but Node's
- * `child_process.spawn` cannot directly execute an extensionless file via
- * CreateProcessW. We need to return a path that spawn() can launch WITHOUT
- * requiring `shell: true` everywhere downstream.
- *
- * This is a string-level reorder, no I/O — `tryRun` still validates each one.
- */
-function prioritizeExecutableExtensions(lines) {
+function prioritizeExecutableExtensions(lines: string[]): string[] {
   if (!IS_WIN) return lines;
-  const extRank = (p) => {
+  const extRank = (p: string) => {
     const lower = p.toLowerCase();
     if (lower.endsWith(".cmd")) return 0;   // npm/pnpm/yarn shims
     if (lower.endsWith(".exe")) return 1;   // scoop / installer / custom
@@ -301,10 +284,9 @@ export async function listOpencodeModels() {
  * @param {string} stdout
  * @returns {Array<{id:string, name:string}>}
  */
-export function parseModelsOutput(stdout) {
-  /** @type {Array<{id:string, name:string}>} */
-  const out = [];
-  const seen = new Set();
+export function parseModelsOutput(stdout: string): Array<{ id: string, name: string }> {
+  const out: Array<{ id: string, name: string }> = [];
+  const seen = new Set<string>();
   for (const raw of stdout.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;

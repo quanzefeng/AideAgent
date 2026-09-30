@@ -62,7 +62,7 @@ const BUILTIN_SERVERS = Object.freeze({
  * @returns {string | null} null if safe, else reason
  */
 const SHELL_METACHARS = /[;&|`$<>\\\n\r]/;
-function validateMcpCommand(command, args) {
+function validateMcpCommand(command: string, args: Array<string> | undefined): string | null {
   if (typeof command !== "string" || command.length === 0) {
     return "command must be a non-empty string";
   }
@@ -81,16 +81,22 @@ function validateMcpCommand(command, args) {
   return null;
 }
 
+interface McpServerEntry {
+  process: import("child_process").ChildProcess | null;
+  config: Record<string, any>;
+  tools: any[];
+  status: string;
+  error: string | null;
+  buffer: string;
+}
+
 class McpManager {
-  constructor() {
-    /** @type {Object<string, {process: import("child_process").ChildProcess|null, config: object, tools: Array, status: string, error: string|null, buffer: string}>} */
-    this.servers = {};
-    /** @type {Map<number, {resolve: Function, reject: Function, timer: NodeJS.Timeout, serverName: string}>} */
-    this._pending = new Map();
-    this._nextId = 0;
-    /** @type {Object<string, boolean>} */
-    this._builtinState = {};
-  }
+  servers: Record<string, McpServerEntry> = {};
+  _pending: Map<number, { resolve: (v: any) => void, reject: (e: any) => void, timer: NodeJS.Timeout, serverName: string }> = new Map();
+  _nextId = 0;
+  _builtinState: Record<string, boolean> = {};
+
+  constructor() {}
 
   // ── Config persistence ──────────────────────────────────────
 
@@ -98,24 +104,24 @@ class McpManager {
     return join(app.getPath("userData"), "mcp-servers.json");
   }
 
-  loadConfig() {
+  loadConfig(): Record<string, any> {
     try {
       if (existsSync(this.getStorePath())) {
         const cfg = JSON.parse(readFileSync(this.getStorePath(), "utf-8"));
         return cfg;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[mcp] Failed to load config:", e.message);
     }
     return { servers: {}, builtins: {} };
   }
 
-  saveConfig(config) {
+  saveConfig(config: Record<string, any>): void {
     try {
       const dir = dirname(this.getStorePath());
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       writeFileSync(this.getStorePath(), JSON.stringify(config, null, 2), "utf-8");
-    } catch (e) {
+    } catch (e: any) {
       console.error("[mcp] Failed to save config:", e.message);
     }
   }
@@ -126,13 +132,15 @@ class McpManager {
   async init() {
     const config = this.loadConfig();
     this._builtinState = config.builtins || {};
-    const promises = [];
+    const promises: Promise<any>[] = [];
     for (const [name, cfg] of Object.entries(config.servers || {})) {
-      if (cfg.enabled !== false) {
-        const isRemote = cfg.type === "remote" || cfg.type === "streamableHttp" || cfg.url || cfg.baseUrl;
-        const starter = isRemote ? this.startRemoteServer(name, cfg) : this.startServer(name, cfg);
+      const c = cfg as any;
+      if (name in BUILTIN_SERVERS) continue; // duplicate of a builtin — started below
+      if (c.enabled !== false) {
+        const isRemote = c.type === "remote" || c.type === "streamableHttp" || c.url || c.baseUrl;
+        const starter = isRemote ? this.startRemoteServer(name, c) : this.startServer(name, c);
         promises.push(
-          starter.catch(e => {
+          starter.catch((e: any) => {
             console.error(`[mcp] Failed to start "${name}":`, e.message);
           })
         );
@@ -142,12 +150,12 @@ class McpManager {
     for (const [name, definition] of Object.entries(BUILTIN_SERVERS)) {
       // defaultEnabled: false = opt-in, only start if user explicitly enabled
       const state = this._builtinState[name];
-      const shouldStart = /** @type {any} */ (definition).defaultEnabled === false ? state === true : state !== false;
+      const shouldStart = (definition as any).defaultEnabled === false ? state === true : state !== false;
       if (shouldStart) {
         console.log(`[mcp] Starting builtin "${name}"...`);
         const cfg = { command: definition.command, args: [...definition.args], env: { ...definition.env } };
         promises.push(
-          this.startServer(name, cfg).catch(e => {
+          this.startServer(name, cfg).catch((e: any) => {
             console.error(`[mcp] Failed to start builtin "${name}":`, e.message);
           })
         );
@@ -157,7 +165,7 @@ class McpManager {
   }
 
   /** Start (or restart) a single MCP server. */
-  async startServer(name, cfg) {
+  async startServer(name: string, cfg: any) {
     if (this.servers[name]) await this.stopServer(name);
 
     // SECURITY: Validate command before spawn. A malicious or compromised
@@ -190,7 +198,7 @@ class McpManager {
       shell: process.platform === "win32",
     });
 
-    const server = {
+    const server: McpServerEntry = {
       process: proc,
       config: cfg,
       tools: [],
@@ -200,23 +208,23 @@ class McpManager {
     };
     this.servers[name] = server;
 
-    proc.stdout.on("data", chunk => {
+    proc.stdout.on("data", (chunk: any) => {
       server.buffer += chunk.toString();
       this._processBuffer(name);
     });
 
-    proc.stderr.on("data", chunk => {
+    proc.stderr.on("data", (chunk: any) => {
       const text = chunk.toString().trim();
       if (text) console.error(`[mcp:${name}]`, text);
     });
 
-    proc.on("error", err => {
+    proc.on("error", (err: any) => {
       server.status = "error";
       server.error = err.message;
       this._rejectPendingForServer(name, err.message);
     });
 
-    proc.on("close", code => {
+    proc.on("close", (code: any) => {
       server.status = "stopped";
       server.process = null;
       this._rejectPendingForServer(name, `Server closed (code ${code})`);
@@ -234,29 +242,28 @@ class McpManager {
       this._notify(name, "notifications/initialized", {});
 
       // Step 3: List and cache tools
-      const listResult = await this._request(name, "tools/list", {}, 30000);
+      const listResult = await this._request(name, "tools/list", {}, 30000) as any;
       server.tools = listResult.tools || [];
       server.status = "running";
 
       console.log(`[mcp] "${name}" started (${server.tools.length} tools)`);
       return server.tools;
-    } catch (e) {
+    } catch (e: any) {
       server.status = "error";
       server.error = e.message;
-      // Kill process on failed init
+      // Kill process on failed init — detach 'close' first so its late event
+      // can't reject another attempt's pending requests (they're keyed by name).
+      proc.removeAllListeners("close");
       if (proc.exitCode === null) proc.kill();
+      server.process = null;
       throw e;
     }
   }
 
   // ── Remote (HTTP) MCP server support ────────────────────────────
 
-  /**
-   * Connect to a remote MCP server via HTTP (streamableHttp transport).
-   * No child process — communicates over HTTP POST + JSON-RPC.
-   */
-  async startRemoteServer(name, cfg) {
-    const server = {
+  async startRemoteServer(name: string, cfg: any) {
+    const server: McpServerEntry = {
       process: null,
       config: cfg,
       tools: [],
@@ -273,7 +280,7 @@ class McpManager {
     if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
     // Helper: POST a JSON-RPC message to the remote endpoint
-    const _post = async (body, signal) => {
+    const _post = async (body: any, signal: AbortSignal) => {
       const resp = await fetch(url, {
         method: "POST",
         headers,
@@ -327,7 +334,7 @@ class McpManager {
 
       console.log(`[mcp] Remote "${name}" connected (${server.tools.length} tools)`);
       return server.tools;
-    } catch (e) {
+    } catch (e: any) {
       server.status = "error";
       server.error = e.message;
       delete this.servers[name];
@@ -340,7 +347,7 @@ class McpManager {
   /**
    * Send a JSON-RPC request to a remote MCP server via HTTP POST.
    */
-  async _remoteRequest(name, method, params, timeout = 30000) {
+  async _remoteRequest(name: string, method: string, params: any, timeout = 30000) {
     const server = this.servers[name];
     if (!server) throw new Error(`Server "${name}" not found`);
     const url = server.config.url || server.config.baseUrl;
@@ -378,12 +385,19 @@ class McpManager {
     }
   }
 
-  async stopServer(name) {
+  async stopServer(name: string) {
     const server = this.servers[name];
     if (!server) return;
-    if (server.process && server.process.exitCode === null) {
-      try { server.process.stdin.end(); } catch { /* ignored */ }
-      server.process.kill();
+    if (server.process) {
+      // Detach the 'close' listener BEFORE kill. It fires asynchronously and
+      // rejects pendings keyed by server *name* — a late close from the old
+      // process would reject the replacement process's initialize handshake.
+      server.process.removeAllListeners("close");
+      if (server.process.exitCode === null) {
+        try { server.process.stdin?.end(); } catch { /* ignored */ }
+        server.process.kill();
+      }
+      server.process = null;
     }
     // For remote servers there's no child process — just remove from map
     delete this.servers[name];
@@ -397,20 +411,21 @@ class McpManager {
    * skip the rest.
    */
   async shutdown() {
-    const names = Array.from(this.servers.keys());
+    const names = Object.keys(this.servers);
     await Promise.allSettled(names.map((n) => this.stopServer(n)));
   }
 
-  async restartServer(name) {
+  async restartServer(name: string) {
     const config = this.servers[name]?.config || this._findConfig(name);
     if (!config) throw new Error(`Server "${name}" not found`);
     await this.stopServer(name);
-    const isRemote = config.type === "remote" || config.type === "streamableHttp" || config.url || config.baseUrl;
-    return isRemote ? this.startRemoteServer(name, config) : this.startServer(name, config);
+    const c: any = config;
+    const isRemote = c.type === "remote" || c.type === "streamableHttp" || c.url || c.baseUrl;
+    return isRemote ? this.startRemoteServer(name, c) : this.startServer(name, c);
   }
 
   /** Save a new or updated server config and start if enabled. */
-  async addServer(name, cfg) {
+  async addServer(name: string, cfg: Record<string, any>) {
     const config = this.loadConfig();
     config.servers[name] = cfg;
     this.saveConfig(config);
@@ -421,17 +436,18 @@ class McpManager {
   }
 
   /** Remove a server from config and stop it. */
-  async removeServer(name) {
-    await this.stopServer(name);
+  async removeServer(name: string) {
     const config = this.loadConfig();
     delete config.servers[name];
     this.saveConfig(config);
+    await this.stopServer(name);
   }
 
   /** Persist all currently running servers to disk config. */
   saveAllServers() {
     const config = this.loadConfig();
     for (const [name, s] of Object.entries(this.servers)) {
+      if (name in BUILTIN_SERVERS) continue; // builtins are defined in code — never persist them
       if (s.config) {
         config.servers[name] = s.config;
       }
@@ -439,14 +455,14 @@ class McpManager {
     this.saveConfig(config);
   }
 
-  _findConfig(name) {
+  _findConfig(name: string): any {
     const config = this.loadConfig();
     return config.servers?.[name];
   }
 
   // ── JSON-RPC primitives ─────────────────────────────────────
 
-  _notify(name, method, params) {
+  _notify(name: string, method: string, params: any) {
     const server = this.servers[name];
     if (!server?.process?.stdin?.writable) {
       throw new Error(`Server "${name}" not running`);
@@ -455,7 +471,7 @@ class McpManager {
     server.process.stdin.write(msg);
   }
 
-  _request(name, method, params, timeout = 30000) {
+  _request(name: string, method: string, params: any, timeout = 30000) {
     const server = this.servers[name];
     if (!server?.process?.stdin?.writable) {
       return Promise.reject(new Error(`Server "${name}" not running`));
@@ -469,11 +485,11 @@ class McpManager {
         reject(new Error(`Request "${method}" to "${name}" timed out (${timeout}ms)`));
       }, timeout);
       this._pending.set(id, { resolve, reject, timer, serverName: name });
-      server.process.stdin.write(msg);
+      server.process?.stdin?.write(msg);
     });
   }
 
-  _processBuffer(name) {
+  _processBuffer(name: string) {
     const server = this.servers[name];
     if (!server) return;
 
@@ -490,6 +506,7 @@ class McpManager {
         if (msg.id !== undefined && this._pending.has(msg.id)) {
           const pending = this._pending.get(msg.id);
           this._pending.delete(msg.id);
+          if (!pending) continue;
           clearTimeout(pending.timer);
           if (msg.error) {
             pending.reject(new Error(msg.error.message || "JSON-RPC error"));
@@ -498,13 +515,13 @@ class McpManager {
           }
         }
         // Notifications with no ID are ignored
-      } catch (e) {
+      } catch (e: any) {
         console.error(`[mcp:${name}] Parse error:`, e.message, trimmed.slice(0, 200));
       }
     }
   }
 
-  _rejectPendingForServer(name, reason) {
+  _rejectPendingForServer(name: string, reason: string) {
     for (const [id, pending] of this._pending) {
       if (pending.serverName === name) {
         clearTimeout(pending.timer);
@@ -540,8 +557,8 @@ class McpManager {
   }
 
   /** Get all tool definitions in OpenAI function-calling format. */
-  listAllToolDefs({ excludeServers = [], excludeCategories = [] } = {}) {
-    const defs = [];
+  listAllToolDefs({ excludeServers = [], excludeCategories = [] }: { excludeServers?: string[], excludeCategories?: string[] } = {}) {
+    const defs: any[] = [];
     for (const [serverName, server] of Object.entries(this.servers)) {
       if (server.status !== "running") continue;
       if (excludeServers.includes(serverName)) continue;
@@ -562,7 +579,7 @@ class McpManager {
   }
 
   /** Call a tool by name across all running servers (stdio + remote). */
-  async callTool(name, args) {
+  async callTool(name: string, args: any) {
     for (const [serverName, server] of Object.entries(this.servers)) {
       if (server.status !== "running") continue;
       if (server.tools.some(t => t.name === name)) {
@@ -583,8 +600,8 @@ class McpManager {
 
   /** Get definitions and state of all built-in servers. */
   getBuiltins() {
-    const results = [];
-    for (const [name, def] of Object.entries(BUILTIN_SERVERS)) {
+    const results: any[] = [];
+    for (const [name, def] of Object.entries(BUILTIN_SERVERS as Record<string, any>)) {
       const running = this.servers[name];
       results.push({
         name,
@@ -604,8 +621,8 @@ class McpManager {
   }
 
   /** Enable or disable a built-in server. */
-  async toggleBuiltin(name, enabled) {
-    if (!BUILTIN_SERVERS[name]) {
+  async toggleBuiltin(name: string, enabled: boolean) {
+    if (!(BUILTIN_SERVERS as Record<string, any>)[name]) {
       throw new Error(`Unknown builtin server "${name}"`);
     }
     this._builtinState[name] = enabled;
@@ -615,7 +632,7 @@ class McpManager {
     this.saveConfig(config);
 
     if (enabled) {
-      const def = BUILTIN_SERVERS[name];
+      const def = (BUILTIN_SERVERS as Record<string, any>)[name];
       const cfg = { command: def.command, args: [...def.args], env: { ...def.env } };
       await this.startServer(name, cfg);
     } else {

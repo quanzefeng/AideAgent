@@ -435,6 +435,13 @@ html, body {
   z-index: 50;
   font-size: 13px;
   color: var(--text);
+  /* Fixed overlay must never swallow wheel events or scrollbar-thumb drags
+     over the top strip of #message-list — only its button stays clickable. */
+  pointer-events: none;
+}
+
+#config-banner button {
+  pointer-events: auto;
 }
 
 /* ── 设置弹窗 ── */
@@ -2303,23 +2310,50 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   background-size: auto, auto, 72px 72px, auto;
 }
 
-/* 空白态（存在 .welcome 时）：头像 + 标题 + 引擎 pill + 输入框整体垂直居中，
-   对话态 .welcome 被移除后自动恢复为消息在上、输入框在底的常规布局。 */
-#chat-area:has(.welcome) {
+/* 空白态：头像 + 标题 + 引擎 pill + 输入框整体垂直居中。
+   用 #chat-area.is-blank 类开关（showWelcome/submitQuery/rebuildMessages
+   显式切换），不用 :has(.welcome) —— sanitize 允许 class，消息内容里
+   出现 class="welcome" 会间歇性误命中，把 #message-list 打成
+   overflow:visible + flex:none → 内容被 #chat-area 裁掉、滚不下去。
+   注意：即便 is-blank 残留，也绝不能 overflow:visible / flex:none；
+   有 .message 时 JS 会强制去掉 is-blank，这里再用 max-height 兜底。 */
+#chat-area.is-blank {
   justify-content: center;
 }
-#chat-area:has(.welcome) #message-list {
-  flex: none;
-  overflow: visible;
+#chat-area.is-blank > #message-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
   padding-bottom: var(--space-sm);
+}
+/* 对话态（存在消息）永远是滚动容器：盖过空白态的任何残留规则 */
+#chat-area:has(> #message-list > .message) > #message-list {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
 }
 
 /* ========================================
    消息列表
    ======================================== */
 #message-list {
+  /* flex 子项默认 min-height:auto：内容一高就把本体撑到内容高度，
+     scrollHeight===clientHeight、无滚动量；超出部分被 #chat-area
+     overflow:hidden 裁掉 → 表现为“输出后滚轮滑不下去/底部被切掉”。
+     min-height:0 才能让本体保持可视高度、overflow-y:auto 真正可滚。
+     overflow-anchor:none：流结束折叠 thinking/插入 actions 时 Chrome
+     滚动锚定会改写 scrollTop，和 scrollToBottom 打架（时好时坏）。 */
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
   padding: var(--space-xl) 0;
   display: flex;
   flex-direction: column;
@@ -2558,7 +2592,9 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   max-width: var(--chat-max-width);
   padding: 0 var(--space-lg);
   box-sizing: border-box;
-  animation: msg-in 0.25s var(--ease-out) both;
+  /* fill-mode both 会在动画结束后永久留下 transform，合成层干扰
+     滚动度量（时好时坏）。动画终态与无 transform 等价，去掉 both。 */
+  animation: msg-in 0.25s var(--ease-out);
 }
 
 .message.user {
@@ -2717,6 +2753,10 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 .thinking-body {
   max-height: 200px;
   overflow-y: auto;
+  /* 不要 overscroll-behavior:contain —— 它在内部滚到边界(甚至无溢出)时
+     阻断滚轮向 #message-list 的链路，光标停在展开的思考区上主列表就
+     完全滑不动（e2e scroll-diag 实测 delta=0）。contain 去掉后：
+     内部先滚，到边再链给主列表（标准嵌套滚动行为）。 */
   padding: 4px 0;
   margin-top: 2px;
 }
@@ -2797,6 +2837,8 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   padding: 2px 0 2px 16px;
   max-height: 160px;
   overflow-y: auto;
+  /* 同 .thinking-body：contain 会让光标悬停在展开的工具结果上时
+     滚轮被吞（结果短、内部无溢出时也吞——最隐蔽）→ 主列表卡死。 */
 }
 .tool-entry-args {
   display: flex;
@@ -2838,7 +2880,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   color: var(--success);
 }
 
-/* KaTeX 回退 */
+/* KaTeX 回退：仅在完全无法渲染时出现 */
 .katex-raw {
   color: var(--text);
   font-size: inherit;
@@ -2846,6 +2888,37 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   background: var(--bg-dim);
   padding: 0 4px;
   border-radius: 3px;
+  word-break: break-word;
+}
+.katex-raw-block {
+  display: block;
+  margin: var(--space-sm) 0;
+  padding: var(--space-sm);
+  white-space: pre-wrap;
+}
+/* KaTeX partial-error tokens (throwOnError:false) */
+.katex .katex-error,
+.katex-error {
+  color: #b91c1c;
+  border-bottom: 1px dotted #b91c1c;
+}
+/* Display formulas: scroll only the formula row — never the whole message */
+.katex-display {
+  margin: var(--space-sm) 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+  max-width: 100%;
+}
+.message-text,
+.message-bubble {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.message-text table,
+.message-bubble table {
+  max-width: 100%;
+  table-layout: fixed;
 }
 
 /* 流式光标 */
@@ -2932,6 +3005,10 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   margin: var(--space-sm) 0;
   border-radius: var(--radius-sm);
   overflow-x: auto;
+  /* overflow-x:auto + overflow-y:visible computes to overflow-y:auto,
+     turning every code block into a nested vertical scroller that eats
+     wheel-down. Keep vertical non-scrollable so the main list receives it. */
+  overflow-y: hidden;
 }
 
 .message-bubble pre code,

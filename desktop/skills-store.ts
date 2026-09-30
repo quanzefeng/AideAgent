@@ -31,14 +31,13 @@ export function loadTranslations() {
     if (!existsSync(TRANSLATIONS_PATH)) return {};
     const raw = readFileSync(TRANSLATIONS_PATH, "utf8");
     const data = JSON.parse(raw);
-    /** @type {Object<string, string>} */
-    const out = {};
+    const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(data)) {
       if (k.startsWith("_")) continue;
       if (typeof v === "string" && v.trim()) out[k] = v;
     }
     return out;
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[skills-store] loadTranslations:", e.message);
     return {};
   }
@@ -49,14 +48,14 @@ export function loadTranslations() {
  * @param {Object<string, string>} map
  * @returns {{ok: boolean, path: string}}
  */
-export function saveTranslations(map) {
+export function saveTranslations(map: Record<string, string>) {
   try {
     const dir = join(HOME, ".aideagent");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const payload = { ...(map || {}), _lastUpdated: new Date().toISOString() };
     writeFileSync(TRANSLATIONS_PATH, JSON.stringify(payload, null, 2), "utf8");
     return { ok: true, path: TRANSLATIONS_PATH };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[skills-store] saveTranslations:", e.message);
     return { ok: false, path: TRANSLATIONS_PATH };
   }
@@ -71,7 +70,7 @@ export function saveTranslations(map) {
  * @param {string} zh    Chinese display name; empty string removes the entry
  * @returns {{ok: boolean, zh: string}}
  */
-export function setTranslation(name, zh) {
+export function setTranslation(name: string, zh: string) {
   try {
     if (!name || typeof name !== "string") {
       return { ok: false, zh: "" };
@@ -85,7 +84,7 @@ export function setTranslation(name, zh) {
     }
     saveTranslations(cached);
     return { ok: true, zh: trimmed };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[skills-store] setTranslation:", e.message);
     return { ok: false, zh: "" };
   }
@@ -96,7 +95,7 @@ export function setTranslation(name, zh) {
  * @param {Array<{name: string, description?: string}>} skills
  * @returns {Array<{name: string, description: string}>}
  */
-export function getMissingTranslations(skills) {
+export function getMissingTranslations(skills: Array<{name: string, description?: string}>) {
   const cached = loadTranslations();
   const missing = [];
   for (const s of skills || []) {
@@ -120,7 +119,7 @@ export function getMissingTranslations(skills) {
  * @param {Object<string, string>} [cached]  optional pre-loaded cache; saves an I/O
  * @returns {{display: string, source: "skill_zh"|"cache"|"heuristic"}}
  */
-export function translateDisplayName(skill, cached) {
+export function translateDisplayName(skill: {name: string, name_zh?: string}, cached?: Record<string, string>) {
   const name = (skill && skill.name) || "";
   // Tier 1: skill author's own declaration in SKILL.md frontmatter
   const author_zh = typeof skill?.name_zh === "string" ? skill.name_zh.trim() : "";
@@ -148,7 +147,7 @@ export function translateDisplayName(skill, cached) {
  * @param {string} name
  * @returns {string}
  */
-export function heuristicDisplayName(name) {
+export function heuristicDisplayName(name: string) {
   if (!name) return "";
   // Common prefix substitutions (sorted longest-first so "cli-anything-"
   // matches before "cli-").
@@ -167,7 +166,7 @@ export function heuristicDisplayName(name) {
  * @param {string} s
  * @returns {string}
  */
-function titleCase(s) {
+function titleCase(s: string) {
   if (!s) return "";
   if (/[A-Z]/.test(s)) return s;
   return s
@@ -186,7 +185,7 @@ function titleCase(s) {
  * @param {{apiKey: string, apiUrl: string, model?: string, apiFormat?: string}} apiConfig
  * @returns {Promise<{translated: number, totalMissing: number, errors: number, skipped?: string}>}
  */
-export async function ensureTranslations(missing, apiConfig) {
+export async function ensureTranslations(missing: Array<{name: string, description?: string}>, apiConfig: {apiKey: string, apiUrl: string, model?: string, apiFormat?: string}) {
   if (!Array.isArray(missing) || missing.length === 0) return { translated: 0, totalMissing: 0, errors: 0 };
   if (!apiConfig?.apiKey || !apiConfig?.apiUrl) {
     return { translated: 0, totalMissing: missing.length, errors: 0, skipped: "no api config" };
@@ -212,7 +211,7 @@ export async function ensureTranslations(missing, apiConfig) {
         saveTranslations(cached);
         translated += added;
       }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       errors++;
       console.error(`[skills-store] translate batch ${i / BATCH + 1} failed:`, e?.message);
     }
@@ -226,7 +225,7 @@ export async function ensureTranslations(missing, apiConfig) {
  * @param {{apiKey: string, apiUrl: string, model?: string, apiFormat?: string}} apiConfig
  * @returns {Promise<Object<string, string>>}
  */
-async function translateBatchViaLLM(batch, apiConfig) {
+async function translateBatchViaLLM(batch: Array<{name: string, description?: string}>, apiConfig: {apiKey: string, apiUrl: string, model?: string, apiFormat?: string}) {
   const list = batch.map((b, i) => `${i + 1}. ${b.name} — ${b.description || "(无描述)"}`).join("\n");
   const systemPrompt = `You are a skill-name translator. Given a list of English skill names (and short descriptions), output a JSON object mapping each English name to a concise Chinese translation (max 12 characters).
 
@@ -270,7 +269,7 @@ Rules:
  * @param {Array<{name: string}>} batch
  * @returns {Object<string, string>}
  */
-function parseTranslationJson(text, batch) {
+function parseTranslationJson(text: string, batch: Array<{name: string}>) {
   if (!text) return {};
   let cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   const start = cleaned.indexOf("{");
@@ -278,8 +277,7 @@ function parseTranslationJson(text, batch) {
   if (start >= 0 && end > start) cleaned = cleaned.slice(start, end + 1);
   try {
     const obj = JSON.parse(cleaned);
-    /** @type {Object<string, string>} */
-    const out = {};
+    const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(obj)) {
       if (typeof v === "string" && v.trim()) out[k.trim()] = v.trim();
     }
@@ -288,8 +286,7 @@ function parseTranslationJson(text, batch) {
 }
 
 // ── SQLite skills index (sidecar, flat files are primary) ──
-/** @type {DatabaseSync | null} */
-let skillsDb;
+let skillsDb: DatabaseSync | null = null;
 try {
   skillsDb = new DatabaseSync(SKILLS_DB_PATH);
   skillsDb.exec(`CREATE TABLE IF NOT EXISTS skills (
@@ -332,7 +329,7 @@ try {
       VALUES (new.rowid, new.name, new.description, new.triggers, new.body);
     END
   `);
-} catch (/** @type {any} */ e) {
+} catch (e: any) {
   console.error("[skills-store] SQLite init failed:", e.message);
   skillsDb = null;
 }
@@ -343,7 +340,7 @@ try {
  * @param {Object<string, any>} meta
  * @param {string} body
  */
-function syncSkillToDb(name, meta, body) {
+function syncSkillToDb(name: string, meta: Record<string, any>, body: string) {
   if (!skillsDb) return;
   try {
     const stmt = skillsDb.prepare(`INSERT OR REPLACE INTO skills(name, description, triggers, status, version, body, created_at)
@@ -357,14 +354,14 @@ function syncSkillToDb(name, meta, body) {
       body || "",
       meta.created_at || new Date().toISOString()
     );
-  } catch (/** @type {any} */ e) { console.error("[skills-store] DB sync error:", e.message); }
+  } catch (e: any) { console.error("[skills-store] DB sync error:", e.message); }
 }
 
 /**
  * Sync curator usage stats into the SQLite index.
  * @param {string} name
  */
-function syncCuratorToDb(name) {
+function syncCuratorToDb(name: string) {
   if (!skillsDb) return;
   try {
     const curator = loadCurator();
@@ -397,7 +394,7 @@ function rebuildDbIndex() {
         syncCuratorToDb(name);
       } catch { /* ignored */ }
     }
-  } catch (/** @type {any} */ e) { console.error("[skills-store] rebuildDbIndex:", e.message); }
+  } catch (e: any) { console.error("[skills-store] rebuildDbIndex:", e.message); }
 }
 
 /**
@@ -407,7 +404,7 @@ function rebuildDbIndex() {
  * @param {number} [limit]
  * @returns {Array<Object<string, any>>}
  */
-export function searchSkills(query, limit = 10) {
+export function searchSkills(query: string, limit = 10) {
   if (!skillsDb) {
     // Fallback: linear scan
     if (!query) return [];
@@ -422,7 +419,7 @@ export function searchSkills(query, limit = 10) {
        FROM skills_fts f JOIN skills s ON f.rowid = s.rowid
        WHERE skills_fts MATCH ? ORDER BY rank LIMIT ?`
     ).all(normalized, limit);
-    return rows.map(/** @param {any} r */ (r) => ({
+    return rows.map((r: any) => ({
       name: r.name,
       description: r.description,
       status: r.status,
@@ -432,7 +429,7 @@ export function searchSkills(query, limit = 10) {
       triggers: JSON.parse(r.triggers || "[]"),
       _rank: r.rank,
     }));
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[skills-store] searchSkills error:", e.message);
     return [];
   }
@@ -450,18 +447,16 @@ export function reindexSkills() { rebuildDbIndex(); }
  * @param {string} text
  * @returns {{meta: Object<string, any>, body: string}}
  */
-function parseFrontmatter(text) {
+function parseFrontmatter(text: string) {
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return { meta: {}, body: text };
   const yaml = match[1];
   const body = text.slice(match[0].length).trim();
-  /** @type {Object<string, any>} */
-  const meta = {};
+  const meta: Record<string, any> = {};
   for (const line of yaml.split("\n")) {
     const kv = line.match(/^(\w[\w_-]*)\s*:\s*(.+)/);
     if (kv) {
-      /** @type {any} */
-      let val = kv[2].trim();
+      let val: any = kv[2].trim();
       if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
       if (val === "true") val = true;
       if (val === "false") val = false;
@@ -470,7 +465,7 @@ function parseFrontmatter(text) {
       if (val.startsWith("[") && val.endsWith("]")) {
         try { val = JSON.parse(val); } catch {
           // Fallback: unquoted array-like → split by comma
-          val = val.slice(1, -1).split(",").map(/** @param {string} s */ s => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean);
+          val = val.slice(1, -1).split(",").map((s: string) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean);
         }
       }
       meta[kv[1]] = val;
@@ -483,7 +478,7 @@ function parseFrontmatter(text) {
  * @param {Object<string, any>} meta
  * @returns {string}
  */
-function buildFrontmatter(meta) {
+function buildFrontmatter(meta: Record<string, any>) {
   const lines = ["---"];
   for (const [k, v] of Object.entries(meta)) {
     if (v === undefined || v === null) continue;
@@ -509,7 +504,7 @@ function loadCurator() {
  * @param {Object<string, any>} data
  * @returns {void}
  */
-function saveCurator(data) {
+function saveCurator(data: Record<string, any>) {
   writeFileSync(CURATOR_PATH, JSON.stringify(data, null, 2));
 }
 
@@ -518,7 +513,7 @@ function saveCurator(data) {
 /**
  * @returns {Array<Object<string, any>>}
  */
-export function listSkills() {
+export function listSkills(): Array<Record<string, any>> {
   const dirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
     .filter(d => d.isDirectory() && d.name !== "_archive")
     .map(d => d.name);
@@ -533,7 +528,7 @@ export function listSkills() {
       return {
         name: meta.name || name,
         description: meta.description || "",
-        triggers: Array.isArray(meta.triggers) ? meta.triggers : (typeof meta.triggers === "string" && meta.triggers ? meta.triggers.split(",").map(/** @param {string} s */ s => s.trim()).filter(Boolean) : []),
+        triggers: Array.isArray(meta.triggers) ? meta.triggers : (typeof meta.triggers === "string" && meta.triggers ? meta.triggers.split(",").map((s: string) => s.trim()).filter(Boolean) : []),
         usage_count: stats.usage_count || meta.usage_count || 0,
         success_rate: stats.success_rate || 1,
         status: stats.status || meta.status || "active",
@@ -560,7 +555,7 @@ export function listSkills() {
  * @param {{ embedFn?: (text: string) => Promise<Float32Array | null>, semanticThreshold?: number, semanticTopK?: number }} [opts]
  * @returns {Promise<Array<{ skill: Object<string, any>, score: number, via: string }>>}
  */
-export async function matchSkills(userPrompt, allSkills, opts = {}) {
+export async function matchSkills(userPrompt: string, allSkills: Array<Record<string, any>>, opts: { embedFn?: (text: string) => Promise<Float32Array | null>, semanticThreshold?: number, semanticTopK?: number } = {}) {
   if (!userPrompt || !Array.isArray(allSkills) || allSkills.length === 0) return [];
   const semanticThreshold = opts.semanticThreshold ?? 0.5;  // conservative; only strong matches
   const semanticTopK = opts.semanticTopK ?? 3;
@@ -573,12 +568,12 @@ export async function matchSkills(userPrompt, allSkills, opts = {}) {
   // For CJK text, also try matching on a per-character or per-word basis
   // so "审查" can match a trigger "review" via shared strokes, and a trigger
   // "代码审查" can match the prompt "帮我审查代码".
-  const isCjk = (ch) => /[\u3400-\u9fff\uf900-\ufaff]/.test(ch);
-  const tokenizeCjk = (text) => {
+  const isCjk = (ch: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(ch);
+  const tokenizeCjk = (text: string) => {
     // naive CJK tokenization: split on punctuation/whitespace AND on CJK/ASCII boundaries
     // so "代码审查" becomes ["代","码","审","查","代 码","码 审","审 查","代 码 审","码 审 查","代 码 审 查"]
     // plus the original substring. This is O(n^2) but small prompts.
-    const out = [];
+    const out: string[] = [];
     const norm = text.replace(/[，。！？、；：""''（）《》【】\s]+/g, " ").trim();
     if (!norm) return out;
     out.push(norm);
@@ -644,7 +639,7 @@ export async function matchSkills(userPrompt, allSkills, opts = {}) {
           if (!matched.has(hit.skill.name)) matched.set(hit.skill.name, hit);
         }
       }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[skills-store] semantic match failed:", e.message);
     }
   }
@@ -658,7 +653,7 @@ export async function matchSkills(userPrompt, allSkills, opts = {}) {
  * @param {Float32Array} b
  * @returns {number}
  */
-function cosineSim(a, b) {
+function cosineSim(a: Float32Array, b: Float32Array) {
   const len = Math.min(a.length, b.length);
   if (len === 0) return 0;
   let dot = 0, na = 0, nb = 0;
@@ -676,24 +671,18 @@ function cosineSim(a, b) {
  * @param {string} name
  * @returns {Object<string, any> | null}
  */
-export function loadSkill(name) {
+export function loadSkill(name: string): Record<string, any> | null {
   const skillPath = join(SKILLS_DIR, name, "SKILL.md");
   if (!existsSync(skillPath)) return null;
   const raw = readFileSync(skillPath, "utf8");
   const { meta, body } = parseFrontmatter(raw);
   // Normalize triggers to array
-  if (typeof meta.triggers === "string") meta.triggers = meta.triggers.split(",").map(/** @param {string} s */ s => s.trim()).filter(Boolean);
+  if (typeof meta.triggers === "string") meta.triggers = meta.triggers.split(",").map((s: string) => s.trim()).filter(Boolean);
   if (!Array.isArray(meta.triggers)) meta.triggers = [];
   return { ...meta, name: meta.name || name, body };
 }
 
-/**
- * @param {string} name
- * @param {Object<string, any>} meta
- * @param {string} body
- * @returns {{saved: boolean, name: string}}
- */
-export function saveSkill(name, meta, body) {
+export function saveSkill(name: string, meta: Record<string, any>, body: string): { saved: boolean, name: string } {
   const skillDir = join(SKILLS_DIR, name);
   mkdirSync(skillDir, { recursive: true });
   const content = buildFrontmatter(meta) + "\n\n" + (body || "");
@@ -702,11 +691,7 @@ export function saveSkill(name, meta, body) {
   return { saved: true, name };
 }
 
-/**
- * @param {string} name
- * @returns {{error?: string, deleted?: boolean}}
- */
-export function deleteSkill(name) {
+export function deleteSkill(name: string): { error?: string, deleted?: boolean } {
   const skillDir = join(SKILLS_DIR, name);
   if (!existsSync(skillDir)) return { error: "not found" };
   // Archive: rename to _archive/name (cross-device-safe via copy+delete)
@@ -731,7 +716,7 @@ export function deleteSkill(name) {
  * @param {string} dest
  * @returns {void}
  */
-function copyRecursive(src, dest) {
+function copyRecursive(src: string, dest: string): void {
   mkdirSync(dest, { recursive: true });
   const entries = readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
@@ -742,12 +727,7 @@ function copyRecursive(src, dest) {
   }
 }
 
-/**
- * @param {string} name
- * @param {string} status
- * @returns {{name: string, status: string}}
- */
-export function setSkillStatus(name, status) {
+export function setSkillStatus(name: string, status: string): { name: string, status: string } {
   const curator = loadCurator();
   curator[name] = { ...(curator[name] || {}), status };
   saveCurator(curator);
@@ -767,12 +747,7 @@ export function setSkillStatus(name, status) {
   return { name, status };
 }
 
-/**
- * @param {string} name
- * @param {boolean} [success]
- * @returns {void}
- */
-export function recordSkillUsage(name, success = true) {
+export function recordSkillUsage(name: string, success = true): void {
   const curator = loadCurator();
   const stats = curator[name] || {};
   stats.usage_count = (stats.usage_count || 0) + 1;
@@ -789,11 +764,7 @@ export function recordSkillUsage(name, success = true) {
  * Uses exponential decay with a 7-day half-life.
  * Score = usage_count * 0.5^(days_since_last_use / 7), minimum 0.1 weight.
  */
-/**
- * @param {string} name
- * @returns {number}
- */
-export function getUsageScore(name) {
+export function getUsageScore(name: string): number {
   const curator = loadCurator();
   const stats = curator[name];
   if (!stats || !stats.usage_count) return 0;
@@ -804,14 +775,7 @@ export function getUsageScore(name) {
 
 // ── Skill generation (LLM-powered) ──────────────────────────
 
-/**
- * @param {string} prompt
- * @param {string} apiKey
- * @param {string} apiUrl
- * @param {string} [model]
- * @returns {Promise<{error?: string, skill?: string}>}
- */
-export async function generateSkill(prompt, apiKey, apiUrl, model) {
+export async function generateSkill(prompt: string, apiKey: string, apiUrl: string, model?: string): Promise<{ error?: string, skill?: string }> {
   if (!apiKey || !apiUrl) return { error: "API not configured" };
 
   let url = apiUrl.trim().replace(/\/+$/, "");
@@ -859,7 +823,7 @@ The name should be lowercase with hyphens. Triggers are Chinese/English words th
     if (!res.ok) return { error: `API ${res.status}` };
     const data = await res.json();
     return { skill: data.choices?.[0]?.message?.content || "" };
-  } catch (/** @type {any} */ err) {
+  } catch (err: any) {
     return { error: err.message };
   }
 }
@@ -891,24 +855,24 @@ export function buildSkillsContext() {
  * @param {{listSessions: (n: number) => Array<{id: string}>, loadSession: (id: string) => ({history?: Array<{role: string, content: string}>} | null)}} sessionDb
  * @returns {Array<{phrase: string, count: number, examples: string[]}>}
  */
-export function detectPatterns(sessionDb) {
+export function detectPatterns(sessionDb: { listSessions: (n: number) => Array<{ id: string }>, loadSession: (id: string) => ({ history?: Array<{ role: string, content: string }> } | null) }): Array<{ phrase: string, count: number, examples: string[] }> {
   try {
     const sessions = sessionDb.listSessions(30);
     if (sessions.length < 3) return [];
 
     // Extract first meaningful phrase from each session's first user message
-    const patterns = new Map(); // phrase → { count, sessions: [] }
+    const patterns = new Map<string, { count: number, sessions: string[], examples: string[] }>(); // phrase → { count, sessions: [] }
     for (const s of sessions) {
       const data = sessionDb.loadSession(s.id);
       if (!data?.history) continue;
-      const userMsgs = data.history.filter(/** @param {{role: string, content: string}} m */ m => m.role === "user");
+      const userMsgs = data.history.filter((m: any) => m.role === "user");
       if (!userMsgs.length) continue;
       const firstQuery = (userMsgs[0].content || "").trim();
       // Extract key phrase: first 8 CJK chars or first 3 words
       const phrase = extractKeyPhrase(firstQuery);
       if (!phrase || phrase.length < 3) continue;
       if (!patterns.has(phrase)) patterns.set(phrase, { count: 0, sessions: [], examples: [] });
-      const p = patterns.get(phrase);
+      const p = patterns.get(phrase)!;
       p.count++;
       p.sessions.push(s.id);
       if (p.examples.length < 2) p.examples.push(firstQuery.slice(0, 80));
@@ -934,17 +898,13 @@ export function detectPatterns(sessionDb) {
     }
 
     return suggestions.sort((a, b) => b.count - a.count).slice(0, 5);
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[patterns]", e.message);
     return [];
   }
 }
 
-/**
- * @param {string} text
- * @returns {string}
- */
-function extractKeyPhrase(text) {
+function extractKeyPhrase(text: string): string {
   const cleaned = text
     .replace(/[。！？，、；：""''（）【】《》\n\r\t]/g, " ")
     .replace(/\s+/g, " ")
@@ -977,8 +937,8 @@ function extractKeyPhrase(text) {
  * @param {Array<{role: string, content: string}>} msgs
  * @returns {string}
  */
-function buildSkillDistillPrompt(candidate, msgs) {
-  const convText = msgs.map(m => {
+function buildSkillDistillPrompt(candidate: { phrase: string, count?: number, examples: string[] }, msgs: Array<{ role: string, content: string }>): string {
+  const convText = msgs.map((m: any) => {
     const role = m.role === "user" ? "用户" : "助手";
     const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 1200);
     return `[${role}] ${text}`;
@@ -1014,12 +974,12 @@ TRIGGERS: <逗号分隔的触发短语，2-5 个>
  * @param {string} text
  * @returns {{name: string, name_zh: string, description: string, triggers: string[], body: string} | null}
  */
-function parseDistilledSkill(text) {
+function parseDistilledSkill(text: string): { name: string, name_zh: string, description: string, triggers: string[], body: string } | null {
   if (!text || typeof text !== "string") return null;
   // Strip optional ``` fenced code block if any.
   const stripped = text.replace(/^```[\w-]*\s*\n?/, "").replace(/\n?```$/, "").trim();
   const lines = stripped.split(/\r?\n/);
-  const header = /** @type {Record<string, string>} */ ({});
+  const header: Record<string, string> = {};
   let i = 0;
   for (; i < lines.length; i++) {
     const line = lines[i];
@@ -1034,7 +994,7 @@ function parseDistilledSkill(text) {
     name,
     name_zh: header.NAME_ZH || "",
     description: header.DESCRIPTION || "",
-    triggers: (header.TRIGGERS || "").split(",").map(s => s.trim()).filter(Boolean),
+    triggers: (header.TRIGGERS || "").split(",").map((s: string) => s.trim()).filter(Boolean),
     body: body || "## 步骤\n1. （AI 未生成具体步骤）\n",
   };
 }
@@ -1052,22 +1012,29 @@ function parseDistilledSkill(text) {
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<{saved: boolean, name?: string, error?: string, alreadyExisted?: boolean}>}
  */
-export async function autoGenerateSkillFromConversation(args) {
+export async function autoGenerateSkillFromConversation(args: {
+  msgs: Array<{ role: string, content: string }>;
+  candidate: { phrase: string, count?: number, examples: string[] };
+  apiKey: string;
+  apiUrl: string;
+  model: string;
+  apiFormat: string;
+  signal?: AbortSignal;
+}): Promise<{ saved: boolean, name?: string, error?: string, alreadyExisted?: boolean }> {
   const { msgs, candidate, apiKey, apiUrl, model, apiFormat, signal } = args;
   if (!Array.isArray(msgs) || msgs.length < 4) return { saved: false, error: "not enough messages" };
   if (!candidate?.phrase) return { saved: false, error: "no candidate phrase" };
 
   try {
     const prompt = buildSkillDistillPrompt(candidate, msgs);
-    const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, temperature?: number, stream: boolean, system?: string }} */ ({
+    const body: Record<string, any> = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 1024,
       temperature: 0.4,
       stream: false,
-    });
-    /** @type {Record<string,string>} */
-    const headers = apiFormat === "anthropic"
+    };
+    const headers: Record<string, string> = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
     const endpoint = apiFormat === "anthropic"
@@ -1076,7 +1043,7 @@ export async function autoGenerateSkillFromConversation(args) {
     if (apiFormat === "anthropic") {
       body.system = "你是一个技能提炼助手。从对话中提炼可复用的技能步骤。";
       body.model = model || "claude-sonnet-4-20250514";
-      body.temperature = undefined;
+      delete body.temperature;
     }
 
     const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
@@ -1108,7 +1075,7 @@ export async function autoGenerateSkillFromConversation(args) {
     saveSkill(parsed.name, meta, parsed.body);
     recordSkillUsage(parsed.name, true);
     return { saved: true, name: parsed.name };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     return { saved: false, error: e?.message || String(e) };
   }
 }
@@ -1148,8 +1115,8 @@ export function runCurator() {
  * @param {Array<Object<string, any>>} skills
  * @returns {Array<{skillA: string, skillB: string, similarity: number}>}
  */
-function findSimilarSkills(skills) {
-  const dupes = [];
+function findSimilarSkills(skills: Array<Record<string, any>>): Array<{ skillA: string, skillB: string, similarity: number }> {
+  const dupes: Array<{ skillA: string, skillB: string, similarity: number }> = [];
   for (let i = 0; i < skills.length; i++) {
     for (let j = i + 1; j < skills.length; j++) {
       const a = skills[i], b = skills[j];
@@ -1160,12 +1127,7 @@ function findSimilarSkills(skills) {
   return dupes;
 }
 
-/**
- * @param {string} a
- * @param {string} b
- * @returns {number}
- */
-function textSimilarity(a, b) {
+function textSimilarity(a: string, b: string): number {
   if (!a || !b) return 0;
   const wordsA = new Set(a.toLowerCase().split(/\s+/)), wordsB = new Set(b.toLowerCase().split(/\s+/));
   let common = 0;
@@ -1173,11 +1135,7 @@ function textSimilarity(a, b) {
   return common / Math.max(wordsA.size, 1);
 }
 
-/**
- * @param {string} name
- * @returns {Object | null}
- */
-export function getSkillHealth(name) {
+export function getSkillHealth(name: string): Record<string, any> | null {
   const skill = loadSkill(name);
   if (!skill) return null;
   const curator = loadCurator(), stats = curator[name] || {};
@@ -1195,11 +1153,7 @@ export function getCuratorStatus() {
   return { totalSkills: skills.length, activeSkills: skills.filter(s => s.status === "active").length, archivedSkills: skills.filter(s => s.status === "archived").length, pendingMerges: curator.pendingMerges || [], lastRun: curator.lastRun || "never", totalRuns: curator.totalRuns || 0, archiveAfterDays: curator.archiveAfterDays ?? CURATOR_DEFAULTS.archiveAfterDays };
 }
 
-/**
- * @param {{archiveAfterDays?: number}} config
- * @returns {{archiveAfterDays: number}}
- */
-export function setCuratorConfig(config) {
+export function setCuratorConfig(config: { archiveAfterDays?: number }): { archiveAfterDays: number } {
   const curator = loadCurator();
   if (config.archiveAfterDays != null) curator.archiveAfterDays = Math.max(1, Math.min(365, config.archiveAfterDays));
   saveCurator(curator);

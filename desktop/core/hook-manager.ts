@@ -5,13 +5,11 @@ import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-/** @type {Record<string, any> | null} */
-let _cache = null;   // { PreToolUse: [...], PostToolUse: [...], SessionEnd: [...] }
+let _cache: Record<string, any> | null = null;   // { PreToolUse: [...], PostToolUse: [...], SessionEnd: [...] }
 let _workspace = "";
 const GLOBAL_HOOKS_DIR = join(homedir(), ".aideagent");
 
-/** @param {string} dir */
-function loadConfig(dir) {
+function loadConfig(dir: string) {
   const configPath = join(dir, "hooks", "hooks.json");
   try {
     if (!existsSync(configPath)) return {};
@@ -20,8 +18,7 @@ function loadConfig(dir) {
   } catch { return {}; }
 }
 
-/** @param {Record<string,any>} base @param {Record<string,any>} override */
-function mergeConfigs(base, override) {
+function mergeConfigs(base: Record<string, any>, override: Record<string, any>) {
   const result = { ...base };
   for (const key of Object.keys(override)) {
     if (Array.isArray(override[key])) {
@@ -31,8 +28,7 @@ function mergeConfigs(base, override) {
   return result;
 }
 
-/** @param {string} workspace */
-export function initHookManager(workspace) {
+export function initHookManager(workspace: string) {
   _workspace = workspace || "";
   // project-level hooks first, then global hooks
   let config = {};
@@ -43,11 +39,9 @@ export function initHookManager(workspace) {
   _cache = Object.keys(config).length > 0 ? config : null;
 }
 
-/** @param {string} script @param {any} data @param {number} [timeoutMs] */
-function runScript(script, data, timeoutMs = 5000) {
-  return new Promise(resolve => {
-    /** @type {Buffer[]} */
-    const parts = [];
+function runScript(script: string, data: any, timeoutMs = 5000): Promise<any> {
+  return new Promise<any>(resolve => {
+    const parts: Buffer[] = [];
     const child = spawn("node", [script], {
       cwd: _workspace,
       shell: false,
@@ -78,15 +72,13 @@ function runScript(script, data, timeoutMs = 5000) {
 // the project workspace, so they'd be wrongly rejected by a workspace-only
 // check. `resolve(dir, script)` also anchors relative scripts to the right
 // base: project hooks → workspace, global hooks → ~/.aideagent.
-/** @param {string} script @param {string} base */
-function resolveScriptPath(script, base) {
+function resolveScriptPath(script: string, base: string) {
   if (!script || typeof script !== "string") return null;
   const abs = resolve(base, script);
   return abs;
 }
 
-/** @param {string} abs @param {string} base */
-function withinBase(abs, base) {
+function withinBase(abs: string, base: string) {
   const root = resolve(base);
   return abs === root || abs.startsWith(root + "/") || abs.startsWith(root + "\\");
 }
@@ -97,7 +89,7 @@ function withinBase(abs, base) {
  * relative to the workspace; global hooks resolve relative to ~/.aideagent.
  * @param {string} script
  */
-function safeScriptPath(script) {
+function safeScriptPath(script: string) {
   if (!script || typeof script !== "string") return null;
   // Absolute scripts: allow when inside workspace or global hooks dir.
   if (script.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(script)) {
@@ -118,8 +110,7 @@ function safeScriptPath(script) {
  * For "PreToolUse": returns { blocked, reason, modified, args } — awaits all scripts.
  * For others: fire-and-forget, returns null.
  */
-/** @param {string} event @param {any} data */
-export async function fire(event, data) {
+export async function fire(event: string, data: any) {
   if (!_cache) return null;
   const scripts = _cache[event];
   if (!scripts || scripts.length === 0) return null;

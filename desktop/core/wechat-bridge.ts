@@ -22,8 +22,8 @@ function randomWxUin() {
   return Buffer.from(String(Math.floor(Math.random() * 4294967296)), "utf-8").toString("base64");
 }
 
-function wxHeaders(token) {
-  const h = {
+function wxHeaders(token?: string | null): Record<string, string> {
+  const h: Record<string, string> = {
     "Content-Type": "application/json",
     "X-WECHAT-UIN": randomWxUin(),
     "iLink-App-ClientVersion": "1",
@@ -35,28 +35,28 @@ function wxHeaders(token) {
   return h;
 }
 
-async function getWechatQrcode() {
+async function getWechatQrcode(): Promise<{ ok: boolean, qrcodeUrl?: string, qrcodeId?: string, error?: string }> {
   try {
     const res = await fetch(`${WX_BASE}/ilink/bot/get_bot_qrcode?bot_type=${WX_BOT_TYPE}`, { headers: wxHeaders() });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    const data = await res.json();
+    const data: any = await res.json();
     if (!data.qrcode) return { ok: false, error: "no qrcode" };
     const qrText = data.qrcode_img_content || data.qrcode;
     const qrDataUrl = await QRCode.toDataURL(qrText, { width: 280, margin: 2 });
     return { ok: true, qrcodeUrl: qrDataUrl, qrcodeId: data.qrcode };
-  } catch (err) { return { ok: false, error: err.message }; }
+  } catch (err: any) { return { ok: false, error: err.message }; }
 }
 
-async function pollQrcodeStatus(qrcodeId) {
+async function pollQrcodeStatus(qrcodeId: string): Promise<{ status: string, error?: string, botToken?: string, botId?: string, userId?: string }> {
   if (!qrcodeId) return { status: "error", error: "missing qrcodeId" };
   try {
     const url = `${WX_BASE}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcodeId)}`;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 45_000);
-    let res;
+    let res: Response;
     try { res = await fetch(url, { headers: wxHeaders(), signal: ctrl.signal }); } finally { clearTimeout(t); }
     if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
-    const data = await res.json();
+    const data: any = await res.json();
     switch (data.status) {
       case "wait": return { status: "waiting" };
       case "scaned": return { status: "scanned" };
@@ -66,10 +66,10 @@ async function pollQrcodeStatus(qrcodeId) {
       case "expired": return { status: "expired" };
       default: return { status: data.status || "waiting" };
     }
-  } catch (err) { return { status: "error", error: err.message }; }
+  } catch (err: any) { return { status: "error", error: err.message }; }
 }
 
-async function wxApi(endpoint, body, timeoutMs = WX_POLL_TIMEOUT) {
+async function wxApi(endpoint: string, body: any, timeoutMs: number = WX_POLL_TIMEOUT): Promise<any> {
   if (!getWxBotToken()) throw new Error("not logged in");
   const url = new URL(endpoint, WX_BASE.endsWith("/") ? WX_BASE : WX_BASE + "/");
   const ctrl = new AbortController();
@@ -84,7 +84,7 @@ async function wxApi(endpoint, body, timeoutMs = WX_POLL_TIMEOUT) {
   } finally { if (t) clearTimeout(t); }
 }
 
-async function wxSendMessage(chatId, text, contextToken) {
+async function wxSendMessage(chatId: string, text: string, contextToken?: string): Promise<void> {
   if (!contextToken) throw new Error("需要对方先发消息才能回复");
   for (let i = 0; i < text.length; i += WX_MSG_CHUNK) {
     await wxApi("ilink/bot/sendmessage", {
@@ -97,7 +97,7 @@ async function wxSendMessage(chatId, text, contextToken) {
   }
 }
 
-function extractText(itemList) {
+function extractText(itemList: any[]): string {
   let t = "";
   for (const it of itemList || []) { if (it.type === 1 && it.text_item?.text) t += it.text_item.text; }
   return t;
@@ -132,12 +132,12 @@ async function wxPollLoop() {
           const reply = await generateWxReply(text);
           console.log(`[wechat] replying: "${reply.substring(0, 50)}..."`);
           await wxSendMessage(uid, reply, msg.context_token);
-        } catch (err) {
+        } catch (err: any) {
           console.error("[wechat] reply:", err.message);
           try { await wxSendMessage(uid, `[${err.message}]`, msg.context_token); } catch { /* ignored */ }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       if (err.name === "AbortError") continue;
       console.error(`[wechat] poll error (fail ${++fails}/3):`, err.message);
       if (fails >= 3) sendToRenderer("wechat:bot-status", { status: "error", error: err.message });
@@ -152,13 +152,13 @@ export function loadWxConfig() {
   try { return JSON.parse(readFileSync(p, "utf8")); } catch { return {}; }
 }
 
-function saveWxConfig(cfg) {
+function saveWxConfig(cfg: any): void {
   const d = join(os.homedir(), ".aideagent", "config");
   try { mkdirSync(d, { recursive: true }); } catch { /* ignored */ }
   writeFileSync(join(d, "wechat.json"), JSON.stringify(cfg, null, 2));
 }
 
-async function generateWxReply(prompt) {
+async function generateWxReply(prompt: string): Promise<string> {
   const cfg = loadWxConfig();
   const lastApi = getLastApiConfig();
   const apiKey = cfg.apiKey || lastApi.apiKey;
@@ -181,9 +181,9 @@ async function generateWxReply(prompt) {
   // Lazy import to avoid circular dependency
   const { agentLoop, resetPromptCache } = await import("./agent-loop.ts");
   try {
-    const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], false, "", undefined, false, true, true);
+    const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], false, "", undefined, false, true, true, "aide", undefined);
     return result.text || "";
-  } catch (err) {
+  } catch (err: any) {
     console.error("[wechat] agentLoop error:", err.message);
     return `[出错: ${err.message}]`;
   } finally {

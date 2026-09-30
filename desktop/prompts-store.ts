@@ -55,7 +55,7 @@ if (!existsSync(PROMPTS_DIR)) {
  * @param {string} text
  * @returns {{ id: string, title: string, created: string, updated: string }}
  */
-function parseFrontMatter(text) {
+function parseFrontMatter(text: string): { id: string, title: string, created: string, updated: string } {
   const meta = { id: "", title: "", created: "", updated: "" };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return meta;
@@ -88,7 +88,7 @@ function parseFrontMatter(text) {
  * @param {string} updated
  * @returns {string}
  */
-function makeFrontMatter(id, title, created, updated) {
+function makeFrontMatter(id: string, title: string, created: string, updated: string): string {
   // JSON.stringify handles all escaping (quotes, backslashes, control chars)
   // and produces a valid YAML double-quoted scalar.
   return `---
@@ -107,18 +107,13 @@ updated: ${updated}
  * A single trailing newline is trimmed for cleanliness.
  * @param {string} text
  */
-function stripFrontMatter(text) {
+function stripFrontMatter(text: string) {
   return text.replace(/^---[\s\S]*?\n---\n+/, "").replace(/\n$/, "");
 }
 
 // ── Validation helpers ───────────────────────────────────────
 
-/**
- * Validate a user-supplied prompt. Returns null on success, error message on fail.
- * @param {{ title?: string, body?: string }} input
- * @returns {string | null}
- */
-function validateInput({ title, body }) {
+function validateInput({ title, body }: { title?: string, body?: string }): string | null {
   if (title === undefined && body === undefined) {
     return "title or body is required";
   }
@@ -181,7 +176,7 @@ export function listPrompts() {
  * @param {string} id
  * @returns {{ id: string, title: string, body: string, created: string, updated: string, filename: string } | null}
  */
-export function readPrompt(id) {
+export function readPrompt(id: string): { id: string, title: string, body: string, created: string, updated: string, filename: string } | null {
   if (!id) return null;
   const filename = id.endsWith(".md") ? id : id + ".md";
   const filePath = join(PROMPTS_DIR, filename);
@@ -206,7 +201,7 @@ export function readPrompt(id) {
  * @param {{ title: string, body: string }} input
  * @returns {{ ok: boolean, id?: string, title?: string, filename?: string, error?: string }}
  */
-export function createPrompt({ title, body }) {
+export function createPrompt({ title, body }: { title: string, body: string }): { ok: boolean, id?: string, title?: string, filename?: string, error?: string } {
   const validationErr = validateInput({ title, body });
   if (validationErr) return { ok: false, error: validationErr };
 
@@ -219,7 +214,7 @@ export function createPrompt({ title, body }) {
   try {
     writeFileSync(filePath, content, "utf-8");
     return { ok: true, id, title: title.trim(), filename };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     return { ok: false, error: `write failed: ${e.message}` };
   }
 }
@@ -230,7 +225,7 @@ export function createPrompt({ title, body }) {
  * @param {{ title?: string, body?: string }} input
  * @returns {{ ok: boolean, id?: string, title?: string, error?: string }}
  */
-export function updatePrompt(id, { title, body }) {
+export function updatePrompt(id: string, { title, body }: { title?: string, body?: string }): { ok: boolean, id?: string, title?: string, error?: string } {
   if (!id) return { ok: false, error: "id is required" };
 
   const existing = readPrompt(id);
@@ -250,7 +245,7 @@ export function updatePrompt(id, { title, body }) {
   try {
     writeFileSync(filePath, content, "utf-8");
     return { ok: true, id: existing.id, title: nextTitle.trim() };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     return { ok: false, error: `write failed: ${e.message}` };
   }
 }
@@ -260,14 +255,14 @@ export function updatePrompt(id, { title, body }) {
  * @param {string} id
  * @returns {{ ok: boolean, id?: string, error?: string }}
  */
-export function deletePrompt(id) {
+export function deletePrompt(id: string): { ok: boolean, id?: string, error?: string } {
   if (!id) return { ok: false, error: "id is required" };
   const filename = id.endsWith(".md") ? id : id + ".md";
   const filePath = join(PROMPTS_DIR, filename);
   try {
     unlinkSync(filePath);
     return { ok: true, id };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     if (e.code === "ENOENT") return { ok: false, error: `prompt not found: ${id}` };
     return { ok: false, error: `delete failed: ${e.message}` };
   }

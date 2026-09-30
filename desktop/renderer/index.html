@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; connect-src https: http: ws: wss:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src https: http: ws: wss:" />
   <title>AideAgent</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
+    <link rel="stylesheet" href="vendor/atom-one-light.min.css" />
+  <link rel="stylesheet" href="vendor/katex.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -917,7 +917,7 @@ brew install opencode</pre>
     </aside>
 
     <!-- Chat Area -->
-    <main id="chat-area">
+    <main id="chat-area" class="is-blank">
       <div id="message-list">
         <div class="welcome">
           <div class="welcome-icon">
@@ -1093,12 +1093,12 @@ brew install opencode</pre>
     </button>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
-  <script src="translations.js"></script>
-  <script type="module" src="app.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
+  <script src="translations.ts"></script>
+  <script type="module" src="app.ts"></script>
 
 <!-- Skill Editor Modal -->
 <div id="skill-editor-overlay" class="skill-editor-overlay hidden">

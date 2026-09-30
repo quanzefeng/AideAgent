@@ -1,14 +1,16 @@
 // ── AideAgent — Main Entry Point ────────────────────────────
 // Thin entry: app lifecycle + window creation + module wiring.
-// All business logic lives in core/*.mjs modules.
+// All business logic lives in core/*.ts modules.
 
 /** @typedef {{ name: string, fn: () => void | Promise<void> }} ShutdownEntry */
-/** @type {{ curatorTimer?: NodeJS.Timeout | null }} */
-const _aideagentInternal = (/** @type {any} */ (globalThis)).__aideagentInternal ?? {};
-(/** @type {any} */ (globalThis)).__aideagentInternal = _aideagentInternal;
+const _aideagentInternal = (globalThis as any).__aideagentInternal ?? {};
+(globalThis as any).__aideagentInternal = _aideagentInternal;
 
-import { app, BrowserWindow, session, Menu, nativeImage } from "electron";
-import { join } from "node:path";
+import { app, BrowserWindow, session, Menu, nativeImage, protocol, net } from "electron";
+import { join, normalize, extname, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import { stripTypeScriptTypes } from "node:module";
 import mcpManager from "./mcp-manager.ts";
 import lspManager from "./lsp-manager.ts";
 import sessionDb from "./session-db.ts";
@@ -23,6 +25,74 @@ import { initUpdateManager } from "./update-manager.ts";
 const isDev = process.argv.includes("--dev");
 
 app.commandLine.appendSwitch("no-sandbox");
+
+// ── Custom protocol: serve renderer/ with runtime TS stripping ──
+// Chromium can't execute TypeScript. `app://` maps onto PROJECT_ROOT and
+// strips types via Node's stripTypeScriptTypes before returning JS.
+// Must register the scheme as privileged before app.ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false } },
+]);
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".ts": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".map": "application/json",
+};
+
+function resolveAppUrl(requestUrl: string): string | null {
+  // app://./renderer/index.html → pathname /renderer/index.html (host ".")
+  // app://renderer/index.html   → host renderer + pathname /index.html (unused)
+  try {
+    const u = new URL(requestUrl);
+    let rel = decodeURIComponent(u.pathname);
+    if (u.host && u.host !== ".") rel = `${u.host}${rel}`;
+    // strip leading slash; keep "./" semantics relative to PROJECT_ROOT
+    rel = rel.replace(/^\/+/, "");
+    if (rel === "" || rel.endsWith("/") || rel.endsWith("\\")) rel = join(rel, "index.html");
+    const full = normalize(join(PROJECT_ROOT, rel));
+    // Trailing separator must be the platform's own (a literal "\\" is a
+    // filename character on POSIX, which made startsWith() fail → 403 for
+    // every asset on macOS/Linux).
+    const root = normalize(PROJECT_ROOT) + sep;
+    if (full !== normalize(PROJECT_ROOT) && !full.startsWith(root)) return null;
+    return full;
+  } catch {
+    return null;
+  }
+}
+
+async function handleAppProtocol(request: Request): Promise<Response> {
+  try {
+    const filePath = resolveAppUrl(request.url);
+    if (!filePath) return new Response("Forbidden", { status: 403 });
+
+    const ext = extname(filePath).toLowerCase();
+    if (ext === ".ts") {
+      const source = await readFile(filePath, "utf-8");
+      // strip: remove types only; leaves ESM import/export intact for Chromium
+      const js = stripTypeScriptTypes(source, { mode: "strip" });
+      return new Response(js, { headers: { "content-type": MIME[".ts"] } });
+    }
+
+    return net.fetch(pathToFileURL(filePath).toString());
+  } catch (e: any) {
+    return new Response(String(e?.message || e), { status: 500 });
+  }
+}
 
 // ── Global error handlers ──────────────────────────────────
 // Without these, any uncaught throw or unhandled promise rejection in the
@@ -47,17 +117,8 @@ process.on("unhandledRejection", (reason) => {
 // ── Window Management ──────────────────────────────────────
 
 function createWindow() {
-  const preloadPath = join(PROJECT_ROOT, "preload.cjs").replace(/\\/g, "/");
+  const preloadPath = join(PROJECT_ROOT, "preload.ts").replace(/\\/g, "/");
   console.log("[main] preload path:", preloadPath);
-
-  try {
-    if (session?.defaultSession?.registerPreloadScript) {
-      session.defaultSession.registerPreloadScript({ type: "frame", filePath: preloadPath });
-      console.log("[main] registerPreloadScript called (global)");
-    }
-  } catch (/** @type {any} */ e) {
-    console.error("[main] session preload registration error:", e.message);
-  }
 
   const mainWindow = new BrowserWindow({
     width: 1200, height: 800,
@@ -99,7 +160,7 @@ function createWindow() {
   // Maximize after creation — more reliable than `maximize: true` in options on Windows
   mainWindow.maximize();
 
-  mainWindow.loadFile(join(PROJECT_ROOT, "renderer", "index.html"));
+  mainWindow.loadURL("app://./renderer/index.html");
   if (isDev) mainWindow.webContents.openDevTools();
   mainWindow.on("closed", () => { setMainWindow(null); });
 
@@ -112,6 +173,8 @@ function createWindow() {
 // ── App Lifecycle ──────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  protocol.handle("app", handleAppProtocol);
+
   // ── One-time migration: rename old config dir .goodagent → .aideagent ──
   const { existsSync, renameSync } = await import("node:fs");
   const oldDir = join(app.getPath("home"), ".goodagent");
@@ -120,7 +183,7 @@ app.whenReady().then(async () => {
     try {
       renameSync(oldDir, newDir);
       console.log("[migration] Renamed ~/.goodagent → ~/.aideagent");
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[migration] Failed to rename ~/.goodagent → ~/.aideagent:", e.message);
     }
   }
@@ -144,7 +207,8 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders };
     if (details.url.startsWith("https://") || details.url.startsWith("http://")) {
-      const reqOrigin = details.requestHeaders?.["Origin"] || details.requestHeaders?.["origin"] || "file://";
+      const d = details as any;
+      const reqOrigin = d.requestHeaders?.["Origin"] || d.requestHeaders?.["origin"] || "file://";
       headers["access-control-allow-origin"] = [reqOrigin];
       headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
       headers["access-control-allow-headers"] = ["Content-Type, Authorization, X-Requested-With"];
@@ -171,7 +235,7 @@ app.whenReady().then(async () => {
   } catch { /* ignored */ }
 
   try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); } catch { /* ignored */ }
-  try { skills.reindexSkills(); } catch (/** @type {any} */ e) { console.error("[skills-store] reindex:", e.message); }
+  try { skills.reindexSkills(); } catch (e: any) { console.error("[skills-store] reindex:", e.message); }
 
   // ── KB startup sync ──────────────────────────────────────────
   // Scan vault and reindex any new/changed files since last shutdown.
@@ -191,16 +255,16 @@ app.whenReady().then(async () => {
           if (res && res.error && res.error !== "already watching") {
             console.warn("[kb] watcher start:", res.error);
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error("[kb] watcher start:", e.message);
         }
         // Then do a one-time sync to catch anything that changed while offline.
         // Run async — don't block app startup on KB indexing.
         (async () => {
           try {
-            const { scanVault } = await import("./kb/vault-scanner.mjs");
-            const { reindexSingleFile } = await import("./kb/indexer.mjs");
-            const { getDb } = await import("./kb/db.mjs");
+            const { scanVault } = await import("./kb/vault-scanner.ts");
+            const { reindexSingleFile } = await import("./kb/indexer.ts");
+            const { getDb } = await import("./kb/db.ts");
             const db = getDb();
             const files = await scanVault(vault, vault);
             let newCount = 0, updatedCount = 0;
@@ -224,12 +288,12 @@ app.whenReady().then(async () => {
             if (newCount > 0 || updatedCount > 0) {
               console.log(`[kb-startup] synced: ${newCount} new, ${updatedCount} updated`);
             }
-          } catch (/** @type {any} */ e) {
+          } catch (e: any) {
             console.error("[kb-startup] sync error:", e.message);
           }
         })();
       }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[kb-startup] init error:", e.message);
     }
   }
@@ -237,7 +301,7 @@ app.whenReady().then(async () => {
   const CURATOR_INTERVAL = 6 * 60 * 60 * 1000;
   const curatorTimer = setInterval(() => {
     try { const r = skills.runCurator(); if (r.archived > 0) console.log(`[curator] archived ${r.archived} stale skills`); }
-    catch (/** @type {any} */ e) { console.error("[curator] periodic run failed:", e.message); }
+    catch (e: any) { console.error("[curator] periodic run failed:", e.message); }
   }, CURATOR_INTERVAL);
   // Make the curator timer unref()'d so it never blocks app exit, and
   // remember the handle so will-quit can clearInterval() it explicitly.
@@ -264,7 +328,7 @@ app.whenReady().then(async () => {
   });
   // KB SQLite: close the handle so WAL is checkpointed
   addShutdownFn("kb-db", async () => {
-    const { closeDb } = await import("./kb/db.mjs");
+    const { closeDb } = await import("./kb/db.ts");
     try { closeDb(); } catch { /* ignored */ }
   });
   // Memory: close FTS DB
@@ -319,18 +383,11 @@ app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) creat
  * `before-quit` is preferred over `will-quit` because it fires before the
  * renderer is destroyed, giving async cleanup a chance to finish.
  */
-/** @type {Array<{ name: string, fn: () => void | Promise<void> }>} */
-const _shutdownFns = [];
-/**
- * Register a cleanup function. Errors are caught and logged so one
- * failing shutdown doesn't block the rest.
- * @param {string} name
- * @param {() => void | Promise<void>} fn
- */
-function addShutdownFn(name, fn) {
+const _shutdownFns: Array<{ name: string, fn: () => void | Promise<void> }> = [];
+function addShutdownFn(name: string, fn: () => void | Promise<void>) {
   _shutdownFns.push({ name, fn });
 }
-(/** @type {any} */ (globalThis)).__aideagentAddShutdownFn = addShutdownFn;
+(globalThis as any).__aideagentAddShutdownFn = addShutdownFn;
 
 app.on("before-quit", () => {
   // Run shutdowns in parallel where possible. The shutdown functions are
@@ -339,7 +396,7 @@ app.on("before-quit", () => {
   // (a 30s orphan npx is better than a hung shutdown).
   const all = _shutdownFns.map(async (entry) => {
     try { await entry.fn(); }
-    catch (/** @type {any} */ e) {
+    catch (e: any) {
       console.error(`[shutdown] ${entry.name} failed:`, e?.message || e);
     }
   });

@@ -4,9 +4,9 @@ REM
 REM This is a self-contained .cmd batch script that speaks the Agent Client
 REM Protocol over stdio. It's used by opencode-acp-client.test.mjs to verify
 REM that Node's `child_process.spawn()` can launch a .cmd shim on Windows
-REM (which requires `shell: true` — see opencode-acp-client.mjs).
+REM (which requires `shell: true` — see opencode-acp-client.test.ts).
 REM
-REM Protocol: same as fake-acp-server.mjs (node version).
+REM Protocol: same as fake-acp-server.ts (node version).
 REM Reads JSON-RPC 2.0 from stdin, writes NDJSON to stdout.
 setlocal enabledelayedexpansion
 

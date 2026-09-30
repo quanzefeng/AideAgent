@@ -15,38 +15,32 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSy
 import { DatabaseSync } from "node:sqlite";
 
 // ── Pure-function modules (Wave 1 split) ──────────────────
-import { spaceCJK, sanitizeFtsTerm } from "./kb/text-utils.mjs";
-import { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.mjs";
-import { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.mjs";
-import { reciprocalRankFusion } from "./kb/rank-fusion.mjs";
+import { spaceCJK, sanitizeFtsTerm } from "./kb/text-utils.ts";
+import { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.ts";
+import { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.ts";
+import { reciprocalRankFusion } from "./kb/rank-fusion.ts";
 
 // ── Infrastructure modules (Wave 2 split) ─────────────────
-import { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, getAutoDetectedMaxBodyChars, _setAutoDetectedMaxBodyChars as _markAutoDetectedMaxBodyChars } from "./kb/config.mjs";
-import { getDb, hasFts5 } from "./kb/db.mjs";
-import { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.mjs";
-import { _logError, getErrorCounts } from "./kb/log.mjs";
-import { embedText } from "./kb/embedder.mjs";
-import { listNotes, getNote, createNote, updateNote, deleteNote } from "./kb/notes.mjs";
-import { search, ftsDeleteByRelPath, ftsDeleteChunk, ftsInsertChunk, ftsSearch } from "./kb/search.mjs";
-import { reindexSingleFile, rebuildIndex } from "./kb/indexer.mjs";
+import { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, getAutoDetectedMaxBodyChars, _setAutoDetectedMaxBodyChars as _markAutoDetectedMaxBodyChars } from "./kb/config.ts";
+import { getDb, hasFts5 } from "./kb/db.ts";
+import { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.ts";
+import { _logError, getErrorCounts } from "./kb/log.ts";
+import { embedText } from "./kb/embedder.ts";
+import { listNotes, getNote, createNote, updateNote, deleteNote } from "./kb/notes.ts";
+import { search, ftsDeleteByRelPath, ftsDeleteChunk, ftsInsertChunk, ftsSearch } from "./kb/search.ts";
+import { reindexSingleFile, rebuildIndex } from "./kb/indexer.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// HOME / DATA_DIR / DB_PATH / CONFIG_PATH → moved to kb/config.mjs
-// _embeddingDim → moved to kb/embedder.mjs
+// HOME / DATA_DIR / DB_PATH / CONFIG_PATH → moved to kb/config.ts
+// _embeddingDim → moved to kb/embedder.ts
 
 // ── File Watcher ─────────────────────────────────────────────
-/** @type {import("fs").FSWatcher | null} */
-let _watcher = null;
-let _watcherTimer = null;
+let _watcher: import("fs").FSWatcher | null = null;
+let _watcherTimer: NodeJS.Timeout | null = null;
 const WATCHER_DEBOUNCE_MS = 500;
 
-/**
- * Debounce helper — coalesces rapid fs.watch events into a single call.
- * @param {() => void} fn
- * @returns {() => void}
- */
-function debounced(fn) {
+function debounced(fn: () => void): () => void {
   return () => {
     if (_watcherTimer) clearTimeout(_watcherTimer);
     _watcherTimer = setTimeout(() => { _watcherTimer = null; fn(); }, WATCHER_DEBOUNCE_MS);
@@ -89,7 +83,7 @@ export function startWatcher() {
         }
       }
       if (updated > 0) console.log(`[kb-watcher] sync: ${updated} file(s) updated`);
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[kb-watcher] sync error:", e.message);
     }
   });
@@ -98,7 +92,7 @@ export function startWatcher() {
     _watcher = watch(_vaultPath, { recursive: true }, processChange);
     console.log(`[kb-watcher] started on: ${_vaultPath}`);
     return { ok: true };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[kb-watcher] failed to start:", e.message);
     return { ok: false, error: e.message };
   }
@@ -117,7 +111,7 @@ export function isWatcherActive() {
  */
 export function stopWatcher() {
   if (_watcher) {
-    try { _watcher.close(); } catch (/** @type {any} */ e) { _logError("fs", e); }
+    try { _watcher.close(); } catch (e: any) { _logError("fs", e); }
     _watcher = null;
     console.log("[kb-watcher] stopped");
   }
@@ -127,24 +121,24 @@ export function stopWatcher() {
   }
 }
 
-// isSafeVaultPath → moved to kb/vault-scanner.mjs (re-exported at bottom)
+// isSafeVaultPath → moved to kb/vault-scanner.ts (re-exported at bottom)
 
 // ── Configuration ─────────────────────────────────────────
 // _vaultPath, _config, _autoDetectedMaxBodyChars, loadConfig, saveConfig,
 // getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars
-// → moved to kb/config.mjs (re-exported at bottom)
+// → moved to kb/config.ts (re-exported at bottom)
 
 // ── Query Rewriting, LLM Reranking, FTS, Hybrid Search ────
 // rewriteQuery, rerankResults, search, ftsDeleteByRelPath, ftsDeleteChunk,
 // ftsInsertChunk, ftsSearch, VECTOR_*_SIM, MIN_TOP_RRF_SCORE, REWRITE_*,
 // RERANK_*, rewriteCache, rerankCache, _rewriteInFlight, _rerankInFlight
-// → moved to kb/search.mjs (re-exported at bottom)
+// → moved to kb/search.ts (re-exported at bottom)
 
 // ── Error counter (exposed via getStatus) ────────────────────
-// _errCounts, _logError → moved to kb/log.mjs
+// _errCounts, _logError → moved to kb/log.ts
 // ── CRUD Operations ───────────────────────────────────────
 // listNotes, getNote, createNote, updateNote, deleteNote
-// → moved to kb/notes.mjs (re-exported at bottom)
+// → moved to kb/notes.ts (re-exported at bottom)
 
 // ── Ollama Model Discovery ────────────────────────────────
 
@@ -156,8 +150,8 @@ export async function listOllamaModels() {
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.models || []).map(/** @param {{name:string}} m */ m => m.name);
-  } catch (/** @type {any} */ e) {
+    return (data.models || []).map((m: any) => m.name);
+  } catch (e: any) {
     // Ollama may be down; return empty list (UI shows "no models").
     _logError("embed", e);
     return [];
@@ -181,10 +175,9 @@ export function getStatus() {
     const extRows = db.prepare(
       "SELECT rel_path FROM kb_notes"
     ).all();
-    /** @type {Record<string, number>} */
-    const formatBreakdown = {};
+    const formatBreakdown: Record<string, number> = {};
     for (const r of extRows) {
-      const m = String(r.rel_path || "").match(/\.([^./\\]+)$/);
+      const m = String((r as any).rel_path || "").match(/\.([^./\\]+)$/);
       const ext = m ? "." + m[1].toLowerCase() : "(none)";
       formatBreakdown[ext] = (formatBreakdown[ext] || 0) + 1;
     }
@@ -212,7 +205,7 @@ export function getStatus() {
       // (silent FTS drift, embed failures, etc.) without grepping logs.
       errorCounts: getErrorCounts(),
     };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     _logError("db", e);
     return { vault: getVault(), noteCount: 0, chunkCount: 0, embeddedCount: 0, errorCounts: getErrorCounts() };
   }
@@ -224,19 +217,19 @@ export function getStatus() {
 // unchanged — external imports keep working.
 
 // Wave 1 — pure functions
-export { spaceCJK, sanitizeFtsTerm, sanitizeFtsQuery } from "./kb/text-utils.mjs";
-export { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.mjs";
-export { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.mjs";
-export { reciprocalRankFusion } from "./kb/rank-fusion.mjs";
+export { spaceCJK, sanitizeFtsTerm, sanitizeFtsQuery } from "./kb/text-utils.ts";
+export { stripMarkdown, stripNoteBody, splitIntoChunks, parseFrontMatter, extractTitle, extractTags } from "./kb/markdown.ts";
+export { vectorToBuffer, bufferToVector, cosineSimilarity } from "./kb/vector-math.ts";
+export { reciprocalRankFusion } from "./kb/rank-fusion.ts";
 
 // Wave 2 — infrastructure
-export { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, DATA_DIR, DB_PATH, CONFIG_PATH } from "./kb/config.mjs";
-export { getDb, hasFts5 } from "./kb/db.mjs";
-export { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.mjs";
-export { _logError, getErrorCounts } from "./kb/log.mjs";
-export { embedText, getEmbeddingDim, isEmbedderReady } from "./kb/embedder.mjs";
+export { getVault, getConfig, setVault, setConfig, getEffectiveMaxBodyChars, DATA_DIR, DB_PATH, CONFIG_PATH } from "./kb/config.ts";
+export { getDb, hasFts5 } from "./kb/db.ts";
+export { isSafeVaultPath, setVaultExcludes, scanVault } from "./kb/vault-scanner.ts";
+export { _logError, getErrorCounts } from "./kb/log.ts";
+export { embedText, getEmbeddingDim, isEmbedderReady } from "./kb/embedder.ts";
 
 // Wave 3 — core search / indexer / notes
-export { listNotes, getNote, createNote, updateNote, deleteNote } from "./kb/notes.mjs";
-export { search, ftsDeleteByRelPath, ftsDeleteChunk, ftsInsertChunk, ftsSearch } from "./kb/search.mjs";
-export { reindexSingleFile, rebuildIndex } from "./kb/indexer.mjs";
+export { listNotes, getNote, createNote, updateNote, deleteNote } from "./kb/notes.ts";
+export { search, ftsDeleteByRelPath, ftsDeleteChunk, ftsInsertChunk, ftsSearch } from "./kb/search.ts";
+export { reindexSingleFile, rebuildIndex } from "./kb/indexer.ts";

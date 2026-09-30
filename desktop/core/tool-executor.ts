@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, stat, open } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
 import { homedir } from "node:os";
 import { readdir } from "node:fs/promises";
@@ -13,7 +13,7 @@ import * as skills from "../skills-store.ts";
 import * as kb from "../knowledge-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { scanSkills } from "./skill-scanner.ts";
-import { searchMeta } from "../search-engine/index.mjs";
+import { searchMeta } from "../search-engine/index.ts";
 import * as hookManager from "./hook-manager.ts";
 import sessionDb from "../session-db.ts";
 import {
@@ -29,24 +29,24 @@ function persistSessionState() {
   const sid = getSessionId();
   if (!sid) return;
   try {
-    sessionDb.saveSessionTasks(sid, Array.from(taskStore.values()).filter(t => t.status !== "deleted"));
+    sessionDb.saveSessionTasks(sid, Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted") as any);
     sessionDb.saveSessionTodos(sid, getTodoList());
-  } catch (e) { /* persistence is best-effort; never block tool execution */ }
+  } catch { /* persistence is best-effort; never block tool execution */ }
 }
 
 // Re-export for use by other modules
 export { runShell, isDangerous, requestPermission };
 
-function isDangerous(cmd) {
+function isDangerous(cmd: string): boolean {
   if (GIT_SAFE.test(cmd.trim())) return false;
   if (GH_SAFE.test(cmd.trim())) return false;
   return DANGEROUS.some(p => p.test(cmd));
 }
 
-function requestPermission(cmd) {
+function requestPermission(cmd: string): Promise<boolean> {
   return new Promise(resolve => {
     const id = nextPermId();
-    pendingPerms.set(id, resolve);
+    pendingPerms.set(String(id), resolve as any);
     sendToRenderer("permission:request", { id, command: cmd });
   });
 }
@@ -62,17 +62,17 @@ function requestPermission(cmd) {
 // in the `bash` case happens AFTER this — without the cap here, we'd
 // buffer GBs of output in memory and only then slice 60KB off the front.
 const MAX_STREAM_BYTES = 8 * 1024 * 1024; // 8 MiB per stream
-function runShell(command, opts = {}) {
+function runShell(command: string, opts: { timeout?: number } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
   return new Promise(resolve => {
     try {
       const args = SHELL.buildArgs(command);
-      const child = spawn(SHELL.exe, args, {
-        cwd: getWorkspace(), shell: false, timeout: opts.timeout ?? 60000,
+      const child = spawn(SHELL.exe as string, args, {
+        cwd: getWorkspace() as string, shell: false, timeout: opts.timeout ?? 60000,
       });
-      const chunks = { out: [], err: [] };
+      const chunks: { out: Buffer[], err: Buffer[] } = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
       const dropped = { out: 0, err: 0 };
-      const onStream = (key) => (c) => {
+      const onStream = (key: "out" | "err") => (c: Buffer) => {
         if (sizes[key] < MAX_STREAM_BYTES) {
           const room = MAX_STREAM_BYTES - sizes[key];
           if (c.length <= room) {
@@ -88,8 +88,8 @@ function runShell(command, opts = {}) {
           dropped[key] += c.length;
         }
       };
-      child.stdout.on("data", onStream("out"));
-      child.stderr.on("data", onStream("err"));
+      child.stdout!.on("data", onStream("out"));
+      child.stderr!.on("data", onStream("err"));
       child.on("close", code => {
         let out = Buffer.concat(chunks.out).toString("utf-8");
         let err = Buffer.concat(chunks.err).toString("utf-8");
@@ -100,22 +100,22 @@ function runShell(command, opts = {}) {
         resolve({ out, err, code });
       });
       child.on("error", e => resolve({ error: e.message }));
-    } catch (e) { resolve({ error: e.message }); }
+    } catch (e: any) { resolve({ error: e.message }); }
   });
 }
 
 // Safe spawn: exe + args array, no shell interpolation → no injection
 // Same bounded-buffer protection as runShell.
-function runSpawnSafe(exe, args, opts = {}) {
+function runSpawnSafe(exe: string, args: string[], opts: { timeout?: number } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
   return new Promise(resolve => {
     try {
       const child = spawn(exe, args, {
-        cwd: getWorkspace(), shell: false, timeout: opts.timeout ?? 60000,
+        cwd: getWorkspace() as string, shell: false, timeout: opts.timeout ?? 60000,
       });
-      const chunks = { out: [], err: [] };
+      const chunks: { out: Buffer[], err: Buffer[] } = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
       const dropped = { out: 0, err: 0 };
-      const onStream = (key) => (c) => {
+      const onStream = (key: "out" | "err") => (c: Buffer) => {
         if (sizes[key] < MAX_STREAM_BYTES) {
           const room = MAX_STREAM_BYTES - sizes[key];
           if (c.length <= room) {
@@ -130,8 +130,8 @@ function runSpawnSafe(exe, args, opts = {}) {
           dropped[key] += c.length;
         }
       };
-      child.stdout.on("data", onStream("out"));
-      child.stderr.on("data", onStream("err"));
+      child.stdout!.on("data", onStream("out"));
+      child.stderr!.on("data", onStream("err"));
       child.on("close", code => {
         let out = Buffer.concat(chunks.out).toString("utf-8").trim();
         let err = Buffer.concat(chunks.err).toString("utf-8").trim();
@@ -140,7 +140,7 @@ function runSpawnSafe(exe, args, opts = {}) {
         resolve({ out, err, code });
       });
       child.on("error", e => resolve({ error: e.message }));
-    } catch (e) { resolve({ error: e.message }); }
+    } catch (e: any) { resolve({ error: e.message }); }
   });
 }
 
@@ -163,7 +163,7 @@ function readSearchProviderPref() {
 }
 
 // ── URL safety check — block internal/private hosts ───────
-function isSafeUrl(u) {
+function isSafeUrl(u: string): boolean {
   try {
     const x = new URL(u);
     if (!/^https?:$/.test(x.protocol)) return false;
@@ -175,7 +175,7 @@ function isSafeUrl(u) {
 }
 
 // Lazy imports for circular dependency avoidance
-let _runSubAgent = null;
+let _runSubAgent: ((description: string, prompt: string, subAgentId?: string | null) => Promise<{ text: string, aborted?: boolean }>) | null = null;
 async function getRunSubAgent() {
   if (!_runSubAgent) {
     const mod = await import("./sub-agent.ts");
@@ -184,7 +184,7 @@ async function getRunSubAgent() {
   return _runSubAgent;
 }
 
-let _loadWxConfig = null;
+let _loadWxConfig: (() => any) | null = null;
 async function getLoadWxConfig() {
   if (!_loadWxConfig) {
     const mod = await import("./wechat-bridge.ts");
@@ -193,7 +193,7 @@ async function getLoadWxConfig() {
   return _loadWxConfig;
 }
 
-let _bumpVersion = null;
+let _bumpVersion: ((ver: string) => string) | null = null;
 async function getBumpVersion() {
   if (!_bumpVersion) {
     const mod = await import("./system-prompt.ts");
@@ -210,7 +210,7 @@ async function getBumpVersion() {
  * @param {string} pattern
  * @returns {RegExp}
  */
-function globToRegExp(pattern) {
+function globToRegExp(pattern: string): RegExp {
   const p = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   const segs = p.split("/");
   let re = "";
@@ -241,8 +241,8 @@ function globToRegExp(pattern) {
 }
 
 // Cache compiled regexes per pattern string (glob calls can repeat).
-const _globReCache = new Map();
-function getGlobRe(pattern) {
+const _globReCache = new Map<string, RegExp>();
+function getGlobRe(pattern: string): RegExp {
   let re = _globReCache.get(pattern);
   if (!re) { re = globToRegExp(pattern); _globReCache.set(pattern, re); }
   return re;
@@ -257,14 +257,13 @@ function getGlobRe(pattern) {
  * @param {number} limit
  * @returns {Promise<string[]>}
  */
-async function globWalk(dir, pattern, limit) {
+async function globWalk(dir: string, pattern: string, limit: number): Promise<string[]> {
   const re = getGlobRe(pattern);
-  const results = [];
+  const results: string[] = [];
   const skipDirs = new Set(["node_modules", ".git", ".aideagent", "models", "release", "dist"]);
-  /** @type {string[]} */
-  const stack = [dir];
+  const stack: string[] = [dir];
   while (stack.length > 0 && results.length < limit) {
-    const current = stack.pop();
+    const current = stack.pop()!;
     let entries;
     try { entries = await readdir(current, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
@@ -291,7 +290,7 @@ async function globWalk(dir, pattern, limit) {
  *   Common shapes: `{ content: string }` (text), `{ error: string }` (failure),
  *   `{ [key: string]: any }` (structured data). Callers should handle `error` keys.
  */
-export async function runTool(tc) {
+export async function runTool(tc: { id?: string, function: { name: string, arguments: string } }): Promise<any> {
   const { name, arguments: argsStr } = tc.function;
   const args = JSON.parse(argsStr);
   const planMode = getPlanMode();
@@ -299,7 +298,7 @@ export async function runTool(tc) {
   // Hard block: plan mode prevents ALL write operations at execution level
   if (planMode) {
     const WRITE_TOOLS = new Set(["bash", "file_write", "file_edit", "create_skill", "git_commit", "git_branch"]);
-    const GH_WRITE_ACTIONS = { gh_pr: ["create", "merge", "close", "checkout"], gh_issue: ["create", "close", "reopen", "comment"], gh_repo: ["create", "clone"] };
+    const GH_WRITE_ACTIONS: Record<string, string[]> = { gh_pr: ["create", "merge", "close", "checkout"], gh_issue: ["create", "close", "reopen", "comment"], gh_repo: ["create", "clone"] };
     if (WRITE_TOOLS.has(name)) {
       return { error: `🚫 计划模式下禁止执行 "${name}" 操作。请先制定计划，等用户确认后再执行。` };
     }
@@ -328,7 +327,7 @@ export async function runTool(tc) {
       // P2: pagination support — let the LLM ask for head/tail/offset slices
       // when the output exceeds MAX_OUTPUT (60KB). Without this, the LLM gets
       // only the first 60KB and the tail is silently lost.
-      let outStr = r.out;
+      let outStr = r.out ?? "";
       if (r.err) outStr = outStr + "\n--- stderr ---\n" + r.err;
       const fullLength = outStr.length;
       const fullLines = outStr.split("\n");
@@ -352,7 +351,7 @@ export async function runTool(tc) {
         slicedOut = outStr.slice(0, MAX_OUTPUT);
         truncated = true;
       }
-      const result = {
+      const result: any = {
         stdout: r.out,
         stderr: r.err,
         exit_code: r.code,
@@ -368,10 +367,32 @@ export async function runTool(tc) {
     }
     case "file_read": {
       try {
-        const content = await readFile(args.path, "utf-8");
-        if (content.length > MAX_OUTPUT) return { content: content.slice(0, MAX_OUTPUT) + `\n...(truncated ${content.length} chars)`, size: content.length };
-        return { content, size: content.length };
-      } catch (e) { return { error: e.message }; }
+        if (!args.path || typeof args.path !== "string") return { error: "path is required" };
+        // Cap bytes actually read: 4 bytes/char is the UTF-8 worst case, so
+        // MAX_OUTPUT*4+8 bytes always yield >= MAX_OUTPUT chars — anything
+        // beyond that would be truncated anyway. Without this, readFile()
+        // pulled multi-GB files fully into memory (OOM) before slicing.
+        const MAX_READ_BYTES = MAX_OUTPUT * 4 + 8;
+        const st = await stat(args.path);
+        if (st.size <= MAX_READ_BYTES) {
+          const content = await readFile(args.path, "utf-8");
+          if (content.length > MAX_OUTPUT) return { content: content.slice(0, MAX_OUTPUT) + `\n...(truncated ${content.length} chars)`, size: content.length };
+          return { content, size: content.length };
+        }
+        const handle = await open(args.path, "r");
+        try {
+          const buf = Buffer.alloc(MAX_READ_BYTES);
+          const { bytesRead } = await handle.read(buf, 0, MAX_READ_BYTES, 0);
+          let partial = buf.subarray(0, bytesRead).toString("utf-8");
+          // A multi-byte char cut at the read boundary decodes to U+FFFD.
+          if (partial.endsWith("\uFFFD")) partial = partial.slice(0, -1);
+          return {
+            content: partial.slice(0, MAX_OUTPUT) + `\n...(truncated: file is ${st.size} bytes; only the first ${bytesRead} bytes were read — use grep with context= or bash to inspect the rest)`,
+            size: st.size,
+            truncated: true,
+          };
+        } finally { await handle.close(); }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "view_image": {
       // P3: dedicated image-viewing tool. Unlike file_read (which forces utf-8
@@ -386,7 +407,7 @@ export async function runTool(tc) {
         // Whitelist of supported formats — both MIME detection and tool docs
         // depend on this set; keep them in sync with the tool definition.
         const ext = extname(args.path).toLowerCase();
-        const supported = {
+        const supported: Record<string, string> = {
           ".png":  "image/png",
           ".jpg":  "image/jpeg",
           ".jpeg": "image/jpeg",
@@ -424,7 +445,7 @@ export async function runTool(tc) {
           size: buf.length,
           description: `Image at ${args.path} (${(buf.length / 1024).toFixed(1)}KB, ${ext})`,
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "file_write": {
       try {
@@ -432,7 +453,7 @@ export async function runTool(tc) {
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         await writeFile(args.path, args.content, "utf-8");
         return { success: true, path: args.path };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "file_edit": {
       try {
@@ -473,12 +494,12 @@ export async function runTool(tc) {
           replaceAll: !!args.replaceAll,
           firstMatchLine: occurrences[0].line,
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "grep": {
       try {
         const dir = args.path || getWorkspace();
-        const esc = s => String(s).replace(/'/g, "''");
+        const esc = (s: any) => String(s).replace(/'/g, "''");
         // P: configurable context lines + result cap. Previously hardcoded to
         // 100 matches with zero context — symbol searches lost surrounding code.
         const ctx = Number.isFinite(args.context) ? Math.max(0, Math.floor(args.context)) : 2;
@@ -502,13 +523,13 @@ export async function runTool(tc) {
         }
         const r = await runShell(cmd, { timeout: args.timeout ?? 15000 });
         if (r.error) return { error: r.error };
-        const matches = r.out.trim().split("\n").filter(Boolean);
+        const matches = (r.out ?? "").trim().split("\n").filter(Boolean);
         return {
           matches,
           count: matches.length,
           ...(matches.length === maxResults ? { hint: `Result cap reached (${maxResults}). Refine the pattern or use max_results to raise the limit (max 500).` } : {}),
         };
-      } catch (e) { return { error: e?.message || String(e) }; }
+      } catch (e: any) { return { error: e?.message || String(e) }; }
     }
     case "glob": {
       try {
@@ -520,7 +541,7 @@ export async function runTool(tc) {
         // identically on both platforms and avoids shell quoting entirely.
         const matches = await globWalk(dir, args.pattern || "**/*", 200);
         return { files: matches };
-      } catch (e) { return { error: e?.message || String(e) }; }
+      } catch (e: any) { return { error: e?.message || String(e) }; }
     }
     case "web_fetch": {
       try {
@@ -544,14 +565,21 @@ export async function runTool(tc) {
           .trim();
         const truncated = text.length > maxLen ? text.slice(0, maxLen) + `\n...(truncated ${text.length} chars)` : text;
         return { content: truncated, url: args.url, size: text.length };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "web_search": {
       try {
         const maxRes = Math.min(args.max_results || 5, 10);
-        const query = args.query;
+        const query = String(args.query || "");
         const savedPref = readSearchProviderPref();
         const provider = savedPref || "tavily";
+
+        // Recency heuristics → Tavily news topic + days window
+        const wantsNews = /(昨天|今日|今天|昨日|最近|最新|近期|刚刚|新闻|快讯|时事|today|yesterday|latest|recent|breaking|this\s+(week|month|year)|news)/i.test(query)
+          || Number.isFinite(Number(args.days));
+        const daysArg = Number.isFinite(Number(args.days))
+          ? Math.max(1, Math.min(30, Math.floor(Number(args.days))))
+          : (/(昨天|yesterday)/i.test(query) ? 2 : wantsNews ? 7 : undefined);
 
         // ── Tavily (paid, needs API key) ───────────────────────
         if (provider === "tavily") {
@@ -569,15 +597,45 @@ export async function runTool(tc) {
             } catch { /* fallback */ }
           }
           if (tavilyKey) {
+            const body: Record<string, any> = {
+              query,
+              max_results: maxRes,
+              search_depth: wantsNews ? "advanced" : "basic",
+              topic: wantsNews ? "news" : "general",
+              include_answer: false,
+            };
+            if (wantsNews && daysArg) body.days = daysArg;
             const res = await fetch("https://api.tavily.com/search", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${tavilyKey}` },
-              body: JSON.stringify({ query, max_results: maxRes, search_depth: "basic", topic: "general", include_answer: false }),
+              body: JSON.stringify(body),
               signal: AbortSignal.timeout(15000),
             });
             if (res.ok) {
               const data = await res.json();
-              return { query, provider: "tavily", results: data.results?.map(r => ({ title: r.title, url: r.url, content: r.content, score: r.score })) || [] };
+              const mapped = (data.results || []).map((r: any) => {
+                let hostname = "";
+                try { hostname = new URL(r.url).hostname.replace(/^www\./, ""); } catch { /* keep empty */ }
+                return {
+                  title: r.title,
+                  url: r.url,
+                  hostname,
+                  content: r.content,
+                  score: r.score,
+                  published_date: r.published_date || r.date || null,
+                };
+              });
+              const uniqueHosts = [...new Set(mapped.map((r: any) => r.hostname).filter(Boolean))];
+              return {
+                query,
+                provider: "tavily",
+                topic: body.topic,
+                results: mapped,
+                unique_domains: uniqueHosts.length,
+                _note: uniqueHosts.length < 2
+                  ? `Only ${uniqueHosts.length} unique domain(s) in this batch. Corroborate core claims with ≥2 different hostnames before stating them as fact.`
+                  : undefined,
+              };
             }
           }
           // Tavily unavailable → fall through to metasearch
@@ -585,13 +643,23 @@ export async function runTool(tc) {
 
         // ── Meta-search (free, Bing + DDG + GitHub, no API key) ──
         const meta = await searchMeta(query, maxRes);
+        const metaResults = (meta.results || []).map((r: any) => {
+          let hostname = "";
+          try { hostname = new URL(r.url).hostname.replace(/^www\./, ""); } catch { /* keep empty */ }
+          return { ...r, hostname };
+        });
+        const uniqueHosts = [...new Set(metaResults.map((r: any) => r.hostname).filter(Boolean))];
         return {
           query: meta.query,
           provider: "metasearch",
-          results: meta.results,
-          ...(meta._warnings ? { _note: meta._warnings } : {}),
+          results: metaResults,
+          unique_domains: uniqueHosts.length,
+          ...(uniqueHosts.length < 2
+            ? { _note: `Only ${uniqueHosts.length} unique domain(s) in this batch. Corroborate core claims with ≥2 different hostnames before stating them as fact.` }
+            : {}),
+          ...(meta._warnings ? { _warnings: meta._warnings } : {}),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "get_session_info": {
       // P3: Authoritative AideAgent session configuration for the LLM.
@@ -602,7 +670,7 @@ export async function runTool(tc) {
       try {
         const { getSessionInfo } = await import("./session-info.ts");
         return getSessionInfo(args || {});
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "list_tools": {
       // P2-4: Authoritative tools inventory for the LLM.
@@ -613,7 +681,7 @@ export async function runTool(tc) {
         const { getAllToolDefs } = await import("./format-adapters.ts");
         const defs = getAllToolDefs(true, true) || [];
         // Categorize by inspecting name + description
-        const categorize = (name) => {
+        const categorize = (name: string): string => {
           if (["file_read", "file_write", "file_edit", "view_image", "grep", "glob", "lsp"].includes(name)) return "file";
           if (name === "bash") return "shell";
           if (["web_search", "web_fetch"].includes(name)) return "web";
@@ -626,9 +694,9 @@ export async function runTool(tc) {
           if (["list_memories", "list_kb", "list_mcp", "list_tools"].includes(name)) return "meta";
           return "other";
         };
-        const byCategory = {};
-        const builtins = new Set();
-        const allNames = [];
+        const byCategory: Record<string, number> = {};
+        const builtins = new Set<string>();
+        const allNames: string[] = [];
         for (const d of defs) {
           const n = d.function.name;
           allNames.push(n);
@@ -672,7 +740,7 @@ export async function runTool(tc) {
             description: (d.function.description || "").slice(0, 200),
           })),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "list_mcp": {
       // P2-3: Authoritative MCP inventory for the LLM.
@@ -698,7 +766,7 @@ export async function runTool(tc) {
           };
         }
         // Summary view
-        const byStatus = {};
+        const byStatus: Record<string, number> = {};
         let totalTools = 0;
         for (const s of all) {
           byStatus[s.status || "unknown"] = (byStatus[s.status || "unknown"] || 0) + 1;
@@ -715,7 +783,7 @@ export async function runTool(tc) {
             toolNames: (s.tools || []).map(t => t.name),
           })),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "list_kb": {
       // P2-2: Authoritative KB inventory for the LLM.
@@ -735,9 +803,9 @@ export async function runTool(tc) {
         const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(500, Math.floor(args.limit))) : 200;
         const offset = Number.isFinite(args.offset) ? Math.max(0, Math.floor(args.offset)) : 0;
         const result = kb.listNotes(offset, limit);
-        const byPath = {};
-        for (const n of (result.notes || [])) {
-          const dir = (n.rel_path || "").split(/[\\/]/).slice(0, -1).join("/") || "(root)";
+        const byPath: Record<string, number> = {};
+        for (const n of ((result as any).notes || [])) {
+          const dir = ((n as any).rel_path || "").split(/[\\/]/).slice(0, -1).join("/") || "(root)";
           byPath[dir] = (byPath[dir] || 0) + 1;
         }
         return {
@@ -748,15 +816,15 @@ export async function runTool(tc) {
           byPath,
           canonicalPath: vault,
           warning: "These are the indexed KB notes. Do not bash/grep the vault directory directly — that bypasses the FTS5+vector index and is much slower.",
-          notes: (result.notes || []).map(n => ({
+          notes: ((result as any).notes || []).map((n: any) => ({
             id: n.id,
             rel_path: n.rel_path,
             title: n.title,
-            size: n.size,
+            size: n.size ?? n.word_count,
             mtime: n.mtime_ms ? new Date(n.mtime_ms).toISOString() : null,
           })),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "list_memories": {
       // P2-1: Authoritative structured memory inventory for the LLM.
@@ -774,7 +842,7 @@ export async function runTool(tc) {
             (m.filename || "").toLowerCase().includes(searchTerm)
           );
         }
-        const byType = {};
+        const byType: Record<string, number> = {};
         for (const m of all) {
           const t = m.type || "unknown";
           byType[t] = (byType[t] || 0) + 1;
@@ -783,10 +851,10 @@ export async function runTool(tc) {
         const oldHome = homedir();
         const oldUserPath = join(oldHome, ".aideagent", "memories", "USER.md");
         const oldMemoryPath = join(oldHome, ".aideagent", "memories", "MEMORY.md");
-        const fileMeta = {};
+        const fileMeta: Record<string, any> = {};
         for (const [label, p] of [["USER.md", oldUserPath], ["MEMORY.md", oldMemoryPath]]) {
           try {
-            const st = statSync(p);
+            const st = statSync(p as string);
             fileMeta[label] = { path: p, size: st.size, mtime: st.mtime.toISOString() };
           } catch { /* not present */ }
         }
@@ -805,7 +873,7 @@ export async function runTool(tc) {
             mtime: new Date(m.mtimeMs || 0).toISOString(),
           })),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "list_skills": {
       // Fix-2: Authoritative structured skill inventory for the LLM.
@@ -833,7 +901,7 @@ export async function runTool(tc) {
           };
         }
         // Aggregate view
-        const bySource = {};
+        const bySource: Record<string, number> = {};
         const nameCount = new Map();
         for (const s of filtered) {
           bySource[s.source || "unknown"] = (bySource[s.source || "unknown"] || 0) + 1;
@@ -861,7 +929,7 @@ export async function runTool(tc) {
             triggers: s.triggers || [],
           })),
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "skill": {
       // P2 fix: unified lookup — L2 (agent-created) first, L3 (installed) fallback.
@@ -869,7 +937,7 @@ export async function runTool(tc) {
       // between two near-identical tools (`skill` vs `invoke_skill`). Now both names
       // work the same way. `invoke_skill` is kept as a deprecated alias below.
       try {
-        let skill = /** @type {any} */ (skills.loadSkill(args.name));
+        let skill: any = skills.loadSkill(args.name);
         let tier = "L2";
         if (!skill) {
           const installedSkills = scanSkills();
@@ -889,7 +957,7 @@ export async function runTool(tc) {
           content: skill.body || skill.content || readFileSync(skill.path, "utf-8"),
           tier,
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "write_memory": {
       try {
@@ -909,14 +977,14 @@ export async function runTool(tc) {
         const result = memory.createMemory(memName, memDesc, type, content);
         if (result.error) return result;
         return { saved: true, type, name: result.name, filename: result.filename };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "invoke_skill": {
       // Deprecated alias for `skill` (P2: unified the two tools).
       // We re-route to the same handler to keep the unified behavior,
       // and tag the response so callers can see they hit the old name.
       try {
-        let skill = /** @type {any} */ (skills.loadSkill(args.name));
+        let skill: any = skills.loadSkill(args.name);
         let tier = "L2";
         if (!skill) {
           const installedSkills = scanSkills();
@@ -937,14 +1005,14 @@ export async function runTool(tc) {
           tier,
           _deprecated: "invoke_skill is an alias for `skill`; please use `skill` going forward",
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "create_skill": {
       try {
         const { name, description, prompt } = args;
         // skills.loadSkill returns full meta (triggers, version, created_at) but
         // TS infers a narrow shape — cast to any for accessing the full fields.
-        const existing = /** @type {any} */ (skills.loadSkill(name));
+        const existing: any = skills.loadSkill(name);
         const loadWxConfig = await getLoadWxConfig();
         const cfg = loadWxConfig();
         const apiConfig = getLastApiConfig();
@@ -975,11 +1043,11 @@ export async function runTool(tc) {
           updated_at: new Date().toISOString(),
         };
         return skills.saveSkill(name, meta, genBody);
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "TaskCreate": {
       const id = randomUUID();
-      const task = {
+      const task: any = {
         id, subject: args.subject, description: args.description,
         status: "pending", activeForm: args.activeForm || args.subject,
         owner: "", metadata: args.metadata || {}, createdAt: new Date().toISOString(),
@@ -989,9 +1057,9 @@ export async function runTool(tc) {
       return { task: { id, subject: task.subject } };
     }
     case "TaskUpdate": {
-      const t = taskStore.get(args.taskId);
+      const t: any = taskStore.get(args.taskId);
       if (!t) return { error: `Task ${args.taskId} not found` };
-      const updatedFields = [];
+      const updatedFields: string[] = [];
       if (args.status === "deleted") {
         taskStore.delete(args.taskId);
         persistSessionState();
@@ -1023,7 +1091,7 @@ export async function runTool(tc) {
       return { success: true, taskId: args.taskId, updatedFields, unverified: t.unverified || false };
     }
     case "TaskList": {
-      const tasks = Array.from(taskStore.values()).filter(t => t.status !== "deleted");
+      const tasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted");
       return {
         tasks: tasks.map(t => ({ id: t.id, subject: t.subject, status: t.status, activeForm: t.activeForm, evidence: t.evidence, unverified: t.unverified || false })),
         summary: `${tasks.filter(t => t.status === "completed").length}/${tasks.length} completed, ${tasks.filter(t => t.status === "in_progress").length} in progress`,
@@ -1031,7 +1099,7 @@ export async function runTool(tc) {
     }
     case "TodoWrite": {
       const oldTodos = [...getTodoList()];
-      setTodoList((args.todos || []).map((t, i) => ({ id: `todo_${i + 1}`, content: t.content, status: t.status, activeForm: t.activeForm })));
+      setTodoList((args.todos || []).map((t: any, i: number) => ({ id: `todo_${i + 1}`, content: t.content, status: t.status, activeForm: t.activeForm })));
       persistSessionState();
       return { oldTodos, newTodos: getTodoList() };
     }
@@ -1044,7 +1112,7 @@ export async function runTool(tc) {
         const output = result.text || "(no result)";
         sendToRenderer("subagent:done", { id: subAgentId, description: args.description, output });
         return { output, aborted: result.aborted || false };
-      } catch (e) {
+      } catch (e: any) {
         sendToRenderer("subagent:done", { id: subAgentId, description: args.description, error: e.message });
         return { error: e.message };
       }
@@ -1052,9 +1120,9 @@ export async function runTool(tc) {
     case "AskUserQuestion": {
       const questions = args.questions || [];
       if (questions.length === 0) return { error: "At least one question required" };
-      return new Promise(resolve => {
-        const qId = nextAskId();
-        _askResolvers.set(qId, resolve);
+        return new Promise(resolve => {
+          const qId = nextAskId();
+          _askResolvers.set(qId, resolve as any);
         sendToRenderer("ask:question", { id: qId, questions });
         setTimeout(() => {
           if (_askResolvers.has(qId)) {
@@ -1078,7 +1146,7 @@ export async function runTool(tc) {
           })),
           count: results.length,
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "kb_write": {
       try {
@@ -1092,7 +1160,7 @@ export async function runTool(tc) {
           const result = await kb.createNote(notePath, noteContent, tags || []);
           return { ...result, action: "created", path: notePath };
         }
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "kb_get_note": {
       try {
@@ -1108,7 +1176,7 @@ export async function runTool(tc) {
         // that want structured access.
         const text = note.content !== null
           ? note.content
-          : (note.chunks || []).map((/** @type {any} */ c) => c.content).join("\n\n");
+          : (note.chunks || []).map((c: any) => c.content).join("\n\n");
         return {
           path: note.rel_path,
           title: note.title,
@@ -1116,7 +1184,7 @@ export async function runTool(tc) {
           format: note.format || null,
           chunks: note.chunks || null,
         };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "lsp": {
       try {
@@ -1129,7 +1197,7 @@ export async function runTool(tc) {
         else if (op === "documentSymbol") result = await lspManager.documentSymbol(args.filePath);
         else return { error: `Unknown LSP operation: ${op}` };
         return { operation: op, result: result.text, resultCount: result.count };
-      } catch (e) { return { error: `LSP error: ${e.message}` }; }
+      } catch (e: any) { return { error: `LSP error: ${e.message}` }; }
     }
     case "git_diff": {
       try {
@@ -1137,7 +1205,7 @@ export async function runTool(tc) {
         const r = await runShell(cmd);
         const stat = await runShell("git diff --stat");
         return { diff: r.out || "(no changes)", stats: stat.out || "" };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "git_commit": {
       try {
@@ -1155,7 +1223,7 @@ export async function runTool(tc) {
         if (args.amend) gitArgs.unshift("--amend");
         const r = await runSpawnSafe("git", gitArgs);
         return { output: r.out || r.err, success: r.code === 0 };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "git_branch": {
       try {
@@ -1168,7 +1236,7 @@ export async function runTool(tc) {
           default: return { error: `Unknown action: ${args.action}` };
         }
         return { output: r.out || r.err, success: r.code === 0 };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "gh_pr": {
       // P0 security fix: every branch now uses runSpawnSafe("gh", [...])
@@ -1229,7 +1297,7 @@ export async function runTool(tc) {
         }
         const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "gh_issue": {
       // Same security fix as gh_pr — all branches use runSpawnSafe.
@@ -1279,7 +1347,7 @@ export async function runTool(tc) {
         }
         const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     case "gh_repo": {
       // Same security fix — all branches use runSpawnSafe.
@@ -1327,7 +1395,7 @@ export async function runTool(tc) {
             let decoded = "";
             if (b64) {
               try { decoded = Buffer.from(b64, "base64").toString("utf-8"); }
-              catch (/** @type {any} */ decErr) {
+              catch (decErr: any) {
                 // gh sometimes wraps the base64 with quotes or returns it
                 // as a JSON string; strip outer quotes and retry.
                 const stripped = b64.replace(/^"|"$/g, "");
@@ -1353,19 +1421,19 @@ export async function runTool(tc) {
         }
         const r = await runSpawnSafe("gh", ghArgs);
         return { output: r.out || r.err, success: r.code === 0 };
-      } catch (e) { return { error: e.message }; }
+      } catch (e: any) { return { error: e.message }; }
     }
     default: {
       try {
         const mcpResult = await mcpManager.callTool(name, args);
         const contentText = (mcpResult.content || [])
-          .map(c => c.type === "text" ? c.text : JSON.stringify(c))
+          .map((c: any) => c.type === "text" ? c.text : JSON.stringify(c))
           .join("\n");
         const result = mcpResult.isError
           ? { error: contentText }
           : { output: contentText };
         return result;
-      } catch (mcpErr) {
+      } catch (mcpErr: any) {
         return { error: `Unknown tool: ${name} (MCP: ${mcpErr.message})` };
       }
     }

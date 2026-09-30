@@ -41,32 +41,20 @@ if (!existsSync(MEM_DIR)) mkdirSync(MEM_DIR, { recursive: true });
  * @param {number} mtimeMs
  * @returns {number}
  */
-export function memoryAgeDays(mtimeMs) {
+export function memoryAgeDays(mtimeMs: number): number {
   if (!mtimeMs || mtimeMs <= 0) return 0;
   const diff = Date.now() - mtimeMs;
   return Math.max(0, Math.floor(diff / 86_400_000));
 }
 
-/**
- * Human-readable age string that triggers staleness reasoning in models.
- * "today" / "yesterday" / "N days ago"
- * @param {number} mtimeMs
- * @returns {string}
- */
-export function memoryAge(mtimeMs) {
+export function memoryAge(mtimeMs: number): string {
   const days = memoryAgeDays(mtimeMs);
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
   return `${days} days ago`;
 }
 
-/**
- * Staleness caveat for memories older than 1 day.
- * Returns '' for fresh memories (<=1 day) to avoid noise.
- * @param {number} mtimeMs
- * @returns {string}
- */
-export function memoryFreshnessNote(mtimeMs) {
+export function memoryFreshnessNote(mtimeMs: number): string {
   const days = memoryAgeDays(mtimeMs);
   if (days <= 1) return "";
   return `\n> ⚠️ This memory is ${days} days old. Memories are point-in-time observations — claims about code paths, file locations, or function names may be outdated. Verify against current code before acting.`;
@@ -74,8 +62,7 @@ export function memoryFreshnessNote(mtimeMs) {
 
 // ── FTS5 ──────────────────────────────────────────────────────
 
-/** @type {import("node:sqlite").DatabaseSync | null} */
-let _ftsDb = null;
+let _ftsDb: import("node:sqlite").DatabaseSync | null = null;
 function getFtsDb() {
   if (_ftsDb) return _ftsDb;
   _ftsDb = new DatabaseSync(FTS_PATH);
@@ -86,32 +73,17 @@ function getFtsDb() {
   return _ftsDb;
 }
 
-/**
- * Close the FTS SQLite handle. Called by main.mjs on `will-quit` so the
- * SQLite WAL journal is checkpointed cleanly and the `.db` file is not left
- * locked on Windows. Safe to call when the handle hasn't been opened.
- */
 export function closeFtsDb() {
   if (!_ftsDb) return;
   try { _ftsDb.close(); } catch { /* ignore — already closed or invalid */ }
   _ftsDb = null;
 }
 
-/**
- * @param {string} filename
- */
-function ftsDelete(filename) {
+function ftsDelete(filename: string) {
   try { getFtsDb().prepare("DELETE FROM mem_fts WHERE filename = ?").run(filename); } catch { /* ignored */ }
 }
 
-/**
- * @param {string} filename
- * @param {string} name
- * @param {string} description
- * @param {string} type
- * @param {string} body
- */
-function ftsInsert(filename, name, description, type, body) {
+function ftsInsert(filename: string, name: string, description: string, type: string, body: string) {
   try {
     ftsDelete(filename);
     getFtsDb().prepare("INSERT INTO mem_fts(filename, name, description, type, body) VALUES (?,?,?,?,?)")
@@ -121,11 +93,7 @@ function ftsInsert(filename, name, description, type, body) {
 
 // ── Frontmatter ───────────────────────────────────────────────
 
-/**
- * @param {string} text
- * @returns {{ name: string, description: string, type: string }}
- */
-function parseFrontMatter(text) {
+function parseFrontMatter(text: string): { name: string, description: string, type: string } {
   const meta = { name: "", description: "", type: "project" };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return meta;
@@ -141,13 +109,7 @@ function parseFrontMatter(text) {
   return meta;
 }
 
-/**
- * @param {string} name
- * @param {string} description
- * @param {string} type
- * @returns {string}
- */
-function makeFrontMatter(name, description, type) {
+function makeFrontMatter(name: string, description: string, type: string): string {
   return `---
 name: ${name}
 description: ${description}
@@ -166,16 +128,11 @@ function readIndex() {
 /**
  * @param {string} content
  */
-function writeIndex(content) {
+function writeIndex(content: string) {
   try { writeFileSync(INDEX_PATH, content, "utf-8"); } catch { /* ignored */ }
 }
 
-/**
- * @param {string} filename
- * @param {string} name
- * @param {string} description
- */
-function addToIndex(filename, name, description) {
+function addToIndex(filename: string, name: string, description: string) {
   let idx = readIndex();
   // Remove existing entry for this file if present
   const lines = idx.split("\n").filter(l => !l.includes(`(${filename})`));
@@ -192,10 +149,7 @@ function addToIndex(filename, name, description) {
   writeIndex(result);
 }
 
-/**
- * @param {string} filename
- */
-function removeFromIndex(filename) {
+function removeFromIndex(filename: string) {
   let idx = readIndex();
   idx = idx.split("\n").filter(l => !l.includes(`(${filename})`)).join("\n");
   writeIndex(idx);
@@ -203,12 +157,18 @@ function removeFromIndex(filename) {
 
 // ── CRUD ──────────────────────────────────────────────────────
 
-/**
- * List all memory files (sorted newest-first, max 200).
- * Returns: [{ filename, name, description, type, mtimeMs }]
- */
-export function listMemories() {
-  const results = [];
+interface MemoryFile {
+  filename: string;
+  name: string;
+  description: string;
+  type: string;
+  body: string;
+  mtimeMs: number;
+  mtime?: number;
+}
+
+export function listMemories(): MemoryFile[] {
+  const results: any[] = [];
   try {
     const entries = readdirSync(MEM_DIR);
     for (const entry of entries) {
@@ -235,11 +195,7 @@ export function listMemories() {
   return results.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-/**
- * @param {string} filename
- * @returns {{ filename: string, name: string, description: string, type: string, body: string } | null}
- */
-export function readMemory(filename) {
+export function readMemory(filename: string): { filename: string, name: string, description: string, type: string, body: string } | null {
   const filePath = join(MEM_DIR, filename);
   try {
     const text = readFileSync(filePath, "utf-8");
@@ -256,14 +212,7 @@ export function readMemory(filename) {
   }
 }
 
-/**
- * @param {string} name
- * @param {string} [description]
- * @param {string} [type]
- * @param {string} [body]
- * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
- */
-export function createMemory(name, description, type, body) {
+export function createMemory(name: string, description?: string, type?: string, body?: string): { ok: boolean, filename?: string, name?: string, error?: string } {
   if (!name) return { ok: false, error: "name is required" };
   // P1: reject empty bodies to prevent empty memory files
   if (!body || !String(body).trim()) {
@@ -281,15 +230,7 @@ export function createMemory(name, description, type, body) {
   return { ok: true, filename, name };
 }
 
-/**
- * @param {string} filename
- * @param {string} [body]
- * @param {string} [name]
- * @param {string} [description]
- * @param {string} [type]
- * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
- */
-export function updateMemory(filename, body, name, description, type) {
+export function updateMemory(filename: string, body?: string, name?: string, description?: string, type?: string): { ok: boolean, filename?: string, name?: string, error?: string } {
   const existing = readMemory(filename);
   if (!existing) return { ok: false, error: `Memory file not found: ${filename}` };
 
@@ -316,7 +257,7 @@ export function updateMemory(filename, body, name, description, type) {
  * @param {string} type  one of "project" | "feedback" | "reference"
  * @returns {{ ok: boolean, removed?: number, names?: string[], error?: string }}
  */
-export function purgeByType(type) {
+export function purgeByType(type: string): { ok: boolean, removed?: number, names?: string[], failed?: string[], error?: string } {
   if (!type || (type !== "project" && type !== "feedback" && type !== "reference")) {
     return { ok: false, error: `invalid type: ${type} (refusing to bulk-delete user memories)` };
   }
@@ -336,36 +277,27 @@ export function purgeByType(type) {
   return { ok: true, removed: removed.length, names: removed };
 }
 
-/**
- * @param {string} filename
- * @returns {{ ok: boolean, error?: string }}
- */
-export function deleteMemory(filename) {
+export function deleteMemory(filename: string): { ok: boolean, error?: string } {
   const filePath = join(MEM_DIR, filename);
   try {
     unlinkSync(filePath);
     removeFromIndex(filename);
     ftsDelete(filename);
     return { ok: true };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     return { ok: false, error: e.message };
   }
 }
 
 // ── Search ────────────────────────────────────────────────────
 
-/**
- * @param {string} query
- * @param {number} [limit]
- * @returns {Array<{ filename: string, name: string, description: string, type: string, snippet: string, rank: number }>}
- */
-export function searchMemory(query, limit = 10) {
+export function searchMemory(query: string, limit = 10): Array<{ filename: string, name: string, description: string, type: string, snippet: string, rank: number }> {
   const db = getFtsDb();
   try {
     const rows = db.prepare(
       "SELECT filename, name, description, type, snippet(mem_fts,4,'<mark>','</mark>','…',64) as snippet, rank FROM mem_fts WHERE mem_fts MATCH ? ORDER BY rank LIMIT ?"
     ).all(query, limit);
-    return rows.map(/** @param {any} r */ (r) => ({
+    return rows.map((r: any) => ({
       filename: r.filename,
       name: r.name,
       description: r.description,
@@ -377,9 +309,9 @@ export function searchMemory(query, limit = 10) {
     // LIKE fallback for CJK
     return db.prepare(
       "SELECT filename, name, description, type, body FROM mem_fts WHERE body LIKE ? LIMIT ?"
-    ).all("%" + query + "%", limit).map(/** @param {any} r */ (r) => ({
+    ).all("%" + query + "%", limit).map((r: any) => ({
       filename: r.filename, name: r.name, description: r.description,
-      type: r.type, snippet: (r.body || "").substring(0, 200), rank: 0,
+      type: r.type, snippet: String(r.body || "").substring(0, 200), rank: 0,
     }));
   }
 }
@@ -466,11 +398,7 @@ export function readProjectMemory() {
   return idx || "";
 }
 
-/**
- * @param {string} content
- * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
- */
-export function appendUserMemory(content) {
+export function appendUserMemory(content: string): { ok: boolean, filename?: string, name?: string, error?: string } {
   // Convert to new format: create/update user_profile
   const existing = readMemory("user_profile.md");
   if (existing) {
@@ -505,10 +433,10 @@ export function appendUserMemory(content) {
  * @param {string} text
  * @returns {string[]} array of tokens (may contain duplicates — caller decides dedup)
  */
-export function tokenizeForMemory(text) {
+export function tokenizeForMemory(text: string): string[] {
   if (!text) return [];
   const s = String(text);
-  const tokens = [];
+  const tokens: string[] = [];
 
   // ASCII words: identifiers, file names, English words. Keep length > 2
   // to avoid noise from "a", "an", "the", "to", etc.
@@ -535,7 +463,7 @@ export function tokenizeForMemory(text) {
   return tokens;
 }
 
-export function appendProjectMemory(content) {
+export function appendProjectMemory(content: string) {
   // P1: reject empty content
   if (!content || !String(content).trim()) {
     return { ok: false, error: "content is required (refusing to append empty memory)" };
@@ -630,11 +558,7 @@ export function enforceProjectMemoryCap() {
   return { removed: removed.length, names: removed };
 }
 
-/**
- * @param {string} content
- * @returns {{ ok: boolean, filename?: string, name?: string, error?: string }}
- */
-export function writeUserMemory(content) {
+export function writeUserMemory(content: string): { ok: boolean, filename?: string, name?: string, error?: string } {
   const existing = readMemory("user_profile.md");
   if (existing) {
     return updateMemory("user_profile.md", content);
@@ -642,22 +566,13 @@ export function writeUserMemory(content) {
   return createMemory("user_profile", "About the user", "user", content);
 }
 
-/**
- * @param {string} content
- * @returns {{ ok: boolean }}
- */
-export function writeProjectMemory(content) {
+export function writeProjectMemory(content: string): { ok: boolean } {
   // Legacy: write directly to index
   writeIndex(content);
   return { ok: true };
 }
 
-/**
- * @param {string} type
- * @param {string} text
- * @returns {boolean}
- */
-export function checkDuplicate(type, text) {
+export function checkDuplicate(type: string, text: string): boolean {
   const memories = listMemories();
   const tokens = tokenizeForMemory(text);
   if (tokens.length === 0) return false;

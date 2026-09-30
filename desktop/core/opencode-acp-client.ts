@@ -35,9 +35,32 @@ const REQUEST_TIMEOUT_MS = 120_000;
 
 // Set DEBUG_OPENCODE_ACP=1 to enable verbose protocol logging.
 const DEBUG = process.env.DEBUG_OPENCODE_ACP === "1" || process.env.DEBUG_OPENCODE_ACP === "true";
-function dbg(...args) { if (DEBUG) console.log("[acp]", ...args); }
+function dbg(...args: any[]) { if (DEBUG) console.log("[acp]", ...args); }
+
+interface OpencodeAcpClientOptions {
+  binPath?: string;
+  cwd?: string;
+  clientInfo?: { name: string; version: string };
+  mcpServers?: Array<object>;
+  modelId?: string | null;
+}
 
 export class OpencodeAcpClient extends EventEmitter {
+  /** @type {import('node:child_process').ChildProcess|null} */
+  proc: import("node:child_process").ChildProcess | null = null;
+  _closed = false;
+  cwd: string = process.cwd();
+  binPath: string;
+  clientInfo: { name: string; version: string };
+  mcpServers: Array<object>;
+  modelId: string | null | undefined;
+  _nextId: number = 1;
+  _pending: Map<number, { resolve: (value: any) => void; reject: (err: any) => void; method: string }> = new Map();
+  _sessionId: string | null = null;
+  _readBuf: string = "";
+  _readyPromise: Promise<any> | null = null;
+  _authMethods: any[] = [];
+  _promptCapabilities: { image: boolean; audio: boolean; embeddedContext: boolean } = { image: false, audio: false, embeddedContext: false };
   /**
    * @param {object} opts
    * @param {string} opts.binPath Absolute path to the `opencode` binary.
@@ -48,7 +71,7 @@ export class OpencodeAcpClient extends EventEmitter {
    *   Forwarded to ACP `session/new` so opencode binds that model. When null,
    *   opencode picks its own default.
    */
-  constructor({ binPath, cwd, clientInfo, mcpServers = [], modelId } = {}) {
+  constructor({ binPath, cwd, clientInfo, mcpServers = [], modelId }: OpencodeAcpClientOptions = {}) {
     super();
     if (!binPath) throw new Error("OpencodeAcpClient: binPath required");
     this.binPath = binPath;
@@ -160,7 +183,7 @@ export class OpencodeAcpClient extends EventEmitter {
       dbg("auth required:", this._authMethods);
       try {
         await this._request("authenticate", { methodId: this._authMethods[0].id });
-      } catch (err) {
+      } catch (err: any) {
         dbg("authenticate failed:", err.message);
         this.emit("auth-required", { authMethods: this._authMethods, error: err.message });
       }
@@ -191,7 +214,7 @@ export class OpencodeAcpClient extends EventEmitter {
           configId: "model",
           value: this.modelId,
         });
-      } catch (/** @type {any} */ e) {
+      } catch (e: any) {
         // Non-fatal: fall back to opencode's default model and surface the
         // failure in the ready event so the renderer can warn the user.
         console.warn(`[OpencodeAcpClient] failed to set model ${this.modelId}: ${e.message}`);
@@ -215,7 +238,7 @@ export class OpencodeAcpClient extends EventEmitter {
    * @param {string|Array<object>} text
    * @returns {Promise<{ stopReason: string }>}
    */
-  async sendPrompt(text) {
+  async sendPrompt(text: string | Array<object>) {
     if (!this._sessionId) throw new Error("not started: call start() first");
     if (this._closed) throw new Error("client closed");
 
@@ -225,9 +248,10 @@ export class OpencodeAcpClient extends EventEmitter {
       : text;
 
     let responseReceived = false;
-    let quietTimer = null;
-    let resolveDone, rejectDone;
-    const donePromise = new Promise((res, rej) => { resolveDone = res; rejectDone = rej; });
+    let quietTimer: ReturnType<typeof setTimeout> | null = null;
+    let resolveDone: (value: { stopReason: string }) => void = () => {};
+    let rejectDone: (err: unknown) => void = () => {};
+    const donePromise = new Promise<{ stopReason: string }>((res, rej) => { resolveDone = res; rejectDone = rej; });
     donePromise.catch(() => {}); // suppress unhandled-rejection warnings
 
     const armQuietTimer = () => {
@@ -238,7 +262,7 @@ export class OpencodeAcpClient extends EventEmitter {
       }, POST_RESPONSE_QUIET_MS);
     };
 
-    const onUpdate = (params) => {
+    const onUpdate = (params: any) => {
       this._dispatchUpdate(params);
       if (responseReceived) armQuietTimer();
     };
@@ -277,7 +301,7 @@ export class OpencodeAcpClient extends EventEmitter {
    * @param {Array<{name:string, type:string, dataUrl:string, size?:number}>} files
    * @returns {{ blocks: Array<object>, tempDir: string|null, dropped: Array<{name:string, reason:string}> }}
    */
-  buildFileBlocks(files) {
+  buildFileBlocks(files: Array<{ name: string; type: string; dataUrl: string; size?: number }>) {
     if (!Array.isArray(files) || files.length === 0) {
       return { blocks: [], tempDir: null, dropped: [] };
     }
@@ -285,7 +309,7 @@ export class OpencodeAcpClient extends EventEmitter {
     const caps = this._promptCapabilities || {};
     const blocks = [];
     const dropped = [];
-    let tempDir = null;
+    let tempDir: string | null = null;
 
     // Lazily create a temp dir for resource_link fallback.
     const ensureTempDir = () => {
@@ -345,7 +369,7 @@ export class OpencodeAcpClient extends EventEmitter {
           mimeType: mime,
           size: file.size,
         });
-      } catch (err) {
+      } catch (err: any) {
         dropped.push({ name, reason: `temp write failed: ${err.message}` });
       }
     }
@@ -358,11 +382,11 @@ export class OpencodeAcpClient extends EventEmitter {
    * fallback). Safe to call even if no temp dir was created.
    * @param {string|null} tempDir
    */
-  cleanupFileBlocks(tempDir) {
+  cleanupFileBlocks(tempDir: string | null) {
     if (!tempDir) return;
     try {
       rmSync(tempDir, { recursive: true, force: true });
-    } catch (err) {
+    } catch (err: any) {
       dbg("cleanupFileBlocks failed:", err.message);
     }
   }
@@ -398,7 +422,7 @@ export class OpencodeAcpClient extends EventEmitter {
   // ── Internal: transport ────────────────────────────────────────────
 
   /** @param {Buffer|string} chunk */
-  _onStdoutChunk(chunk) {
+  _onStdoutChunk(chunk: Buffer | string) {
     this._readBuf += chunk.toString("utf-8");
     let nlIdx;
     while ((nlIdx = this._readBuf.indexOf("\n")) !== -1) {
@@ -414,14 +438,14 @@ export class OpencodeAcpClient extends EventEmitter {
   }
 
   /** @param {object} msg JSON-RPC 2.0 message */
-  _onMessage(msg) {
+  _onMessage(msg: any) {
     // 1. Response to one of OUR requests (has id + result/error, no method).
     if (typeof msg.id === "number" && (msg.result !== undefined || msg.error !== undefined)) {
       const pending = this._pending.get(msg.id);
       if (!pending) return;
       this._pending.delete(msg.id);
       if (msg.error) {
-        const err = new Error(msg.error.message || JSON.stringify(msg.error));
+        const err: any = new Error(msg.error.message || JSON.stringify(msg.error));
         err.code = msg.error.code;
         pending.reject(err);
       } else {
@@ -440,7 +464,7 @@ export class OpencodeAcpClient extends EventEmitter {
         // option, else a synthetic "allow-once" — never reject, since the
         // current UX treats OpenCode as an auto-approve runtime. The UI
         // gets a `permission-request` event for visibility only.
-        const options = Array.isArray(msg.params.options) ? msg.params.options : [];
+        const options: any[] = Array.isArray(msg.params.options) ? msg.params.options : [];
         const allowOnce = options.find((o) => o.kind === "allow_once") || options[0];
         const optionId = (allowOnce && allowOnce.optionId) || "allow-once";
         try {
@@ -479,8 +503,8 @@ export class OpencodeAcpClient extends EventEmitter {
   /** Send a JSON-RPC method call. Rejects with a TimeoutError if the agent
    *  doesn't reply within `REQUEST_TIMEOUT_MS` — prevents the caller from
    *  hanging forever when the subprocess stalls. */
-  _request(method, params) {
-    return new Promise((resolve, reject) => {
+  _request(method: string, params: any): Promise<any> {
+    return new Promise<any>((resolve, reject) => {
       if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed) {
         return reject(new Error("opencode stdin not writable"));
       }
@@ -488,7 +512,7 @@ export class OpencodeAcpClient extends EventEmitter {
       const timer = setTimeout(() => {
         if (this._pending.has(id)) {
           this._pending.delete(id);
-          const err = new Error(`opencode ${method} timed out after ${REQUEST_TIMEOUT_MS}ms`);
+          const err: any = new Error(`opencode ${method} timed out after ${REQUEST_TIMEOUT_MS}ms`);
           err.name = "TimeoutError";
           err.code = "ACP_TIMEOUT";
           reject(err);
@@ -514,7 +538,7 @@ export class OpencodeAcpClient extends EventEmitter {
   }
 
   /** Send a JSON-RPC notification (fire-and-forget). */
-  _notify(method, params) {
+  _notify(method: string, params: any) {
     if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed) return;
     const payload = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
     dbg("NOTIFY", payload.trim());
@@ -527,14 +551,14 @@ export class OpencodeAcpClient extends EventEmitter {
    * @param {number} id - the request id from the incoming message
    * @param {object} result - the result payload
    */
-  _sendResponse(id, result) {
+  _sendResponse(id: number, result: any) {
     if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed) return;
     const payload = JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n";
     dbg("RESP", payload.trim());
     try { this.proc.stdin.write(payload); } catch { /* ignore */ }
   }
 
-  _failAllPending(err) {
+  _failAllPending(err: any) {
     for (const [, pending] of this._pending) pending.reject(err);
     this._pending.clear();
   }
@@ -551,14 +575,14 @@ export class OpencodeAcpClient extends EventEmitter {
    *   { sessionUpdate: "available_commands_update", availableCommands: [...] }
    *   { sessionUpdate: "usage_update",         used, size, cost }
    */
-  _dispatchUpdate(params) {
+  _dispatchUpdate(params: any) {
     const u = params?.update;
     if (!u) return;
     const discriminator = u.sessionUpdate || u.type;
     dbg("UPDATE", discriminator, JSON.stringify(u).slice(0, 240));
 
     // Extract text from the content block: { type:"text", text:"..." }
-    const extractText = (content) => {
+    const extractText = (content: any) => {
       if (!content) return "";
       if (typeof content === "string") return content;
       if (content.text) return content.text;

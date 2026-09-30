@@ -31,17 +31,29 @@ const require = createRequire(import.meta.url);
 
 /* ── Module state ──────────────────────────────────────── */
 
-/** @type {object | null} Latest snapshot pushed from the renderer. */
-let _rendererSnapshot = null;
+interface SessionSnapshot {
+  runtime?: string;
+  api?: Record<string, unknown> | null;
+  appearance?: Record<string, unknown> | null;
+  identity?: Record<string, unknown> | null;
+  toggles?: Record<string, unknown> | null;
+}
+
+let _rendererSnapshot: SessionSnapshot | null = null;
+
+interface TestPaths {
+  homedir?: string;
+  userData?: string;
+}
+
+const _testPaths: TestPaths = {};
 
 /**
  * Test hooks. Production code never calls these.
- * @param {object} overrides
  */
-export function _setTestPaths(overrides) {
+export function _setTestPaths(overrides: Partial<TestPaths>) {
   Object.assign(_testPaths, overrides);
 }
-const _testPaths = {};
 
 /**
  * Resolve the home directory (`~/.aideagent/` parent). Injected in tests
@@ -71,20 +83,18 @@ function _userDataDir() {
 /**
  * Push the latest renderer snapshot. Called from the
  * `session-info:update` IPC handler.
- * @param {object} snapshot
  */
-export function setRendererSnapshot(snapshot) {
+export function setRendererSnapshot(snapshot: SessionSnapshot | null) {
   _rendererSnapshot = snapshot;
 }
 
-/** @returns {object | null} */
-export function getRendererSnapshot() {
+export function getRendererSnapshot(): SessionSnapshot | null {
   return _rendererSnapshot;
 }
 
 /* ── File readers (pure, testable) ─────────────────────── */
 
-function safeReadJson(path) {
+function safeReadJson(path: string): any {
   try {
     if (!existsSync(path)) return null;
     return JSON.parse(readFileSync(path, "utf-8"));
@@ -214,12 +224,12 @@ function readSkillsSummary() {
  * @param {string[]} [args.keys] Top-level keys to return. Default: all.
  * @returns {object}
  */
-export function getSessionInfo(args = {}) {
+export function getSessionInfo(args: { keys?: string[] } = {}) {
   const requested = Array.isArray(args.keys) && args.keys.length > 0
     ? new Set(args.keys)
     : null;
 
-  const all = {
+  const all: Record<string, unknown> = {
     runtime: _rendererSnapshot?.runtime || "aide",
     api: _rendererSnapshot?.api || null,
     appearance: _rendererSnapshot?.appearance || null,
@@ -246,7 +256,7 @@ export function getSessionInfo(args = {}) {
 
   if (!requested) return all;
 
-  const filtered = {};
+  const filtered: Record<string, unknown> = {};
   for (const k of requested) if (k in all) filtered[k] = all[k];
   return {
     requested: [...requested],
@@ -256,16 +266,16 @@ export function getSessionInfo(args = {}) {
   };
 }
 
-let _pkgVersion = null;
-function pkgVersion() {
+let _pkgVersion: string | null = null;
+function pkgVersion(): string {
   if (_pkgVersion !== null) return _pkgVersion;
   try {
-    const pkg = JSON.parse(
+    const pkg: any = JSON.parse(
       readFileSync(join(__dirname, "..", "package.json"), "utf-8")
     );
     _pkgVersion = pkg.version || "unknown";
   } catch {
     _pkgVersion = "unknown";
   }
-  return _pkgVersion;
+  return _pkgVersion!;
 }

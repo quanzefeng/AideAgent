@@ -8,4 +8,4 @@ REM "Windows PATH lookup prefers .cmd" test in opencode-detector.test.mjs.
 REM
 REM We forward stdin/stdout via `more` so the JSON-RPC NDJSON stream flows
 REM transparently between the ACP client (parent) and node (child).
-node "%~dp0fake-acp-server.mjs" %*
+node "%~dp0fake-acp-server.ts" %*

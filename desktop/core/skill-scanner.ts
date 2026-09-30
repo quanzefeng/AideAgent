@@ -12,11 +12,10 @@ const SKILL_DIRS = [
 ];
 
 /** @param {string} text */
-export function parseFrontMatter(text) {
-  /** @type {Record<string, any>} */
+export function parseFrontMatter(text: string) {
   // name_zh lets skill authors declare a Chinese display name in SKILL.md frontmatter.
   // It is layer 1 of the 3-tier translation fallback (name_zh → cached → heuristic).
-  const meta = { name: "", name_zh: "", description: "", triggers: [], allowed_tools: [] };
+  const meta: Record<string, any> = { name: "", name_zh: "", description: "", triggers: [], allowed_tools: [] };
   const match = text.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return meta;
   const yaml = match[1];

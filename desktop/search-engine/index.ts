@@ -1,0 +1,325 @@
+// ── Zero-Dependency Meta-Search Engine ──────────────────────────
+// Aggregates multiple free search sources with caching, health
+// tracking, intelligent dedup, and score normalization.
+//
+// Sources: Bing / GitHub API
+// All fire in parallel; failures are collected silently.
+// Results are deduplicated by URL + title similarity and sorted.
+
+// ── In-memory Cache (LRU, bounded) ────────────────────────────
+// Map preserves insertion order in JS, so the oldest entry is always at
+// the front. When size exceeds CACHE_MAX, the oldest entries are evicted.
+// Without a size bound, a long session with many unique queries would
+// grow the cache without limit.
+const cache = new Map<any, any>();
+const CACHE_TTL = 60_000;
+const CACHE_MAX = 200;
+
+interface SearchResult {
+  title: string;
+  url: string;
+  content: string;
+  score?: number;
+}
+
+interface SearchMetaResult {
+  query: string;
+  provider: string;
+  results: SearchResult[];
+  _warnings?: string;
+}
+
+function cacheGet(key: string): any {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiry) { cache.delete(key); return null; }
+  return entry.data;
+}
+
+function cacheSet(key: string, data: any, ttl = CACHE_TTL) {
+  cache.set(key, { data, expiry: Date.now() + ttl });
+  // Evict oldest entries past CACHE_MAX. Map iteration is in insertion
+  // order, so the first key is always the oldest. We delete in a loop
+  // (rather than computing a count) so a single `set` never leaves the
+  // cache above the bound even if many entries were stale-expired in
+  // one go.
+  while (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
+// ── Source Health Tracking ──────────────────────────────────────
+// Skip a source after MAX_FAILURES consecutive failures, back off
+// for BACKOFF_MS, then try again.
+const sourceHealth = new Map<string, { failures: number, skipUntil: number }>();
+const MAX_FAILURES = 3;
+const BACKOFF_MS = 120_000;
+
+function isSourceHealthy(name: string): boolean {
+  const h = sourceHealth.get(name);
+  if (!h) return true;
+  if (h.failures >= MAX_FAILURES && Date.now() < h.skipUntil) return false;
+  if (Date.now() >= h.skipUntil) { sourceHealth.delete(name); return true; }
+  return true;
+}
+
+function recordFailure(name: string) {
+  const h = sourceHealth.get(name) || { failures: 0, skipUntil: 0 };
+  h.failures++;
+  if (h.failures >= MAX_FAILURES) h.skipUntil = Date.now() + BACKOFF_MS;
+  sourceHealth.set(name, h);
+}
+
+function recordSuccess(name: string) {
+  sourceHealth.delete(name);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+function stripHtml(text: string): string {
+  return text
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, c: string) => String.fromCharCode(Number(c)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    // Strip common tracking params
+    for (const p of ["utm_source","utm_medium","utm_campaign","utm_term",
+      "utm_content","ref","source","fbclid","gclid"]) {
+      u.searchParams.delete(p);
+    }
+    return (u.hostname + u.pathname).replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return raw.toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+}
+
+// Simple character-level title similarity (0-1).
+function titleSimilarity(a: string, b: string): number {
+  const na = a.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
+  const nb = b.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.85;
+  const maxLen = Math.max(na.length, nb.length);
+  if (maxLen < 5) return na === nb ? 1 : 0;
+  let matches = 0;
+  for (let i = 0; i < Math.min(na.length, nb.length); i++) {
+    if (na[i] === nb[i]) matches++;
+  }
+  return matches / maxLen;
+}
+
+function deduplicate(results: SearchResult[]): SearchResult[] {
+  // Pass 1: URL dedup (fast)
+  const urlSeen = new Set<string>();
+  const urlDeduped: SearchResult[] = [];
+  for (const r of results) {
+    const key = normalizeUrl(r.url);
+    if (urlSeen.has(key)) continue;
+    urlSeen.add(key);
+    urlDeduped.push(r);
+  }
+  // Pass 2: title similarity dedup
+  const final: SearchResult[] = [];
+  outer: for (const r of urlDeduped) {
+    for (const existing of final) {
+      if (titleSimilarity(r.title, existing.title) > 0.8) {
+        if ((r.score || 0) > (existing.score || 0)) {
+          existing.score = r.score;
+          existing.url = r.url;
+          if (r.content && r.content.length > (existing.content || "").length) {
+            existing.content = r.content;
+          }
+        }
+        continue outer;
+      }
+    }
+    final.push(r);
+  }
+  return final;
+}
+
+// Assign position-based scores then multiply by source weight.
+function scoreResults(results: SearchResult[], weight: number): SearchResult[] {
+  return results.map((r, i) => ({
+    ...r,
+    score: weight * Math.max(0, 1 - i * 0.12),
+  }));
+}
+
+// ── Bing ─────────────────────────────────────────────────────────
+// [search-mode]
+// MAXIMIZE SEARCH EFFORT. Launch multiple background agents IN PARALLEL:
+// - explore agents (codebase patterns, file structures, ast-grep)
+// - librarian agents (remote repos, official docs, GitHub examples)
+// Plus direct tools: Grep, ripgrep (rg), ast-grep (sg)
+// NEVER stop at first result - be exhaustive.
+//
+// Uses public Bing search page. Intended for personal, low-frequency use.
+// For production or high-volume usage, replace with Bing Search API:
+// https://www.microsoft.com/en-us/bing/apis/bing-web-search-api
+export async function searchBing(query: string, maxResults: number): Promise<SearchResult[]> {
+  const hasChinese = /[\u4e00-\u9fff]/.test(query);
+  const host = hasChinese ? "cn.bing.com" : "www.bing.com";
+  const cc = hasChinese ? "cn" : "us";
+  const lang = hasChinese ? "zh-cn" : "en-us";
+  const url = `https://${host}/search?q=${encodeURIComponent(query)}&count=${maxResults}&setlang=${lang}&cc=${cc}`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": hasChinese ? "zh-CN,zh;q=0.9" : "en-US,en;q=0.9",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Bing HTTP ${res.status}`);
+  const html = await res.text();
+  if (/captcha|unusual traffic|verify your identity/i.test(html)) {
+    throw new Error("Bing captcha challenge");
+  }
+
+  const results = [];
+  // Primary: b_algo. Fallback: b_caption, b_vlist, b_ans, card.
+  const patterns = [
+    /<li[^>]*class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi,
+    /<div[^>]*class="b_caption"[^>]*>([\s\S]*?)<\/div>/gi,
+    /<div[^>]*class="b_vlist"[^>]*>([\s\S]*?)<\/div>/gi,
+  ];
+
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(html)) !== null && results.length < maxResults) {
+      const item = m[1];
+      const urlMatch = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>/i.exec(item);
+      if (!urlMatch) continue;
+      const titleMatch = /<[Aa][^>]*>([\s\S]*?)<\/[Aa]>/i.exec(item);
+      const snippetMatch = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(item);
+      results.push({
+        title: titleMatch ? stripHtml(titleMatch[1]).slice(0, 300) : "",
+        url: urlMatch[1],
+        content: snippetMatch ? stripHtml(snippetMatch[1]).slice(0, 600) : "",
+      });
+    }
+  }
+  return results;
+}
+
+// ── GitHub API ──────────────────────────────────────────────────
+export async function searchGitHub(query: string, maxResults: number): Promise<SearchResult[]> {
+  const perPage = Math.min(maxResults, 5);
+  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=${perPage}&sort=stars`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "AideAgent" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+  const data = await res.json();
+  return (data.items || []).slice(0, maxResults).map((r: any) => ({
+    title: r.full_name,
+    url: r.html_url,
+    content: `${r.description || ""}  ⭐${r.stargazers_count} 🍴${r.forks_count}`,
+  }));
+}
+
+// ── Baidu (mobile) ──────────────────────────────────────────────
+export async function searchBaidu(query: string, maxResults: number): Promise<SearchResult[]> {
+  const url = `https://m.baidu.com/s?word=${encodeURIComponent(query)}&tn=98050039_dg`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": "zh-CN,zh;q=0.9",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Baidu HTTP ${res.status}`);
+  const html = await res.text();
+  if (/captcha|验证码|安全验证|antispider/i.test(html)) {
+    throw new Error("Baidu captcha challenge");
+  }
+  // Mobile Baidu renders results via JS in SPA shell —
+  // the raw HTML has no result content.  Return empty so
+  // callers treat it as "no results" without error noise.
+  return [];
+}
+
+// ── Source weights for score normalization ─────────────────────
+const SOURCE_WEIGHTS = {
+  bing:   1.0,
+  github: 0.6,
+};
+
+// ── Legacy source stubs (unused by the active metasearch path) ─
+// Kept for the search-engine/debug.ts harness which still references them.
+export async function searchSogou(query: string, maxResults: number): Promise<SearchResult[]> {
+  return [];
+}
+
+export async function searchDuckDuckGo(query: string, maxResults: number): Promise<SearchResult[]> {
+  return [];
+}
+
+// ── Public Entry Point ──────────────────────────────────────────
+export async function searchMeta(query: string, maxResults = 5): Promise<SearchMetaResult> {
+  const maxRes = Math.min(maxResults, 10);
+  const cacheKey = `${query}|${maxRes}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+
+  const allResults: SearchResult[] = [];
+  const errors: string[] = [];
+
+  const sources = [
+    { name: "bing",   fn: () => searchBing(query, maxRes),             weight: SOURCE_WEIGHTS.bing },
+    { name: "github", fn: () => searchGitHub(query, Math.min(maxRes, 3)), weight: SOURCE_WEIGHTS.github },
+  ];
+
+  // Filter out unhealthy sources
+  const active = sources.filter(s => isSourceHealthy(s.name));
+
+  const settled = await Promise.allSettled(active.map(s => s.fn()));
+
+  for (let i = 0; i < active.length; i++) {
+    const s = active[i];
+    const r = settled[i];
+    if (r.status === "fulfilled") {
+      const scored = scoreResults(r.value, s.weight);
+      allResults.push(...scored);
+      recordSuccess(s.name);
+    } else {
+      errors.push(`${s.name}: ${r.reason?.message || String(r.reason)}`);
+      recordFailure(s.name);
+    }
+  }
+
+  // Deduplicate and sort
+  const deduped = deduplicate(allResults);
+  deduped.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  const result = {
+    query,
+    provider: "metasearch",
+    results: deduped.slice(0, maxRes),
+    _warnings:
+      errors.length > 0
+        ? `Some sources unavailable: ${errors.join("; ")}`
+        : undefined,
+  };
+
+  cacheSet(cacheKey, result);
+  return result;
+}

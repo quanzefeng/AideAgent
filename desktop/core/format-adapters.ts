@@ -24,30 +24,15 @@ export class ContextSizeError extends Error {
  * @param {number} ms
  * @returns {Promise<void>}
  */
-export function sleep(ms) {
+export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * HTTP statuses that are worth retrying. 429 = rate limit; 500/502/503/529
- * = provider transient failures. 4xx (400/401/403/404...) are permanent
- * request errors and must NOT be retried.
- * @param {number} status
- * @returns {boolean}
- */
-export function isRetryableStatus(status) {
+export function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 529;
 }
 
-/**
- * Pick the wait time before the next retry.
- * - 429 with a `Retry-After` header → honor it, capped at RETRY_MAX_SINGLE_WAIT.
- * - Otherwise → exponential-ish schedule; the final (5th) retry reserves 30s.
- * @param {Response | null} res
- * @param {number} attempt 0-based retry index (0 = 1st retry, MAX_API_RETRIES-1 = final)
- * @returns {number} delay in ms
- */
-export function getRetryDelay(res, attempt) {
+export function getRetryDelay(res: Response | null, attempt: number): number {
   const retryAfter = res?.headers?.get?.("retry-after");
   if (retryAfter) {
     const secs = parseInt(retryAfter, 10);
@@ -56,46 +41,25 @@ export function getRetryDelay(res, attempt) {
   return RETRY_BACKOFF_MS[Math.min(attempt, MAX_API_RETRIES - 1)];
 }
 
-/**
- * Notify the renderer that we're about to retry a failed API call.
- * @param {string} source
- * @param {{attempt: number, maxAttempts: number, delayMs: number, status: number, statusText: string}} info
- */
-function notifyRetry(source, info) {
+function notifyRetry(source: string, info: { attempt: number, maxAttempts: number, delayMs: number, status: number, statusText: string }) {
   console.warn(`[${source}] API ${info.status} (${info.statusText}) — retry ${info.attempt}/${info.maxAttempts} in ${Math.round(info.delayMs / 1000)}s`);
   sendToRenderer("stream:retrying", info);
 }
 
-/**
- * Run a fetch + non-ok handling loop with backoff retries. Used by both
- * adapters. Returns the successful Response, or throws:
- *  - a plain Error for permanent (non-retryable) failures,
- *  - an Error with type=CONTEXT_SIZE_EXCEEDED for context overflow
- *    (caller compresses and retries once),
- *  - an Error whose message records the retry count once retries are
- *    exhausted. AbortError propagates untouched (user cancel / timeout).
- *
- * @param {() => Promise<Response>} doFetch
- * @param {(res: Response, errText: string) => string} buildErrorMsg
- * @param {(errText: string, errorMsg: string) => Error | null} [classify] optional classifier — return a special Error to throw immediately
- * @param {string} [source] log prefix, e.g. "openaiCall"
- * @returns {Promise<Response>}
- */
-export async function fetchWithRetry(doFetch, buildErrorMsg, classify, source = "api") {
+export async function fetchWithRetry(doFetch: () => Promise<Response>, buildErrorMsg: (res: Response, errText: string) => string, classify?: (errText: string, errorMsg: string) => Error | null, source = "api"): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
-    /** @type {Response} */
-    let res;
+    let res: Response;
     try {
       res = await doFetch();
-    } catch (err) {
+    } catch (err: any) {
       // AbortError (user cancel) and TimeoutError (LLM_CALL_TIMEOUT) must
       // never be retried — the caller handles cancel, and a hung upstream is
       // not a transient blip worth 5 more attempts.
-      const errName = /** @type {any} */ (err).name;
+      const errName = err.name;
       if (errName === "AbortError" || errName === "TimeoutError") throw err;
       // Network-level failure (fetch TypeError: DNS, refused, reset) — retryable.
       if (attempt >= MAX_API_RETRIES) {
-        const msg = `已自动重试 ${MAX_API_RETRIES} 次仍失败\n\n${/** @type {any} */ (err).message}`;
+        const msg = `已自动重试 ${MAX_API_RETRIES} 次仍失败\n\n${err.message}`;
         const finalErr = new Error(msg);
         finalErr.cause = err;
         throw finalErr;
@@ -132,18 +96,28 @@ export async function fetchWithRetry(doFetch, buildErrorMsg, classify, source = 
   }
 }
 
-// ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
-/** @type {null | Array<{type: string, function: {name: string, description: string, parameters: object}}>} */
-let _cachedToolDefs = null;
-/** @type {null | string} */
-let _cachedToolKey = null;
-
 /**
- * @param {boolean} [kbEnabled]
- * @param {boolean} [webSearchEnabled]
- * @returns {Array<{type: string, function: {name: string, description: string, parameters: object}}>}
+ * Mid-body-read connection drops. undici surfaces a server/gateway closing
+ * the socket during an SSE stream as `TypeError: terminated`; ECONNRESET /
+ * socket hang up are the raw-socket variants. Deliberately distinct from
+ * client-side timeout (TimeoutError) and user Stop (AbortError), which must
+ * NOT be retried here.
  */
-export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
+export function isStreamDropError(e: any): boolean {
+  const msg = String(e?.message || "");
+  const code = String(e?.cause?.code || e?.code || "");
+  return msg.includes("terminated")
+    || code === "ECONNRESET"
+    || code === "UND_ERR_SOCKET"
+    || msg.includes("other side closed")
+    || msg.includes("socket hang up");
+}
+
+// ── Tool definition cache (stable per session — MCP config doesn't change mid-conversation) ──
+let _cachedToolDefs: Array<{ type: string, function: { name: string, description: string, parameters: object } }> | null = null;
+let _cachedToolKey: string | null = null;
+
+export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true): Array<{ type: string, function: { name: string, description: string, parameters: object } }> {
   const planMode = getPlanMode();
   // Include the MCP server signature so adding/removing/restarting/toggling
   // a server busts the cache even when kb/web/plan flags are unchanged.
@@ -159,8 +133,8 @@ export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   console.log("[plan-mode] getAllToolDefs planMode =", planMode, "builtins =", builtins.length, "mcp =", planMode ? 0 : mcpDefs.length);
   // Deduplicate by tool name — duplicate MCP servers (builtin + imported) can collide
   const merged = planMode ? builtins : [...builtins, ...mcpDefs];
-  const seen = new Set();
-  const result = [];
+  const seen = new Set<string>();
+  const result: Array<{ type: string, function: { name: string, description: string, parameters: object } }> = [];
   for (const def of merged) {
     const name = def.function.name;
     if (!seen.has(name)) { seen.add(name); result.push(def); }
@@ -170,20 +144,12 @@ export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true) {
   return result;
 }
 
-/**
- * @returns {void}
- */
-export function invalidateToolDefsCache() {
+export function invalidateToolDefsCache(): void {
   _cachedToolDefs = null;
   _cachedToolKey = null;
 }
 
-/**
- * @param {boolean} [kbEnabled]
- * @param {boolean} [webSearchEnabled]
- * @returns {Array<{name: string, description: string, input_schema: object}>}
- */
-export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {
+export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true): Array<{ name: string, description: string, input_schema: object }> {
   return getAllToolDefs(kbEnabled, webSearchEnabled).map(t => ({
     name: t.function.name,
     description: t.function.description,
@@ -191,13 +157,114 @@ export function toAnthropicTools(kbEnabled = true, webSearchEnabled = true) {
   }));
 }
 
+interface ToolDef {
+  type: string;
+  function: { name: string, description: string, parameters: object };
+}
+
+interface ApiMessage {
+  role: string;
+  content?: any;
+  tool_calls?: Array<{ id: string, function: { name: string, arguments: string } }>;
+  tool_call_id?: string;
+}
+
 /**
- * @param {{role: string, content?: any, tool_calls?: Array<{id: string, function: {name: string, arguments: string}}>, tool_call_id?: string}[]} msgs
- * @returns {{messages: Array<{role: string, content: any}>, system: string | null}}
+ * Make a message list valid for tool-calling APIs.
+ *
+ * Saved history uses a flat Format A: `[user, tool, tool, assistant]` where
+ * the tool rows carry their metadata in `tool_calls` (that's what the DB
+ * column stores) but no `tool_call_id`, and no assistant message precedes
+ * them declaring the calls. Both OpenAI-compatible and Anthropic APIs reject
+ * that ("tool message must follow assistant tool_calls" / missing
+ * tool_use_id). The live in-memory loop already pairs correctly, so this
+ * only repairs broken sequences:
+ *
+ * - every `role:"tool"` row gets a `tool_call_id` (derived from
+ *   `tool_calls[0].id` for rows loaded from the DB),
+ * - a contiguous run of tool rows not covered by the preceding assistant's
+ *   `tool_calls` gets a synthesized `{role:"assistant", tool_calls}` in front,
+ * - assistant `tool_calls` left unanswered (interrupted turn) get empty
+ *   tool responses before any non-tool message follows,
+ * - `tool_calls` metadata is stripped from the tool rows themselves (it
+ *   belongs on the assistant; renderer reads it separately from history).
  */
-export function toAnthropicMessages(msgs) {
-  const messages = [];
-  let system = null;
+export function normalizeToolPairing(msgs: any[]): any[] {
+  if (!Array.isArray(msgs) || msgs.length === 0) return msgs;
+  const out: any[] = [];
+  // ids declared by the last assistant that have not yet been answered
+  let pending = new Set<string>();
+  let synthCounter = 0;
+  let i = 0;
+
+  const flushPending = (): void => {
+    for (const id of pending) out.push({ role: "tool", tool_call_id: id, content: "" });
+    pending = new Set();
+  };
+
+  while (i < msgs.length) {
+    const m = msgs[i];
+    if (!m) { i++; continue; }
+
+    if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+      flushPending(); // previous assistant's unanswered calls (defensive)
+      out.push(m);
+      pending = new Set(m.tool_calls.map((tc: any) => String(tc?.id ?? "")).filter(Boolean));
+      i++;
+      continue;
+    }
+
+    if (m.role === "tool") {
+      const run: any[] = [];
+      while (i < msgs.length && msgs[i]?.role === "tool") run.push(msgs[i++]);
+      const ids = run.map(t => String(t.tool_call_id ?? t.tool_calls?.[0]?.id ?? `call_hist_${++synthCounter}`));
+
+      const orphans = run.filter((_, k) => !pending.has(ids[k]));
+      const orphanIds = ids.filter(id => !pending.has(id));
+
+      // Rows answering the preceding assistant — emit as-is.
+      for (const t of run) {
+        const id = String(t.tool_call_id ?? t.tool_calls?.[0]?.id ?? "");
+        if (pending.has(id)) {
+          pending.delete(id);
+          out.push({ role: "tool", tool_call_id: id, content: t.content ?? "" });
+        }
+      }
+      // Rows with no declaring assistant — synthesize one for the whole group.
+      if (orphans.length > 0) {
+        flushPending(); // keep pairing strict before introducing a new assistant
+        out.push({
+          role: "assistant",
+          content: "",
+          tool_calls: orphans.map((t, k) => {
+            const src = Array.isArray(t.tool_calls) && t.tool_calls[0] ? t.tool_calls[0] : null;
+            return {
+              id: orphanIds[k],
+              type: "function",
+              function: {
+                name: src?.function?.name || src?.name || "unknown",
+                arguments: src?.function?.arguments || src?.arguments || "{}",
+              },
+            };
+          }),
+        });
+        orphans.forEach((t, k) => out.push({ role: "tool", tool_call_id: orphanIds[k], content: t.content ?? "" }));
+      }
+      continue;
+    }
+
+    // Any other message (user/system) requires all declared calls answered.
+    if (pending.size > 0) flushPending();
+    out.push(m);
+    i++;
+  }
+  flushPending();
+  return out;
+}
+
+export function toAnthropicMessages(msgs: ApiMessage[]): { messages: Array<{ role: string, content: any }>, system: string | null } {
+  const messages: Array<{ role: string, content: any }> = [];
+  let system: string | null = null;
   for (const m of msgs) {
     if (m.role === "system") { system = system ? system + "\n\n" + m.content : m.content; continue; }
     if (m.role === "user") {
@@ -211,11 +278,11 @@ export function toAnthropicMessages(msgs) {
         : m.content;
       messages.push({ role: "user", content });
     } else if (m.role === "assistant") {
-      const content = [];
+      const content: any[] = [];
       if (m.content) content.push({ type: "text", text: m.content });
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
-          let input = {};
+          let input: any = {};
           try { input = JSON.parse(tc.function.arguments); } catch { /* ignored */ }
           content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
         }
@@ -239,13 +306,13 @@ export function toAnthropicMessages(msgs) {
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false) {
+export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
+  msgs = normalizeToolPairing(msgs);
   const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
-  /** @type {{ model: string, messages: any[], tools: any[], stream: boolean, max_tokens: number, reasoning_effort?: string }} */
-  const body = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
+  const body: Record<string, any> = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
   if (reasoning) body.reasoning_effort = "high";
-  const res = await fetchWithRetry(
+  const buildRes = () => fetchWithRetry(
     () => fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -269,11 +336,8 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
     },
     "openaiCall",
   );
-  const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
-  const dec = new TextDecoder();
   let buf = "", content = "", reasoningContent = "";
-  /** @type {Record<number, {id: string, type: string, function: {name: string, arguments: string}}>} */
-  const tcAccum = {};
+  const tcAccum: Record<number, { id: string, type: string, function: { name: string, arguments: string } }> = {};
   let finishReason = null;
   let usage = null;
   // DEBUG_REASONING=1 dumps the first non-empty delta keys so we can see
@@ -283,51 +347,83 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
   // Electron main-process console for the [reasoning-debug] lines.
   const debugReasoning = process.env.DEBUG_REASONING === "1";
   if (debugReasoning) console.log(`[reasoning-debug] openaiCall model=${model} url=${apiUrl}`);
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    for (const line of buf.split("\n").slice(0, -1)) {
-      const t = line.trim();
-      if (!t || !t.startsWith("data:")) continue;
-      const d = t.slice(5).trim();
-      if (d === "[DONE]") continue;
-      try {
-        const j = JSON.parse(d);
-        const delta = j.choices?.[0]?.delta || {};
-        finishReason = j.choices?.[0]?.finish_reason;
-        if (j.usage) usage = j.usage; // last chunk carries cache metrics
-        if (delta.content) { content += delta.content; if (!silent) sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
-        if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; if (!silent) sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
-        if (debugReasoning) {
-          // Log every field the delta exposes (once per unique shape) so we
-          // can spot the field name MiniMax M3 / similar providers actually
-          // use for chain-of-thought.
-          const k = Object.keys(delta).sort().join(",");
-          if (!(/** @type {any} */ (globalThis.__reasoningDebugSeen || (globalThis.__reasoningDebugSeen = new Set()))).has(k)) {
-            globalThis.__reasoningDebugSeen.add(k);
-            console.log(`[reasoning-debug] delta keys: ${k}`);
-          }
+  const processLine = (line: string): void => {
+    const t = line.trim();
+    if (!t || !t.startsWith("data:")) return;
+    const d = t.slice(5).trim();
+    if (d === "[DONE]") return;
+    try {
+      const j = JSON.parse(d);
+      const delta = j.choices?.[0]?.delta || {};
+      finishReason = j.choices?.[0]?.finish_reason;
+      if (j.usage) usage = j.usage; // last chunk carries cache metrics
+      if (delta.content) { content += delta.content; if (!silent) sendToRenderer("stream:chunk", { text: delta.content, done: false }); }
+      if (delta.reasoning_content) { reasoningContent += delta.reasoning_content; if (!silent) sendToRenderer("stream:reasoning", { text: delta.reasoning_content }); }
+      if (debugReasoning) {
+        // Log every field the delta exposes (once per unique shape) so we
+        // can spot the field name MiniMax M3 / similar providers actually
+        // use for chain-of-thought.
+        const k = Object.keys(delta).sort().join(",");
+        const g = globalThis as any;
+        const seenSet = g.__reasoningDebugSeen || (g.__reasoningDebugSeen = new Set<string>());
+        if (!seenSet.has(k)) {
+          seenSet.add(k);
+          console.log(`[reasoning-debug] delta keys: ${k}`);
         }
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            if (!tcAccum[tc.index]) tcAccum[tc.index] = { id: "", type: "function", function: { name: "", arguments: "" } };
-            if (tc.id) tcAccum[tc.index].id = tc.id;
-            // BUGFIX: was `+=` which concatenated repeated name deltas into
-            // "bashbash" / "file_readfile_read". OpenAI-compatible providers
-            // (DeepSeek V4 flash, MiniMax M3, etc.) sometimes re-emit the
-            // tool name in a later delta after a tool_call_id, which then
-            // broke tool-executor's switch dispatch and silently dropped the
-            // call — manifesting as "no tool call" or "tool output garbled".
-            // The name is set once at the first emission; `arguments` is
-            // legitimately a streaming append.
-            if (tc.function?.name) tcAccum[tc.index].function.name = tc.function.name;
-            if (tc.function?.arguments) tcAccum[tc.index].function.arguments += tc.function.arguments;
-          }
+      }
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (!tcAccum[tc.index]) tcAccum[tc.index] = { id: "", type: "function", function: { name: "", arguments: "" } };
+          if (tc.id) tcAccum[tc.index].id = tc.id;
+          // BUGFIX: was `+=` which concatenated repeated name deltas into
+          // "bashbash" / "file_readfile_read". OpenAI-compatible providers
+          // (DeepSeek V4 flash, MiniMax M3, etc.) sometimes re-emit the
+          // tool name in a later delta after a tool_call_id, which then
+          // broke tool-executor's switch dispatch and silently dropped the
+          // call — manifesting as "no tool call" or "tool output garbled".
+          // The name is set once at the first emission; `arguments` is
+          // legitimately a streaming append.
+          if (tc.function?.name) tcAccum[tc.index].function.name = tc.function.name;
+          if (tc.function?.arguments) tcAccum[tc.index].function.arguments += tc.function.arguments;
         }
-      } catch { /* ignored */ }
+      }
+    } catch { /* ignored */ }
+  };
+  const readBody = async (res: Response): Promise<void> => {
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      for (const line of buf.split("\n").slice(0, -1)) processLine(line);
+      buf = buf.split("\n").pop() || "";
     }
-    buf = buf.split("\n").pop() || "";
+    // SSE flush: a final line without a trailing "\n" would otherwise stay in
+    // `buf` and never be processed — losing the last content delta / the
+    // finish_reason / tool_calls of providers that don't terminate the stream.
+    buf += dec.decode();
+    if (buf.trim()) processLine(buf);
+  };
+  let res = await buildRes();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      buf = "";
+      await readBody(res);
+      break;
+    } catch (e: any) {
+      // finish_reason already received — everything that matters arrived.
+      if (finishReason) break;
+      if (attempt >= 1 || !isStreamDropError(e)) throw e;
+      // SSE has no resume: regenerate the whole response. Tell the renderer
+      // exactly how many chars of this attempt's content/reasoning already
+      // streamed so it can drop them before the retry replays (no duplicates).
+      console.warn(`[openaiCall] stream dropped mid-read (${e.message}); retrying once (attempt ${attempt + 1}/1)`);
+      if (!silent) sendToRenderer("stream:reset", { contentChars: content.length, reasoningChars: reasoningContent.length });
+      content = ""; reasoningContent = ""; finishReason = null; usage = null;
+      for (const k of Object.keys(tcAccum)) delete tcAccum[Number(k)];
+      res = await buildRes();
+    }
   }
   if (debugReasoning) {
     console.log(`[reasoning-debug] final reasoningContent.length=${reasoningContent.length} content.length=${content.length}`);
@@ -350,8 +446,8 @@ export async function openaiCall(msgs, apiUrl, apiKey, model, signal, reasoning 
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false) {
-  const { messages, system } = toAnthropicMessages(msgs);
+export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
+  const { messages, system } = toAnthropicMessages(normalizeToolPairing(msgs));
   // ── Cache the first message (first history entry) → caches system + entire history prefix ──
   // After reordering, messages[0] is the first history item — stable across turns.
   if (messages.length > 0) {
@@ -376,8 +472,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     ? [...toolDefs.slice(0, -1), { ...toolDefs[toolDefs.length - 1], cache_control: { type: "ephemeral", ttl: 3600 } }]
     : toolDefs;
 
-  /** @type {{ model: string, max_tokens: number, system: any, messages: any[], tools: any[], stream: boolean, thinking?: { type: string, budget_tokens: number } }} */
-  const body = {
+  const body: Record<string, any> = {
     model: model || "claude-sonnet-4-20250514",
     max_tokens: 65536,
     system: systemBlock,
@@ -388,7 +483,7 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   if (reasoning) {
     body.thinking = { type: "enabled", budget_tokens: 4096 };
   }
-  const res = await fetchWithRetry(
+  const buildRes = () => fetchWithRetry(
     () => fetch(endpoint, {
       method: "POST",
       headers: {
@@ -417,11 +512,8 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
     },
     "anthropicCall",
   );
-  const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader();
-  const dec = new TextDecoder();
   let buf = "", content = "", reasoningContent = "";
-  /** @type {Record<number, {id: string, name: string, input: string}>} */
-  const tcAccum = {};
+  const tcAccum: Record<number, { id: string, name: string, input: string }> = {};
   let finishReason = null;
   let usage = null;
   // DEBUG_REASONING=1 dumps the first event type so we can see what the
@@ -429,48 +521,74 @@ export async function anthropicCall(msgs, apiUrl, apiKey, model, signal, reasoni
   // event for chain-of-thought?).
   const debugReasoning = process.env.DEBUG_REASONING === "1";
   if (debugReasoning) console.log(`[reasoning-debug] anthropicCall model=${model} endpoint=${apiUrl}`);
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() || "";
-    for (const line of lines) {
-      const t = line.trim();
-      if (t.startsWith("event: ")) { /* event type not used */ }
-      else if (t.startsWith("data: ")) {
-        const d = t.slice(6).trim();
-        if (!d) continue;
-        try {
-          const j = JSON.parse(d);
-          if (j.type === "content_block_start" && j.content_block?.type === "text") {
-            // text block started
-          } else if (j.type === "content_block_start" && j.content_block?.type === "thinking") {
-            // thinking block started
-          } else if (j.type === "content_block_delta" && j.delta?.type === "text_delta") {
-            content += j.delta.text;
-            if (!silent) sendToRenderer("stream:chunk", { text: j.delta.text, done: false });
-          } else if (j.type === "content_block_delta" && j.delta?.type === "thinking_delta") {
-            // BUGFIX: anthropicCall used to only forward `stream:reasoning` to
-            // the renderer (so live chat could show thinking) but never
-            // accumulated it locally. That meant `result.reasoningContent`
-            // was always `undefined` for Anthropic-format APIs → the DB
-            // `reasoning_content` column stayed NULL → reasoning vanished
-            // when reloading historical conversations. Now we accumulate
-            // alongside the live event so save path can persist it.
-            reasoningContent += j.delta.thinking;
-            if (!silent) sendToRenderer("stream:reasoning", { text: j.delta.thinking });
-          } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
-            tcAccum[j.index] = { id: j.content_block.id, name: j.content_block.name, input: "" };
-          } else if (j.type === "content_block_delta" && j.delta?.type === "input_json_delta") {
-            if (tcAccum[j.index]) tcAccum[j.index].input += j.delta.partial_json;
-          } else if (j.type === "message_start") {
-            if (j.message?.usage) usage = j.message.usage;
-          } else if (j.type === "message_delta") {
-            finishReason = j.delta?.stop_reason;
-          }
-        } catch { /* ignored */ }
-      }
+  const processLine = (line: string): void => {
+    const t = line.trim();
+    if (t.startsWith("event: ")) { /* event type not used */ }
+    else if (t.startsWith("data: ")) {
+      const d = t.slice(6).trim();
+      if (!d) return;
+      try {
+        const j = JSON.parse(d);
+        if (j.type === "content_block_start" && j.content_block?.type === "text") {
+          // text block started
+        } else if (j.type === "content_block_start" && j.content_block?.type === "thinking") {
+          // thinking block started
+        } else if (j.type === "content_block_delta" && j.delta?.type === "text_delta") {
+          content += j.delta.text;
+          if (!silent) sendToRenderer("stream:chunk", { text: j.delta.text, done: false });
+        } else if (j.type === "content_block_delta" && j.delta?.type === "thinking_delta") {
+          // BUGFIX: anthropicCall used to only forward `stream:reasoning` to
+          // the renderer (so live chat could show thinking) but never
+          // accumulated it locally. That meant `result.reasoningContent`
+          // was always `undefined` for Anthropic-format APIs → the DB
+          // `reasoning_content` column stayed NULL → reasoning vanished
+          // when reloading historical conversations. Now we accumulate
+          // alongside the live event so save path can persist it.
+          reasoningContent += j.delta.thinking;
+          if (!silent) sendToRenderer("stream:reasoning", { text: j.delta.thinking });
+        } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
+          tcAccum[j.index] = { id: j.content_block.id, name: j.content_block.name, input: "" };
+        } else if (j.type === "content_block_delta" && j.delta?.type === "input_json_delta") {
+          if (tcAccum[j.index]) tcAccum[j.index].input += j.delta.partial_json;
+        } else if (j.type === "message_start") {
+          if (j.message?.usage) usage = j.message.usage;
+        } else if (j.type === "message_delta") {
+          finishReason = j.delta?.stop_reason;
+        }
+      } catch { /* ignored */ }
+    }
+  };
+  const readBody = async (res: Response): Promise<void> => {
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) processLine(line);
+    }
+    // SSE flush: a final line without a trailing "\n" would otherwise stay in
+    // `buf` and never be processed — losing the last delta / stop_reason.
+    buf += dec.decode();
+    if (buf.trim()) processLine(buf);
+  };
+  let res = await buildRes();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      buf = "";
+      await readBody(res);
+      break;
+    } catch (e: any) {
+      // stop_reason already received — everything that matters arrived.
+      if (finishReason) break;
+      if (attempt >= 1 || !isStreamDropError(e)) throw e;
+      console.warn(`[anthropicCall] stream dropped mid-read (${e.message}); retrying once (attempt ${attempt + 1}/1)`);
+      if (!silent) sendToRenderer("stream:reset", { contentChars: content.length, reasoningChars: reasoningContent.length });
+      content = ""; reasoningContent = ""; finishReason = null; usage = null;
+      for (const k of Object.keys(tcAccum)) delete tcAccum[Number(k)];
+      res = await buildRes();
     }
   }
   const tcs = Object.values(tcAccum).map(tc => ({

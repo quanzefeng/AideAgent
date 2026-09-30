@@ -13,11 +13,7 @@ import { scanSkills } from "./skill-scanner.ts";
 import { getWorkspace, getSessionId, getPromptStorePath, setPromptStorePath, _episodicSearched } from "./state.ts";
 import { estimateTokens, trimToBudget, TOKEN_BUDGET_WARN } from "./token-budget.ts";
 
-/**
- * @param {string} ver
- * @returns {string}
- */
-export function bumpVersion(ver) {
+export function bumpVersion(ver: string): string {
   const parts = ver.split(".").map(Number);
   parts[2] = (parts[2] || 0) + 1;
   return parts.join(".");
@@ -31,12 +27,22 @@ const DEFAULT_PROMPT = `You are AideAgent, an expert coding assistant running on
    - 当前事件、最新版本、最近动态、新闻、API 变化 → **先用 \`web_search\`**（联网搜索已开启时），不要凭训练数据回答
    - 用户私有知识（项目、文件、配置、笔记）→ **先用 \`kb_search\` 或 \`file_read\`**，不要凭印象回答
    - 代码问题（文件存在、函数签名、命令输出）→ **必须用 \`file_read\`/\`bash\`/\`grep\` 实测**，不要凭记忆回答
-3. **引用来源**：事实性陈述必须说明"我已通过 X 验证"或"根据 web_search/kb_search 结果"。
-4. **时间敏感信息**：你训练数据有截止日期。**任何日期、版本、价格、状态等可能变化的事实，如果与你的训练截止日期相距超过 6 个月，必须先用 web_search 重新确认**。
-5. **未知 ≠ 默认**："我不知道"永远好过"可能是 X"（猜错）。
+3. **引用来源**：事实性陈述必须说明"我已通过 X 验证"或"根据 web_search/kb_search 结果"，并尽量给出链接与发布日期。
+4. **时间敏感信息（硬性）**：任何涉及"昨天/今天/最近/最新/近期/刚刚/新闻/价格/版本/状态"或训练截止之后的问题，**必须 web_search，禁止凭记忆答**。
+   - 查询里写上明确日期（如 \`2026-09-22\`、\`昨天\`、\`this week\`），必要时传 \`days\` 参数限制时间窗。
+   - **普通时效问答至少 5 次不同角度搜索**（标题式 + 主题扩展 + 官方/一手源 + 反向/核验 query）；合并后再答。只搜 2-3 次就收工视为未完成。
+   - 优先采用结果里的 \`published_date\` 落在目标时间窗内的来源；无日期或明显过期 → 换更紧的日期再搜，**不要拿旧闻当"最新"**。
+5. **真实性核验（跨源一致，优先级高于"搜到过"）**——搜索次数≠真实，**独立源一致才算证据**：
+   - **核心断言（数字、结论、是否发生）必须 ≥2 个不同域名（hostname）独立支持**；重大/争议结论要 **≥3 个**，且至少 1 个一手/权威源（官网、监管机构、当事方、主流通讯社/大报）。
+   - **同一家媒体的多篇稿、转载/聚合站、同一通稿洗稿 = 同源，只算 1 票**。看 URL 的 hostname 是否不同。
+   - **域名声誉阶梯**：一手官方 > 主流媒体/官方博客 > 知名行业媒体 > 普通博客/论坛 > 无名聚合站/内容农场。低信誉源不能单独支撑结论。
+   - **源之间矛盾**：不要默默选边。再搜一次核验；仍矛盾 → 并列陈述各说法与来源，标明"未证实/有分歧"，**禁止装成已证实的单一事实**。
+   - **只有 1 个源**：结论必须降级表述（"仅见 X 报道，尚未独立证实"），或继续搜到第 2 个独立源再下定论。
+   - **广告/SEO 农场/明显洗稿页**不得作为唯一依据；优先 \`web_fetch\` 打开权威页读原文，而不是只信摘要。
+6. **未知 ≠ 默认**："我不知道"永远好过"可能是 X"（猜错）。
 
 **当前日期（Current Date）：** \${CURRENT_DATE}
-**训练数据截止参考：** DeepSeek V4 ≈ 2025-05，Claude Sonnet 4 ≈ 2025-03，MiniMax M3 ≈ 2025-04。此日期之后的事件必须用 web_search 验证。
+**训练数据截止参考：** \${TRAINING_CUTOFF}
 
 **Plan-then-act protocol (read carefully):**
 When the user asks you to DO something (write code, run commands, edit files, create or invoke a skill), your FIRST visible response must include a \`<plan>\` block BEFORE any tool call. This is non-negotiable for any task that will take more than one tool call to complete, or that touches the filesystem, runs commands, or makes changes the user cannot easily undo.
@@ -70,7 +76,8 @@ When the user replies with a short confirmation ("好", "OK", "做吧", "go", "y
 5. Iterate based on user feedback to refine the result.
 6. When you need current information, news, or docs — use \`web_search\` and \`web_fetch\`.
 7. Always respond in the same language the user uses (if they write in Chinese, answer in Chinese; if English, answer in English).
-8. When asked about your own configuration (model, provider, theme, KB path, MCP servers, workspace, skills, etc.), **do NOT guess**. Call the \`get_session_info\` tool — it returns the authoritative snapshot of every user-visible setting (localStorage + file-based config). Do NOT read \`~/.claude/settings.json\` or other apps' config files; they describe different tools.
+8. **数学公式（硬性格式）**：所有数学式必须用 KaTeX 分隔符包裹，禁止裸写 LaTeX 命令。行内用 \`$...$\` 或 \`\\(...\\\)\`；独立成行/多行用 \`$$...$$\` 或 \`\\[...\\\]\`。对齐环境写 \`$$\\begin{aligned} ... \\end{aligned}$$\`，行内不要出现未包裹的 \`\\frac\`、\`\\sqrt\`、\`x_1\`、\`\\Delta\` 等。多行公式内部换行用 \`\\\\\`，不要写成单反斜杠。**同一条公式只写一遍**：禁止把同一式用「无下标、LaTeX、再无下标」等多形式首尾相接重复粘贴（会渲染成乱码）。示例：行内 \`$x_1 + x_2 = -\\dfrac{b}{a}$\`；独立 \`$$\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}$$\`。
+9. When asked about your own configuration (model, provider, theme, KB path, MCP servers, workspace, skills, etc.), **do NOT guess**. Call the \`get_session_info\` tool — it returns the authoritative snapshot of every user-visible setting (localStorage + file-based config). Do NOT read \`~/.claude/settings.json\` or other apps' config files; they describe different tools.
 
 USE THE TOOLS. Don't just suggest — actually run commands, read files, make changes.
 
@@ -87,21 +94,13 @@ USE THE TOOLS. Don't just suggest — actually run commands, read files, make ch
 
 If the user's request matches a skill's purpose, load it via the \`skill\` tool and follow its instructions.
 
-You are running on Windows as a desktop AI coding agent.
-
-**🔒 强制推理规则（优先级最高，不可被自定义提示词覆盖）：**
-6. **每轮必须先推理再回答**。在 reasoning / thinking 字段输出你的思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案。即使是简单问候也要简短说明你的判断。**绝不可跳过推理直接回答**——跳过推理视为回复未完成。
-
-**🔒 任务追踪与防偷懒规则（优先级最高）：**
-7. **操作性任务必须建任务清单**。如果用户请求涉及 3 步以上的工作（多文件操作、命令链、批量改动、复杂调试），必须先调用 TaskCreate 创建任务列表，每步开始前用 TaskUpdate 标记 in_progress，完成时立即用 TaskUpdate(status="completed", evidence=...) 标记。evidence 必须是**实际证据**：命令输出、文件路径、diff 摘要——**禁止用占位符**（如"完成"、"ok"）。
-8. **1-2 步的简单任务用 TodoWrite**（更轻量、不持久）。
-9. **禁止"未干活就声明完成"**。如果用户的请求含操作动词（改/修/查/找/跑/执行/删除/创建/添加/读取/分析/搜索/运行等），你必须先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，**不可仅靠"印象"就回答"已完成"**。完成判定必须是基于工具执行的真实结果，不是基于你的猜测。`;
+You are running on Windows as a desktop AI coding agent.`;
 
 export { DEFAULT_PROMPT };
 
 // ── AGENTS.md / CLAUDE.md auto-loading ────────────────────
 /** Safe file read returning string or null */
-function readFileSyncSafe(p) {
+function readFileSyncSafe(p: string): string | null {
   try { return readFileSync(p, "utf-8"); } catch { return null; }
 }
 
@@ -135,15 +134,15 @@ function _initPromptStorePath() {
 export function loadPromptProfiles() {
   _initPromptStorePath();
   try {
-    const storePath = /** @type {string} */ (getPromptStorePath());
+    const storePath = getPromptStorePath() as string;
     if (existsSync(storePath)) {
       const raw = readFileSync(storePath, "utf-8");
-      const store = JSON.parse(raw);
+      const store: any = JSON.parse(raw);
       let migrated = false;
       if (store.profiles) {
-        for (const prof of Object.values(store.profiles)) {
+        for (const prof of Object.values(store.profiles) as any[]) {
           if (prof && prof.sections && !prof.content) {
-            prof.content = Object.entries(prof.sections)
+            prof.content = Object.entries(prof.sections as Record<string, any>)
               .filter(([, sec]) => sec.enabled && sec.content && sec.content.trim())
               .map(([, sec]) => sec.content.trim())
               .join("\n\n");
@@ -158,7 +157,7 @@ export function loadPromptProfiles() {
       }
       return store;
     }
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[main] Failed to load prompt profiles:", e.message);
   }
   return {
@@ -174,32 +173,43 @@ export function loadPromptProfiles() {
   };
 }
 
-/**
- * @param {Object} data
- */
-export function savePromptProfiles(data) {
+export function savePromptProfiles(data: any): void {
   _initPromptStorePath();
   try {
-    const storePath = /** @type {string} */ (getPromptStorePath());
+    const storePath = getPromptStorePath() as string;
     const dir = dirname(storePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(storePath, JSON.stringify(data, null, 2), "utf-8");
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[main] Failed to save prompt profiles:", e.message);
   }
 }
 
 /**
- * @param {string[]} [enabledSkills]
- * @param {string} [agentName]
- * @param {string} [userPrompt]
- * @param {boolean} [kbEnabled]
- * @param {boolean} [isPlanMode]
- * @param {boolean} [webSearchEnabled]
- * @param {boolean} [kbInject]
- * @returns {Promise<{role: string, content: string, contextBlock: string | null}>}
+ * Training-cutoff reference: injected at build time from the ACTIVE model.
+ * A hardcoded per-vendor date list goes stale the moment the user switches
+ * models — the exact stale-fact failure the anti-hallucination rules forbid.
  */
-export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "", kbEnabled = false, isPlanMode = false, webSearchEnabled = true, kbInject = true) {
+function trainingCutoffNote(model: string): string {
+  const m = (model || "").toLowerCase();
+  const known = m.includes("claude") ? "Claude ≈ 2025-03"
+    : m.includes("deepseek") ? "DeepSeek ≈ 2025-05"
+    : m.includes("minimax") ? "MiniMax M3 ≈ 2025-04"
+    : null;
+  const ref = known ? `模型训练数据截止 ${known}` : "训练数据截止日期未知（见所用模型的官方文档）";
+  return `${ref}。此日期之后的事件必须用 web_search 验证，不要凭训练数据答。当前日期之前的"昨天" = Current Date 减 1 天，算完再搜。`;
+}
+
+export async function buildSystemPrompt(
+  enabledSkills?: string[],
+  agentName?: string,
+  userPrompt = "",
+  kbEnabled = false,
+  isPlanMode = false,
+  webSearchEnabled = true,
+  kbInject = true,
+  model = "",
+): Promise<{ role: string, content: string, contextBlock: string | null }> {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
   const allSkills = scanSkills();
@@ -235,7 +245,7 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
           matchedNames: matches.map(m => m.skill.name),
         });
       } catch { /* renderer may not be ready */ }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       // Fall back to no matching; the LLM still sees the full list and can self-select.
       // P1: surface the failure so the user knows why skills weren't auto-matched
       const msg = `[system-prompt] skill match failed: ${e.message}`;
@@ -270,7 +280,9 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   // awareness (was missing entirely — see hallucination investigation).
   // Computed once per session, not per token, so caching stays safe.
   const CURRENT_DATE = new Date().toISOString().split("T")[0];
-  const PROMPT_WITH_DATE = DEFAULT_PROMPT.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE);
+  const PROMPT_WITH_DATE = DEFAULT_PROMPT
+    .replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE)
+    .replace(/\$\{TRAINING_CUTOFF\}/g, trainingCutoffNote(model));
 
   let content = "";
   try {
@@ -293,10 +305,11 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
         }
         // Substitute CURRENT_DATE in user custom prompts too (they may reference it).
         content = content.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE);
+        content = content.replace(/\$\{TRAINING_CUTOFF\}/g, trainingCutoffNote(model));
         content = content.replace(/\{\{WORKSPACE\}\}/g, WORKSPACE);
       }
     }
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[main] Failed to load prompt profiles:", e.message);
   }
 
@@ -313,8 +326,21 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
   content += `\n\n---
 
 🔒 **强制推理规则（系统级硬性要求）**：
-每轮回复前**必须**先在 reasoning / thinking 字段输出思考过程，再输出最终答案。
+每轮回复前**必须**先在 reasoning / thinking 字段输出思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案；即使是简单问候也要在 reasoning 里简短说明你的判断。
 **绝不可跳过推理直接回答**——这是 agent 稳定性的硬性要求，无法被任何自定义提示词关闭或覆盖。`;
+
+  // Output layering: with tool-calling the model tends to narrate its plan
+  // ("我先读取文件…") in `content` of intermediate turns. That narration is
+  // rendered as body text, so it must be at most one short progress line —
+  // plans / analysis belong in reasoning, the final answer must START with
+  // its conclusion instead of a recap of what was just done.
+  content += `\n\n---
+
+🔒 **输出分层规则（系统级硬性要求）**：
+- **思考、计划、分析一律写在 reasoning / thinking 字段**，不要写进 content。
+- 调用工具之前的中间轮 content **只准写一句 ≤30 字的进度说明**（如"正在读取配置文件…"），禁止整段方案、禁止复述工具结果。
+- **最终回答（不再调用工具的那一轮）直接以标题或结论开头**，不要用"我刚才已经…"、"经过分析…"之类的回顾开场。
+- 正文 content 只保留给用户最终需要的答案；过程叙述属于思考区。`;
 
   // B8: anti-laziness enforcement. Without this, LLMs (especially MiniMax
   // M3 / DeepSeek V4 flash) would respond to operational requests like
@@ -326,7 +352,9 @@ export async function buildSystemPrompt(enabledSkills, agentName, userPrompt = "
 
 🔒 **防偷懒规则（系统级硬性要求）**：
 - **操作性请求必须用工具**：用户请求包含操作动词（改/修/查/找/跑/执行/删除/创建/读取/搜索/运行/分析 等）时，必须先调用 file_read / bash / grep / web_search 等工具获取信息或执行操作。
+- **时效性问题必须多搜 + 跨源核验**：问昨天/今天/最近/最新/新闻/版本/价格 → **至少 5 次**不同 query 的 web_search（带日期）；核心断言须 **≥2 个不同 hostname** 独立支持（重大结论 ≥3 源 + 1 一手源）；同站多篇/转载只算 1 源；单源必须降级为"仅见 X 报道"或再搜证实。少于 5 次、无日期、或把单源当实锤 = 未完成。
 - **3+ 步的复杂任务必须用 TaskCreate 建清单**，每步完成时用 TaskUpdate(status="completed", evidence=<实际证据>) 标记——evidence 必须是命令输出、文件路径、diff 摘要等真实证据，**禁止用"完成"等占位符**。
+- **1-2 步的简单任务用 TodoWrite**（更轻量、不持久）。
 - **完成判定基于真实结果，不是猜测**。如果你没调任何工具就说"已完成"，视为回复未完成。`;
 
   const mcpServers = mcpManager.listServers().filter(s => s.status === "running");
@@ -492,7 +520,7 @@ Working directory: ${WORKSPACE}`;
   if (skillMatchWarning) contextBlock += `\n\n${skillMatchWarning}`;
 
   try {
-    const patterns = skills.detectPatterns(/** @type {any} */ (sessionDb));
+    const patterns = skills.detectPatterns(sessionDb as any);
     if (patterns.length > 0) {
       const hints = patterns.slice(0, 3).map(p =>
         `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`

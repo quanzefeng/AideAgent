@@ -5,16 +5,15 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "allowJs": true,
-    "checkJs": true,
-    "outDir": "./dist",
+    "checkJs": false,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["core/**/*", "*.mjs", "preload.cjs", "renderer/**/*", "types/**/*"],
-  "exclude": ["node_modules", "test/**", "test-results/**", "playwright-report/**", "dist/**", "models/**", "release/**", "scripts/**"]
+  "include": ["core/**/*", "*.ts", "kb/**/*", "search-engine/**/*", "renderer/**/*", "types/**/*", "test/**/*", "scripts/**/*", "vitest.config.ts", "playwright.config.ts", "eslint.config.js"],
+  "exclude": ["node_modules", "test-results/**", "playwright-report/**", "dist/**", "models/**", "release/**"]
 }

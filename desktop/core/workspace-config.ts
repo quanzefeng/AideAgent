@@ -43,7 +43,7 @@ export function loadWorkspaceConfig() {
       return null;
     }
     return cfg;
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[ws-cfg] load failed:", e.message);
     return null;
   }
@@ -53,16 +53,15 @@ export function loadWorkspaceConfig() {
  * Persist the workspace config. Creates the userData directory
  * if it does not exist. Returns { ok: true } on success or
  * { error: <message> } on failure (caller can log/ignore).
- * @param {Object} cfg
  */
-export function saveWorkspaceConfig(cfg) {
+export function saveWorkspaceConfig(cfg: { current: string }) {
   try {
     const userData = app.getPath("userData");
     mkdirSync(userData, { recursive: true });
     const p = join(userData, CONFIG_FILENAME);
     writeFileSync(p, JSON.stringify(cfg, null, 2), "utf-8");
     return { ok: true };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[ws-cfg] save failed:", e.message);
     return { error: e.message };
   }

@@ -1,6 +1,6 @@
 {
   "name": "aideagent-desktop",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "description": "AideAgent Desktop — Electron GUI wrapper",
   "repository": "https://github.com/quanzefeng/AideAgent",
   "author": "quanzefeng <quanzefeng@gmail.com>",
@@ -15,16 +15,16 @@
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux deb AppImage",
     "dist:all": "electron-builder --win nsis --mac dmg --linux deb AppImage",
-    "lint": "eslint *.mjs *.ts core/*.ts",
-    "lint:fix": "eslint --fix *.mjs *.ts core/*.ts",
+    "lint": "eslint --no-error-on-unmatched-pattern *.js *.mjs *.cjs",
+    "lint:fix": "eslint --fix --no-error-on-unmatched-pattern *.js *.mjs *.cjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
-    "download-model": "node scripts/download-model.mjs",
-    "postinstall": "node scripts/download-model.mjs"
+    "download-model": "node scripts/download-model.ts",
+    "postinstall": "node scripts/download-model.ts"
   },
   "publish": {
     "provider": "github",
@@ -41,13 +41,14 @@
       "node_modules/@img/**"
     ],
     "files": [
-      "*.mjs",
       "*.ts",
       "kb/**",
-      "preload.cjs",
+      "preload.ts",
       "renderer/**",
       "core/**",
-      "search-engine/**"
+      "search-engine/**",
+      "types/**",
+      "renderer/vendor/**"
     ],
     "extraResources": [
       {

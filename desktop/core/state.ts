@@ -6,6 +6,8 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { loadWorkspaceConfig, saveWorkspaceConfig } from "./workspace-config.ts";
+import type { BrowserWindow } from "electron";
+import type { OpencodeAcpClient } from "./opencode-acp-client.ts";
 
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = dirname(__dirname);
@@ -16,7 +18,7 @@ export const isDev = process.argv.includes("--dev");
 // Linux / macOS: bash
 export const IS_WINDOWS = process.platform === "win32";
 
-export const PS_EXE = (() => {
+export const PS_EXE: string | null = (() => {
   if (!IS_WINDOWS) return null;
   try { execSync("where pwsh", { stdio: "ignore" }); return "pwsh"; } catch { return "powershell"; }
 })();
@@ -27,16 +29,16 @@ export const PS_EXE = (() => {
 export const SHELL = IS_WINDOWS
   ? {
       exe: PS_EXE,
-      buildArgs: (cmd) => ["-NoProfile", "-Command", PS_UTF8_PREFIX + cmd],
+      buildArgs: (cmd: string) => ["-NoProfile", "-Command", PS_UTF8_PREFIX + cmd],
     }
   : {
       exe: "/bin/bash",
-      buildArgs: (cmd) => ["-c", cmd],
+      buildArgs: (cmd: string) => ["-c", cmd],
     };
 
 // ── Window ──────────────────────────────────────────────────
-export let mainWindow = null;
-export function setMainWindow(win) { mainWindow = win; }
+export let mainWindow: BrowserWindow | null = null;
+export function setMainWindow(win: BrowserWindow | null) { mainWindow = win; }
 export function getMainWindow() { return mainWindow; }
 
 // ── Workspace ───────────────────────────────────────────────
@@ -45,7 +47,7 @@ export function getMainWindow() { return mainWindow; }
 // packaged); once `initWorkspaceFromConfig()` runs in app.whenReady,
 // it is overridden by the persisted config (if any).
 export let WORKSPACE = process.cwd();
-export function setWorkspace(ws) {
+export function setWorkspace(ws: string) {
   WORKSPACE = ws;
   // Persist synchronously — setWorkspace is called only from IPC
   // handlers (workspace:pick / workspace:set) which already validate
@@ -110,7 +112,7 @@ export let CONTEXT_WINDOW = DEFAULT_CONTEXT_WINDOW;
  * loop. Values outside [4K, 10M] are ignored (keep previous value).
  * @param {number} n
  */
-export function setContextWindow(n) {
+export function setContextWindow(n: number) {
   if (Number.isFinite(n) && n >= 4096 && n <= 10_000_000) {
     CONTEXT_WINDOW = Math.floor(n);
   }
@@ -136,12 +138,12 @@ export const MAX_API_RETRIES = 5;
 export const RETRY_BACKOFF_MS = [4000, 8000, 15000, 20000, 30000];
 export const RETRY_MAX_SINGLE_WAIT = 30_000; // cap on any single retry wait (Retry-After honored up to this)
 
-export let abortCtrl = null;
-export function setAbortCtrl(ctrl) { abortCtrl = ctrl; }
+export let abortCtrl: AbortController | null = null;
+export function setAbortCtrl(ctrl: AbortController | null) { abortCtrl = ctrl; }
 export function getAbortCtrl() { return abortCtrl; }
 
-export let sessionId = null;
-export function setSessionId(id) { sessionId = id; }
+export let sessionId: string | null = null;
+export function setSessionId(id: string | null) { sessionId = id; }
 export function getSessionId() { return sessionId; }
 
 /**
@@ -161,15 +163,15 @@ export function getSessionId() { return sessionId; }
  *
  * @type {import("./opencode-acp-client.ts").OpencodeAcpClient|null}
  */
-export let opencodeAcpClient = null;
-export function setOpencodeAcpClient(c) { opencodeAcpClient = c; }
+export let opencodeAcpClient: OpencodeAcpClient | null = null;
+export function setOpencodeAcpClient(c: OpencodeAcpClient | null) { opencodeAcpClient = c; }
 export function getOpencodeAcpClient() { return opencodeAcpClient; }
 /**
  * Test if the cached ACP client is still connected to a live subprocess.
  * Returns false when the client is null, has been stopped, or its process
  * has exited.
  */
-export function isOpencodeAcpClientAlive(client = opencodeAcpClient) {
+export function isOpencodeAcpClientAlive(client: OpencodeAcpClient | null = opencodeAcpClient): boolean {
   if (!client) return false;
   // Private fields — guarded reads.
   if (client._closed) return false;
@@ -177,28 +179,28 @@ export function isOpencodeAcpClientAlive(client = opencodeAcpClient) {
   return true;
 }
 
-export let history = [];
-export function setHistory(h) { history = h; }
+export let history: any[] = [];
+export function setHistory(h: any[]) { history = h; }
 export function getHistory() { return history; }
 
 export let _episodicSearched = false;
-export function setEpisodicSearched(v) { _episodicSearched = v; }
+export function setEpisodicSearched(v: boolean) { _episodicSearched = v; }
 export function getEpisodicSearched() { return _episodicSearched; }
 
 // ── Task Store ──────────────────────────────────────────────
-export const taskStore = new Map();
-export let _todoList = [];
-export function setTodoList(list) { _todoList = list; }
+export const taskStore = new Map<string, unknown>();
+export let _todoList: any[] = [];
+export function setTodoList(list: any[]) { _todoList = list; }
 export function getTodoList() { return _todoList; }
 
 export let _askId = 0;
 export function nextAskId() { return ++_askId; }
 
-export const _askResolvers = new Map();
+export const _askResolvers = new Map<number, unknown>();
 
 // ── Plan Mode ───────────────────────────────────────────────
 export let planMode = false;
-export function setPlanMode(v) { planMode = v; }
+export function setPlanMode(v: boolean) { planMode = v; }
 export function getPlanMode() { return planMode; }
 
 // ── Current Runtime ─────────────────────────────────────────
@@ -208,7 +210,7 @@ export function getPlanMode() { return planMode; }
 // session with the correct runtime tag instead of hardcoding "aide".
 // Default "aide" preserves behavior for legacy code paths that never set it.
 export let currentRuntime = "aide";
-export function setCurrentRuntime(rt) { currentRuntime = rt === "opencode" ? "opencode" : "aide"; }
+export function setCurrentRuntime(rt: string) { currentRuntime = rt === "opencode" ? "opencode" : "aide"; }
 export function getCurrentRuntime() { return currentRuntime; }
 
 export const PLAN_MODE_READONLY = new Set([
@@ -218,7 +220,7 @@ export const PLAN_MODE_READONLY = new Set([
 ]);
 
 // ── Permissions ─────────────────────────────────────────────
-export const pendingPerms = new Map();
+export const pendingPerms = new Map<string, unknown>();
 export let permId = 0;
 export function nextPermId() { return ++permId; }
 
@@ -232,7 +234,7 @@ export const SUB_AGENT_TOOL_NAMES = new Set([
   "kb_search", "kb_get_note",
 ]);
 export const SUB_AGENT_MAX_TURNS = 12;
-export const _subAgentCtrls = new Map();
+export const _subAgentCtrls = new Map<string, unknown>();
 
 // ── Memory Selection ────────────────────────────────────────
 // P3方案3(c): _surfacedMemories now has a per-turn TTL so that memories
@@ -251,7 +253,7 @@ const _SURFACED_TTL_TURNS = 50; // 50 turns ~= 1-2 hours of active conversation
 const _surfacedMemories = new Map();
 
 /** @param {string} filename */
-export function markSurfaced(filename) {
+export function markSurfaced(filename: string) {
   const turn = _currentTurn;
   _surfacedMemories.set(filename, { turn, expiresAt: turn + _SURFACED_TTL_TURNS });
 }
@@ -260,18 +262,13 @@ export function markSurfaced(filename) {
  * Drop expired entries. Cheap to call on every selection — Map.delete is O(1).
  * @param {number} now
  */
-export function pruneSurfacedMemories(now) {
+export function pruneSurfacedMemories(now: number) {
   for (const [k, v] of _surfacedMemories) {
     if (v.expiresAt <= now) _surfacedMemories.delete(k);
   }
 }
 
-/**
- * @param {string} filename
- * @param {number} now
- * @returns {boolean}
- */
-export function isSurfaced(filename, now) {
+export function isSurfaced(filename: string, now: number): boolean {
   const v = _surfacedMemories.get(filename);
   return !!(v && v.expiresAt > now);
 }
@@ -295,8 +292,8 @@ export function getCurrentTurn() { return _currentTurn; }
 export function resetTurnCounter() { _currentTurn = 0; }
 
 // ── Prompt Store ────────────────────────────────────────────
-export let _promptStorePath = null;
-export function setPromptStorePath(p) { _promptStorePath = p; }
+export let _promptStorePath: string | null = null;
+export function setPromptStorePath(p: string) { _promptStorePath = p; }
 export function getPromptStorePath() { return _promptStorePath; }
 
 // ── WeChat State ────────────────────────────────────────────
@@ -308,24 +305,24 @@ export const MSG_ITEM_TEXT = 1;
 export const MSG_TYPE_BOT = 2;
 export const MSG_STATE_FINISH = 2;
 
-export let wxBotToken = null;
-export function setWxBotToken(t) { wxBotToken = t; }
+export let wxBotToken: string | null = null;
+export function setWxBotToken(t: string | null) { wxBotToken = t; }
 export function getWxBotToken() { return wxBotToken; }
 
-export let wxBotId = null;
-export function setWxBotId(id) { wxBotId = id; }
+export let wxBotId: string | null = null;
+export function setWxBotId(id: string | null) { wxBotId = id; }
 export function getWxBotId() { return wxBotId; }
 
-export let wxUserId = null;
-export function setWxUserId(id) { wxUserId = id; }
+export let wxUserId: string | null = null;
+export function setWxUserId(id: string | null) { wxUserId = id; }
 export function getWxUserId() { return wxUserId; }
 
-export let wxPollAbort = null;
-export function setWxPollAbort(a) { wxPollAbort = a; }
+export let wxPollAbort: AbortController | null = null;
+export function setWxPollAbort(a: AbortController | null) { wxPollAbort = a; }
 export function getWxPollAbort() { return wxPollAbort; }
 
-export let _lastApiConfig = {};
-export function setLastApiConfig(cfg) { _lastApiConfig = cfg; }
+export let _lastApiConfig: Record<string, unknown> = {};
+export function setLastApiConfig(cfg: Record<string, unknown>) { _lastApiConfig = cfg; }
 export function getLastApiConfig() { return _lastApiConfig; }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -340,14 +337,14 @@ export function genId() {
 // replay missed events instead of showing a blank conversation.
 const RENDERER_BUFFER_MAX = 200;
 /** @type {Array<{channel:string,data:any,timestamp:number}>} */
-const _rendererBuffer = [];
+const _rendererBuffer: Array<{ channel: string, data: any, timestamp: number }> = [];
 /** @param {string} channel @param {any} data */
-function _pushBuffer(channel, data) {
+function _pushBuffer(channel: string, data: any) {
   _rendererBuffer.push({ channel, data, timestamp: Date.now() });
   if (_rendererBuffer.length > RENDERER_BUFFER_MAX) _rendererBuffer.shift();
 }
 
-export function sendToRenderer(channel, data) {
+export function sendToRenderer(channel: string, data: any) {
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
     _pushBuffer(channel, data);
@@ -380,7 +377,7 @@ export function clearRendererBuffer() {
  * @param {string} model - Model name (optional)
  * @returns {Promise<number|null>} Detected context window size, or null if detection fails
  */
-export async function detectModelContextWindow(apiUrl, model) {
+export async function detectModelContextWindow(apiUrl: string, model: string) {
   if (!apiUrl) return null;
   
   try {
@@ -445,7 +442,7 @@ export async function detectModelContextWindow(apiUrl, model) {
  * @param {string} errorMessage - The error message from API
  * @returns {number|null} Extracted context window size, or null
  */
-export function parseContextWindowFromError(errorMessage) {
+export function parseContextWindowFromError(errorMessage: string) {
   if (!errorMessage) return null;
   const minCtx = 1024;
 

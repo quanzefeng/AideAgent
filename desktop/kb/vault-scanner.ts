@@ -1,0 +1,155 @@
+/**
+ * Vault directory scanning and path safety validation.
+ *
+ * Responsibilities:
+ *   - Recursively scan the Obsidian vault for .md files
+ *   - Validate that user-supplied relative paths stay inside the vault
+ *     (defends against `..` traversal, absolute paths, symlinks pointing
+ *     outside, NTFS alternate data streams, and null bytes)
+ *   - Configurable skip-list for directories that should never be indexed
+ *     (node_modules, .git, etc.)
+ *
+ * Path safety uses realpathSync() to defeat symlink-based bypasses that
+ * a pure string prefix check would miss.
+ */
+
+import { existsSync, readdirSync, statSync, realpathSync } from "fs";
+import { join, relative, basename, dirname } from "path";
+import { getVault } from "./config.ts";
+import { isEnabledExt } from "./formats.ts";
+import { getExtractor } from "./extractors/index.ts";
+
+// Directories that should NEVER be indexed. These pollute search results
+// with unrelated content (e.g. .opencode/node_modules/zod/README.md
+// drowning out actual user notes). Configurable via setVaultExcludes.
+const DEFAULT_SKIP_DIRS = new Set([
+  ".obsidian",    // Obsidian config + plugins
+  "node_modules", // npm/pnpm package internals (huge, noisy)
+  ".git",         // git internals (binary)
+  ".trash",       // Obsidian trash
+  ".vscode",      // IDE config
+  ".idea",        // JetBrains config
+]);
+
+let _customSkipDirs = new Set<string>();
+
+export interface VaultFile {
+  relPath: string;
+  filename: string;
+  title: string;
+  tags: string[];
+  body: string;
+  wordCount: number;
+  mtimeMs: number;
+}
+
+export function setVaultExcludes(names: string[]) {
+  _customSkipDirs = new Set((names || []).map(String));
+}
+
+/**
+ * Validate that `relPath` resolves to a location inside the vault.
+ *
+ * Defends against:
+ *   - ".." path traversal (e.g. "../../etc/passwd")
+ *   - Absolute paths and UNC paths (\\server\share)
+ *   - Symlinks inside the vault that point outside (e.g. a malicious
+ *     Obsidian plugin or user-created symlink to C:\Windows\System32)
+ *   - NTFS alternate data streams ("foo.md:hidden")
+ *   - Null bytes and other control characters
+ *
+ * Uses realpathSync on both sides to defeat symlink-based bypasses that
+ * a pure string prefix check would miss.
+ * @param {string} relPath
+ * @returns {boolean}
+ */
+export function isSafeVaultPath(relPath: string): boolean {
+  if (!relPath || typeof relPath !== "string") return false;
+  // Reject obviously dangerous patterns upfront
+  if (relPath.includes("..")) return false;          // traversal segments
+  if (relPath.startsWith("/") || relPath.startsWith("\\")) return false; // absolute / UNC
+  if (/[\x00-\x1f]/.test(relPath)) return false;     // control chars incl. NUL
+  if (/^[A-Za-z]:/.test(relPath)) return false;      // Windows drive-relative
+  if (relPath.includes(":")) return false;           // NTFS ADS (foo.md:hidden)
+  const _vaultPath = getVault();
+  if (!_vaultPath) return false;
+
+  const resolved = join(_vaultPath, relPath);
+  // Compare real paths (resolve symlinks on both sides)
+  let realVault, realTarget;
+  try {
+    realVault = realpathSync(_vaultPath);
+  } catch {
+    return false;
+  }
+  try {
+    if (existsSync(resolved)) {
+      // Existing file/dir — resolve any symlinks
+      realTarget = realpathSync(resolved);
+    } else {
+      // New file (e.g. createNote): resolve the closest EXISTING ancestor
+      // and re-append. This catches symlinks in intermediate directories
+      // while gracefully handling "file doesn't exist yet" + "parent
+      // directory doesn't exist yet" (the latter is allowed for new files).
+      let cursor = resolved;
+      let realCursor = null;
+      while (cursor && cursor !== dirname(cursor)) {
+        if (existsSync(cursor)) {
+          realCursor = realpathSync(cursor);
+          break;
+        }
+        cursor = dirname(cursor);
+      }
+      // If no ancestor exists, the resolved path is new within the vault
+      // root — append basename to the vault's real path. This still rejects
+      // relPath values that escaped the vault, because join() is bounded.
+      const base = basename(resolved);
+      realTarget = join(realCursor || realVault, base);
+    }
+  } catch {
+    return false;
+  }
+  // Normalize Windows path separators before comparison
+  const norm = (p: string) => p.replace(/\\/g, "/");
+  return norm(realTarget).startsWith(norm(realVault) + "/") || norm(realTarget) === norm(realVault);
+}
+
+export async function scanVault(dir: string, baseDir: string): Promise<VaultFile[]> {
+  const results: VaultFile[] = [];
+  if (!existsSync(dir)) return results;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  const skipDirs = new Set([...DEFAULT_SKIP_DIRS, ..._customSkipDirs]);
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (skipDirs.has(entry.name)) continue;
+      const subResults = await scanVault(fullPath, baseDir);
+      results.push(...subResults);
+    } else if (entry.isFile() && isEnabledExt(entry.name)) {
+      // Skip Office/WPS temporary lock files (~$prefix). These are created
+      // when a .docx/.xlsx/.pptx is open in Word/Excel/WPS and contain
+      // zero useful text — indexing them pollutes search results with
+      // empty-body notes titled "~$filename".
+      if (entry.name.startsWith("~$")) continue;
+      try {
+        const stat = statSync(fullPath);
+        const extractor = await getExtractor(fullPath);
+        if (!extractor) continue;
+        const { title, tags, body } = await extractor.extract(fullPath);
+        const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
+        results.push({
+          relPath,
+          filename: entry.name,
+          title,
+          tags,
+          body,
+          wordCount: body.length,
+          mtimeMs: stat.mtimeMs,
+        });
+      } catch (e: any) {
+        console.warn(`[kb] Skipping ${fullPath}: ${e.message}`);
+      }
+    }
+  }
+  return results;
+}

@@ -5,15 +5,14 @@ import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRen
 const TOKEN_BUDGET_WARN = 50000;
 const TOKEN_BUDGET_HARD = 80000;
 
-/**
- * @typedef {{ role: string, content?: string|object|null, tool_calls?: Array<{function: {arguments?: string}}> }} Message
- */
+export interface Message {
+  role: string;
+  content?: string | object | null;
+  tool_calls?: Array<{ id?: string; function?: { arguments?: string } }>;
+  tool_call_id?: string;
+}
 
-/**
- * @param {string} text
- * @returns {number}
- */
-export function estimateTokens(text) {
+export function estimateTokens(text: string): number {
   if (!text) return 0;
   let cjk = 0, ascii = 0;
   for (const ch of text) {
@@ -23,23 +22,14 @@ export function estimateTokens(text) {
   return Math.ceil(cjk * 1.5 + ascii * 0.25);
 }
 
-/**
- * @param {string} text
- * @param {number} budget
- * @returns {string}
- */
-export function trimToBudget(text, budget) {
+export function trimToBudget(text: string, budget: number): string {
   if (!text || estimateTokens(text) <= budget) return text;
   const maxChars = budget * 3.5;
   const half = Math.floor(maxChars * 0.6);
   return text.slice(0, half) + `\n\n...(truncated ${Math.ceil(estimateTokens(text) - budget)} tokens)...\n\n` + text.slice(-Math.floor(maxChars * 0.3));
 }
 
-/**
- * @param {Message[]} msgs
- * @returns {{ totalTokens: number, systemTokens: number, historyTokens: number, toolResultTokens: number }}
- */
-export function estimateMessageTokens(msgs) {
+export function estimateMessageTokens(msgs: Message[]): { totalTokens: number, systemTokens: number, historyTokens: number, toolResultTokens: number } {
   let systemTokens = 0, historyTokens = 0, toolResultTokens = 0;
   for (const m of msgs) {
     const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
@@ -67,8 +57,8 @@ export function estimateMessageTokens(msgs) {
  * @param {Message[]} msgs
  * @returns {Array<[number, number]>}
  */
-function findProtectedRanges(msgs) {
-  const protectedSet = new Set();
+function findProtectedRanges(msgs: Message[]): Array<[number, number]> {
+  const protectedSet = new Set<number>();
   // First user message is the session anchor — keep it.
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
@@ -104,8 +94,8 @@ function findProtectedRanges(msgs) {
     }
   }
   // Convert set to sorted ranges.
-  const sorted = [...protectedSet].sort((a, b) => a - b);
-  const ranges = [];
+  const sorted = [...protectedSet].sort((a: number, b: number) => a - b);
+  const ranges: Array<[number, number]> = [];
   for (const i of sorted) {
     if (ranges.length && i <= ranges[ranges.length - 1][1]) {
       ranges[ranges.length - 1][1] = i;
@@ -121,7 +111,7 @@ function findProtectedRanges(msgs) {
  * @param {number} [budget]
  * @returns {{ estimatedTokens: number, compressed: boolean, removedMessages: number }}
  */
-export function compressContext(msgs, budget) {
+export function compressContext(msgs: Message[], budget?: number): { estimatedTokens: number, compressed: boolean, removedMessages: number } {
   if (!budget) budget = Math.floor(CONTEXT_WINDOW * CONTEXT_COMPRESS_PCT);
   const before = estimateMessageTokens(msgs);
   if (before.totalTokens <= budget) return { estimatedTokens: before.totalTokens, compressed: false, removedMessages: 0 };
@@ -163,7 +153,7 @@ export function compressContext(msgs, budget) {
   // prunable middle zone. These are moved into the suffix to survive.
   const middleStart = systemEnd + ANCHOR;
   const middleEnd = msgs.length - RECENT;
-  const protectedInMiddle = new Set();
+  const protectedInMiddle = new Set<number>();
   for (const [a, b] of findProtectedRanges(msgs)) {
     for (let i = Math.max(a, middleStart); i <= Math.min(b, middleEnd - 1); i++) {
       protectedInMiddle.add(i);
@@ -173,8 +163,8 @@ export function compressContext(msgs, budget) {
   const prefix = msgs.slice(0, middleStart);
   const suffixStart = Math.max(middleEnd, middleStart); // safe even if no protected items
   const suffix = msgs.slice(suffixStart);
-  const rescued = [];
-  for (const idx of [...protectedInMiddle].sort((a, b) => a - b)) {
+  const rescued: Message[] = [];
+  for (const idx of [...protectedInMiddle].sort((a: number, b: number) => a - b)) {
     rescued.push(msgs[idx]);
   }
   removedMessages = msgs.length - prefix.length - suffix.length - rescued.length;
@@ -202,7 +192,7 @@ export function compressContext(msgs, budget) {
 /**
  * @param {Message[]} msgs
  */
-export function sendContextUsage(msgs) {
+export function sendContextUsage(msgs: Message[]) {
   const usage = estimateMessageTokens(msgs);
   sendToRenderer("context:usage", {
     totalTokens: usage.totalTokens,
@@ -226,7 +216,7 @@ export function sendContextUsage(msgs) {
  *   and writes a stale summary to the user.
  * @returns {Promise<string>}
  */
-export async function summarizeForContinuation(msgs, apiKey, apiUrl, model, apiFormat, signal) {
+export async function summarizeForContinuation(msgs: Message[], apiKey: string, apiUrl: string, model?: string, apiFormat?: string, signal?: AbortSignal): Promise<string> {
   const convText = msgs.slice(1).map(m => {
     const role = m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : m.role === "tool" ? "工具返回" : m.role;
     const text = (typeof m.content === "string" ? m.content : JSON.stringify(m.content || ""))
@@ -245,8 +235,7 @@ ${convText}
 用一段中文简要总结（包括：已完成什么、正在做什么、还需要做什么）：`;
 
   try {
-    /** @type {Record<string, any>} */
-    const body = {
+    const body: Record<string, any> = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: compactPrompt }],
       max_tokens: 2048,
@@ -255,8 +244,7 @@ ${convText}
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
-    /** @type {Record<string, string>} */
-    const headers = apiFormat === "anthropic"
+    const headers: Record<string, string> = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 
@@ -283,10 +271,8 @@ ${convText}
       : (data.choices?.[0]?.message?.content || "");
 
     if (summary && summary.trim().length > 20) return summary.trim();
-  } catch (e) {
-    /** @type {any} */
-    const err = e;
-    console.error("[token-budget] summarizeForContinuation failed:", err.message);
+  } catch (e: any) {
+    console.error("[token-budget] summarizeForContinuation failed:", e.message);
   }
 
   // Fallback: structured fact extraction when LLM summarization fails.

@@ -18,17 +18,23 @@ const DATA_DIR = join(HOME, ".aideagent");
 const DB_PATH = join(DATA_DIR, "sessions.db");
 
 /** Insert spaces between CJK and ASCII for FTS5 tokenization */
-/** @param {string} text @returns {string} */
-function fts5Normalize(text) {
+function fts5Normalize(text: string): string {
   if (!text) return text;
   return text
     .replace(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff])([a-zA-Z0-9])/g, "$1 $2")
     .replace(/([a-zA-Z0-9])([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff])/g, "$1 $2");
 }
 
+interface SessionMessage {
+  role: string;
+  content: string;
+  reasoning_content?: string;
+  tool_calls?: Array<{ id: string, type: string, function: { name: string, arguments: string } }>;
+  timestamp?: string;
+}
+
 class SessionDB {
-  /** @type {import("node:sqlite").DatabaseSync | null} */
-  #db = null;
+  #db: import("node:sqlite").DatabaseSync | null = null;
   #ready = false;
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -78,10 +84,36 @@ class SessionDB {
     this.#ensureOpen().exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
         session_id UNINDEXED,
+        message_id UNINDEXED,
         content,
         tokenize='unicode61'
       )
     `);
+
+    // Migration: older DBs created messages_fts without message_id, which
+    // forced FTS deletes to match on content (a duplicate content string
+    // would delete the wrong/extra rows). Rebuild the index from messages.
+    let ftsHasMessageId = true;
+    try { this.#ensureOpen().prepare("SELECT message_id FROM messages_fts LIMIT 0").run(); }
+    catch { ftsHasMessageId = false; }
+    if (!ftsHasMessageId) {
+      this.#ensureOpen().exec("DROP TABLE messages_fts");
+      this.#ensureOpen().exec(`
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+          session_id UNINDEXED,
+          message_id UNINDEXED,
+          content,
+          tokenize='unicode61'
+        )
+      `);
+      const rebuildRows = this.#ensureOpen().prepare(
+        "SELECT id, session_id, content FROM messages WHERE content IS NOT NULL AND content != ''"
+      ).all() as Array<{ id: number, session_id: string, content: string }>;
+      const rebuildIns = this.#ensureOpen().prepare(
+        "INSERT INTO messages_fts(session_id, message_id, content) VALUES (?, ?, ?)"
+      );
+      for (const r of rebuildRows) rebuildIns.run(r.session_id, String(r.id), fts5Normalize(String(r.content)));
+    }
 
     // P2: task persistence — restore TaskCreate/TaskUpdate state across restarts
     this.#ensureOpen().exec(`
@@ -148,8 +180,7 @@ class SessionDB {
     }
   }
 
-  /** @returns {import("node:sqlite").DatabaseSync} */
-  #ensureOpen() { if (!this.#db) this.open(); return /** @type {import("node:sqlite").DatabaseSync} */ (this.#db); }
+  #ensureOpen(): import("node:sqlite").DatabaseSync { if (!this.#db) this.open(); return this.#db!; }
 
   // ── Session CRUD ───────────────────────────────────────────
 
@@ -163,16 +194,7 @@ class SessionDB {
     return { id, title, createdAt: now, updatedAt: now, messageCount: 0 };
   }
 
-  /**
-   * @param {string} id
-   * @param {Array<{role:string,content:string,reasoning_content?:string,tool_calls?:Array<{id:string,type:string,function:{name:string,arguments:string}}>,timestamp?:string}>} history
-   * @param {string} [title]
-   * @param {"aide"|"opencode"} [runtime] normalized runtime tag. Callers are
-   *   responsible for normalizing (this layer only persists what it's given,
-   *   so we don't accidentally re-tag a session as "aide" if a bug passes
-   *   an unexpected value).
-   */
-  saveSession(id, history, title, runtime) {
+  saveSession(id: string, history: SessionMessage[], title?: string, runtime?: "aide" | "opencode") {
     this.#ensureOpen();
     const now = new Date().toISOString();
     const rt = runtime === "opencode" ? "opencode" : "aide";
@@ -189,36 +211,46 @@ class SessionDB {
       ).run(id, title || "会话", now, now, rt);
     }
 
-    // Clear old messages + FTS
-    this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
-    this.#ensureOpen().prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+    // Clear old messages + FTS, re-insert all history, update count — all
+    // in one transaction so a crash mid-save can't leave the session with
+    // deleted-but-not-reinserted history.
+    try {
+      this.#ensureOpen().exec("BEGIN");
+      this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
+      this.#ensureOpen().prepare("DELETE FROM messages WHERE session_id = ?").run(id);
 
-    // Re-insert all history messages
-    const insertMsg = this.#ensureOpen().prepare(
-      "INSERT INTO messages(session_id, role, content, reasoning_content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
-    );
-    const insertFts = this.#ensureOpen().prepare(
-      "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
-    );
-    for (const m of history) {
-      const ts = m.timestamp || now;
-      const toolCallsJson = Array.isArray(m.tool_calls) && m.tool_calls.length > 0
-        ? JSON.stringify(m.tool_calls)
-        : null;
-      insertMsg.run(id, m.role, m.content || "", m.reasoning_content || null, toolCallsJson, ts);
-      if (m.content) insertFts.run(id, fts5Normalize(m.content));
+      // Re-insert all history messages
+      const insertMsg = this.#ensureOpen().prepare(
+        "INSERT INTO messages(session_id, role, content, reasoning_content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
+      );
+      const insertFts = this.#ensureOpen().prepare(
+        "INSERT INTO messages_fts(session_id, message_id, content) VALUES (?, ?, ?)"
+      );
+      for (const m of history) {
+        const ts = m.timestamp || now;
+        const toolCallsJson = Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+          ? JSON.stringify(m.tool_calls)
+          : null;
+        const info = insertMsg.run(id, m.role, m.content || "", m.reasoning_content || null, toolCallsJson, ts);
+        // message_id is stored as TEXT (FTS5 columns have no type affinity —
+        // an integer stored here would never compare equal to a text param)
+        if (m.content) insertFts.run(id, String(info.lastInsertRowid), fts5Normalize(m.content));
+      }
+
+      // Update count
+      this.#ensureOpen().prepare(
+        "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?) WHERE id = ?"
+      ).run(id, id);
+      this.#ensureOpen().exec("COMMIT");
+    } catch (e) {
+      try { this.#ensureOpen().exec("ROLLBACK"); } catch { /* ignored */ }
+      throw e;
     }
-
-    // Update count
-    this.#ensureOpen().prepare(
-      "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?) WHERE id = ?"
-    ).run(id, id);
 
     return { id, title, updatedAt: now };
   }
 
-  /** @param {string} id */
-  loadSession(id) {
+  loadSession(id: string) {
     this.#ensureOpen();
     const s = this.#ensureOpen().prepare(
       "SELECT id, title, created_at, updated_at, runtime FROM sessions WHERE id = ?"
@@ -235,20 +267,29 @@ class SessionDB {
       createdAt: s.created_at,
       updatedAt: s.updated_at,
       runtime: s.runtime || "aide",
-      history: msgs.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        reasoning_content: m.reasoning_content || undefined,
-        tool_calls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
-        timestamp: m.timestamp,
-      })),
+      history: msgs.map((m: any) => {
+        const toolCalls = m.tool_calls ? JSON.parse(String(m.tool_calls)) : undefined;
+        // API providers require role:"tool" messages to carry tool_call_id,
+        // but the DB has no such column — derive it from the persisted
+        // tool_calls entry (old rows were saved without tool_call_id too).
+        const toolCallId = m.role === "tool"
+          ? (toolCalls && toolCalls[0]?.id ? String(toolCalls[0].id) : undefined)
+          : undefined;
+        return {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          reasoning_content: m.reasoning_content || undefined,
+          tool_calls: toolCalls,
+          tool_call_id: toolCallId,
+          timestamp: m.timestamp,
+        };
+      }),
     };
   }
 
   // ── Task persistence (P2) ─────────────────────────────────────
-  /** @param {string} sessionId @param {Array<{id:string,subject:string,description?:string,status:string,activeForm?:string,evidence?:string|null,unverified?:boolean,completedAt?:string,createdAt?:string,updatedAt?:string}>} tasks */
-  saveSessionTasks(sessionId, tasks) {
+  saveSessionTasks(sessionId: string, tasks: Array<{ id: string, subject: string, description?: string, status: string, activeForm?: string, evidence?: string | null, unverified?: boolean, completedAt?: string, createdAt?: string, updatedAt?: string }>) {
     this.#ensureOpen();
     if (!sessionId || !Array.isArray(tasks)) return { saved: 0 };
     const now = new Date().toISOString();
@@ -275,15 +316,14 @@ class SessionDB {
         saved++;
       }
       this.#ensureOpen().exec("COMMIT");
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       this.#ensureOpen().exec("ROLLBACK");
       return { error: e.message, saved: 0 };
     }
     return { saved };
   }
 
-  /** @param {string} sessionId @param {Array<{id:string,content:string,status:string,activeForm?:string}>} todos */
-  saveSessionTodos(sessionId, todos) {
+  saveSessionTodos(sessionId: string, todos: Array<{ id: string, content: string, status: string, activeForm?: string }>) {
     this.#ensureOpen();
     if (!sessionId || !Array.isArray(todos)) return { saved: 0 };
     const deleteOld = this.#ensureOpen().prepare("DELETE FROM session_todos WHERE session_id = ?");
@@ -299,15 +339,14 @@ class SessionDB {
         insert.run(t.id, sessionId, t.content, t.status || "pending", t.activeForm || t.content, i);
       });
       this.#ensureOpen().exec("COMMIT");
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       this.#ensureOpen().exec("ROLLBACK");
       return { error: e.message, saved: 0 };
     }
     return { saved: todos.length };
   }
 
-  /** @param {string} sessionId */
-  loadSessionTasks(sessionId) {
+  loadSessionTasks(sessionId: string) {
     this.#ensureOpen();
     if (!sessionId) return [];
     const rows = this.#ensureOpen().prepare(
@@ -327,8 +366,7 @@ class SessionDB {
     }));
   }
 
-  /** @param {string} sessionId */
-  loadSessionTodos(sessionId) {
+  loadSessionTodos(sessionId: string) {
     this.#ensureOpen();
     if (!sessionId) return [];
     const rows = this.#ensureOpen().prepare(
@@ -342,8 +380,7 @@ class SessionDB {
     }));
   }
 
-  /** @param {string} sessionId */
-  clearSessionTasks(sessionId) {
+  clearSessionTasks(sessionId: string) {
     this.#ensureOpen();
     if (!sessionId) return;
     this.#ensureOpen().prepare("DELETE FROM session_tasks WHERE session_id = ?").run(sessionId);
@@ -351,11 +388,7 @@ class SessionDB {
   }
 
   // ── Turn progress (long-task resume) ────────────────────────
-  /**
-   * @param {string} sessionId
-   * @param {{ currentTurn: number, maxTurns: number, currentContinuation: number, maxContinuations: number, lastSummary?: string }} progress
-   */
-  saveTurnProgress(sessionId, progress) {
+  saveTurnProgress(sessionId: string, progress: { currentTurn: number, maxTurns: number, currentContinuation: number, maxContinuations: number, lastSummary?: string }) {
     if (!sessionId) return;
     this.#ensureOpen();
     const now = new Date().toISOString();
@@ -389,8 +422,7 @@ class SessionDB {
     }
   }
 
-  /** @param {string} sessionId */
-  loadTurnProgress(sessionId) {
+  loadTurnProgress(sessionId: string): any {
     if (!sessionId) return null;
     this.#ensureOpen();
     const row = this.#ensureOpen().prepare(
@@ -408,8 +440,7 @@ class SessionDB {
     };
   }
 
-  /** @param {string} sessionId */
-  clearTurnProgress(sessionId) {
+  clearTurnProgress(sessionId: string) {
     if (!sessionId) return;
     this.#ensureOpen();
     this.#ensureOpen().prepare("DELETE FROM session_turn_progress WHERE session_id = ?").run(sessionId);
@@ -429,8 +460,7 @@ class SessionDB {
     }));
   }
 
-  /** @param {string} id */
-  deleteSession(id) {
+  deleteSession(id: string) {
     this.#ensureOpen();
     this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE session_id = ?").run(id);
     this.#ensureOpen().prepare("DELETE FROM messages WHERE session_id = ?").run(id);
@@ -456,20 +486,16 @@ class SessionDB {
     return { deleted: count };
   }
 
-  /** @param {string} messageId */
-  deleteMessage(messageId) {
+  deleteMessage(messageId: string) {
     this.#ensureOpen();
     const msg = this.#ensureOpen().prepare(
       "SELECT session_id, content FROM messages WHERE id = ?"
     ).get(messageId);
     if (!msg) return { error: "not found" };
 
-    // Remove from FTS
-    if (msg.content) {
-      this.#ensureOpen().prepare(
-        "DELETE FROM messages_fts WHERE session_id = ? AND content = ?"
-      ).run(msg.session_id, fts5Normalize(String(msg.content)));
-    }
+    // Remove from FTS — by message_id (content-based delete would remove
+    // every row sharing the same text, not just this message)
+    this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE message_id = ?").run(String(messageId));
     // Remove from messages
     this.#ensureOpen().prepare("DELETE FROM messages WHERE id = ?").run(messageId);
     // Update count
@@ -479,16 +505,14 @@ class SessionDB {
     return { deleted: true, sessionId: msg.session_id };
   }
 
-  /** @param {string} id @param {string} title */
-  updateTitle(id, title) {
+updateTitle(id: string, title: string) {
     this.#ensureOpen();
     const now = new Date().toISOString();
     this.#ensureOpen().prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?").run(title, now, id);
     return { id, title, updatedAt: now };
   }
 
-  /** @param {string} messageId @param {string} newContent */
-  editMessage(messageId, newContent) {
+editMessage(messageId: string, newContent: string) {
     this.#ensureOpen();
     const msg = this.#ensureOpen().prepare("SELECT session_id, content FROM messages WHERE id = ?").get(messageId);
     if (!msg) return { error: "not found" };
@@ -497,22 +521,17 @@ class SessionDB {
     this.#ensureOpen().prepare("UPDATE messages SET content = ? WHERE id = ?").run(newContent, messageId);
 
     // Update FTS: delete old, insert new
-    if (msg.content) {
-      this.#ensureOpen().prepare(
-        "DELETE FROM messages_fts WHERE session_id = ? AND content = ?"
-      ).run(msg.session_id, fts5Normalize(String(msg.content)));
-    }
+    this.#ensureOpen().prepare("DELETE FROM messages_fts WHERE message_id = ?").run(String(messageId));
     if (newContent) {
       this.#ensureOpen().prepare(
-        "INSERT INTO messages_fts(session_id, content) VALUES (?, ?)"
-      ).run(msg.session_id, fts5Normalize(newContent));
+        "INSERT INTO messages_fts(session_id, message_id, content) VALUES (?, ?, ?)"
+      ).run(msg.session_id, String(messageId), fts5Normalize(newContent));
     }
 
     return { updated: true, sessionId: msg.session_id, messageId };
   }
 
-  /** @param {string} id */
-  exportSession(id) {
+  exportSession(id: string) {
     this.#ensureOpen();
     const s = this.#ensureOpen().prepare(
       "SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?"
@@ -534,15 +553,14 @@ class SessionDB {
 
   // ── FTS5 Search ──────────────────────────────────────────
 
-  /** @param {string} query @param {number} [limit] @returns {Array<{sessionId:string,sessionTitle:string,snippet:string,rank:number}>} */
-  searchMessages(query, limit = 30) {
+  searchMessages(query: string, limit = 30): Array<{ sessionId: string, sessionTitle: string, snippet: string, rank: number }> {
     this.#ensureOpen();
     if (!query?.trim()) return [];
 
     const sql = `
       SELECT
         session_id,
-        snippet(messages_fts, 1, '<mark>', '</mark>', '…', 40) AS snippet,
+        snippet(messages_fts, 2, '<mark>', '</mark>', '…', 40) AS snippet,
         rank
       FROM messages_fts
       WHERE messages_fts MATCH ?
@@ -588,7 +606,7 @@ class SessionDB {
       }
 
       return results;
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       if (err.message?.includes("syntax error")) {
         const safe = query.replace(/[^\w\u4e00-\u9fff\s\-"]+/g, " ").trim();
         if (safe && safe !== query) return this.searchMessages(safe, limit);
@@ -657,8 +675,7 @@ class SessionDB {
 
   // ── Migration from old JSON files ─────────────────────────
 
-  /** @param {string} jsonDir */
-  migrateFromJson(jsonDir) {
+  migrateFromJson(jsonDir: string) {
     this.#ensureOpen();
     if (!existsSync(jsonDir)) return 0;
 
@@ -682,7 +699,7 @@ class SessionDB {
         count++;
         // Delete old JSON file after successful migration
         try { unlinkSync(join(jsonDir, f)); } catch { /* ignored */ }
-      } catch (/** @type {any} */ err) {
+      } catch (err: any) {
         console.error(`[session-db] migration error ${f}:`, err.message);
       }
     }

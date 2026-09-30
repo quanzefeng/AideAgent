@@ -3,12 +3,14 @@
 import electronUpdater from "electron-updater";
 const { autoUpdater } = electronUpdater;
 import { ipcMain, app } from "electron";
+import type { BrowserWindow } from "electron";
 import { sendToRenderer } from "./core/state.ts";
 
-let _mainWindow = null;
+let _mainWindow: BrowserWindow | null = null;
 let _checking = false;
+let _skippedVersion: string | null = null;
 
-export function initUpdateManager(/** @type {any} */ win) {
+export function initUpdateManager(win: any) {
   _mainWindow = win;
 
   // Configure autoUpdater
@@ -99,7 +101,7 @@ export function initUpdateManager(/** @type {any} */ win) {
     _checking = true;
     try {
       await autoUpdater.checkForUpdates();
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       sendToRenderer("update:status", {
         status: "error",
         message: err.message || String(err),
@@ -123,7 +125,7 @@ export function initUpdateManager(/** @type {any} */ win) {
     try {
       await autoUpdater.downloadUpdate();
       return { ok: true };
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       sendToRenderer("update:status", {
         status: "error",
         message: err.message || String(err),
@@ -138,7 +140,6 @@ export function initUpdateManager(/** @type {any} */ win) {
   // localStorage is the source of truth across sessions; this in-memory
   // mirror is a fast-path so an in-flight check during the same session
   // doesn't re-prompt after the user just clicked skip.
-  let _skippedVersion = null;
   ipcMain.handle("update:skip", (_e, version) => {
     if (typeof version === "string" && version) {
       _skippedVersion = version;

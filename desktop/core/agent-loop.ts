@@ -12,7 +12,7 @@ import * as skills from "../skills-store.ts";
 import { writeFileSync, mkdtempSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
-import { getExtractor } from "../kb/extractors/index.mjs";
+import { getExtractor } from "../kb/extractors/index.ts";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
@@ -26,20 +26,68 @@ import {
 } from "./state.ts";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
-/** @type {string | null} */
-let _sysPromptCache = null;
-/** @type {string | null} */
-let _contextBlockBaseCache = null;
+let _sysPromptCache: string | null = null;
+let _contextBlockBaseCache: string | null = null;
 
-/**
- * @param {Array<{role:string,content:any}>} history
- * @returns {string}
- */
-function getHistoryTitle(history) {
-  const firstUser = history.find(/** @param {{role:string,content:any}} m */ (/** @type {any} */ m) => m.role === "user");
+interface LoopMessage {
+  role: string;
+  content: any;
+  reasoning_content?: string;
+  tool_calls?: any[];
+  tool_call_id?: string;
+  system?: string;
+}
+
+function getHistoryTitle(history: LoopMessage[]): string {
+  const firstUser = history.find(m => m.role === "user");
   if (!firstUser) return "新对话";
   const text = typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content || "");
   return text.replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
+}
+
+/**
+ * Build the full on-disk history for one user turn: all prior turns +
+ * this user message + this turn's tool results + final/partial assistant text.
+ *
+ * `sessionDb.saveSession` does DELETE-all + re-insert, so saving only the
+ * current turn would wipe every previous message. Callers must pass
+ * `priorTurns` taken from the DB at the start of the turn (getHistory()
+ * only holds user+assistant text and would drop prior turns' tool rows).
+ */
+export function buildTurnHistory(opts: {
+  priorTurns: LoopMessage[];
+  prompt: string;
+  files?: any[];
+  tools?: Array<{ id: string; name: string; args?: any; result?: any }>;
+  assistantContent: string;
+  assistantReasoning?: string;
+}): LoopMessage[] {
+  const userContent = opts.prompt
+    || (opts.files && opts.files.length > 0
+      ? `[${opts.files.map(f => f.name).join(", ")}]`
+      : "");
+  const out: LoopMessage[] = [...opts.priorTurns];
+  out.push({ role: "user", content: userContent });
+  for (const tc of opts.tools || []) {
+    const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
+    const resultStr = tc.result != null
+      ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
+      : "";
+    out.push({
+      role: "tool",
+      tool_call_id: tc.id,
+      content: resultStr,
+      tool_calls: [{
+        id: tc.id,
+        type: "function",
+        function: { name: tc.name, arguments: argsStr },
+      }],
+    });
+  }
+  const asst: LoopMessage = { role: "assistant", content: opts.assistantContent || "" };
+  if (opts.assistantReasoning) asst.reasoning_content = opts.assistantReasoning;
+  out.push(asst);
+  return out;
 }
 
 /**
@@ -59,7 +107,7 @@ function getHistoryTitle(history) {
  * @param {string} text
  * @returns {{ cleanText: string, thinkText: string }}
  */
-export function extractThinkBlocks(text) {
+export function extractThinkBlocks(text: string): { cleanText: string, thinkText: string } {
   if (!text) return { cleanText: "", thinkText: "" };
   const re = /<think>([\s\S]*?)<\/think>/gi;
   const blocks = [];
@@ -70,6 +118,44 @@ export function extractThinkBlocks(text) {
   }
   const cleanText = text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
   return { cleanText, thinkText: blocks.join("\n\n") };
+}
+
+/**
+ * Split a streamed assistant turn at `toolBoundary` (index right after the
+ * last turn that produced tool_calls) so display/save only keep the FINAL
+ * answer in `content` and move process narration into `reasoning_content`.
+ *
+ * The renderer mirrors this live: everything streamed before `tool:start`
+ * gets flushed into the thinking block, only the tail stays as body text.
+ * If there is no final-answer segment at all (aborted / interrupted mid-tool
+ * run) we fall back to the old behaviour — whole text as content — so a Stop
+ * never loses the partial answer.
+ *
+ * @param {string} allText   raw concatenation of all turn contents
+ * @param {string} allReasoning raw concatenation of all reasoning_content
+ * @param {number} toolBoundary index into allText after the last tool-call turn
+ * @returns {{ bodyText: string, reasoningText: string }}
+ */
+export function splitStreamText(allText: string, allReasoning: string, toolBoundary: number): { bodyText: string, reasoningText: string } {
+  const boundary = Math.max(0, Math.min(toolBoundary || 0, allText.length));
+  const answer = allText.slice(boundary);
+
+  if (!answer.trim()) {
+    // No final segment (Stop / error before the model produced an
+    // answer-after-tools turn) — persist everything as content, as before.
+    const { cleanText, thinkText } = extractThinkBlocks(allText);
+    const reasoningText = [allReasoning, thinkText].filter(s => s && s.trim()).join("\n\n");
+    return { bodyText: cleanText || allText || "", reasoningText };
+  }
+
+  const narr = allText.slice(0, boundary);
+  const { cleanText: answerClean, thinkText: answerThink } = extractThinkBlocks(answer);
+  const { cleanText: narrClean, thinkText: narrThink } = extractThinkBlocks(narr);
+  // Process narration joins reasoning (mirrors the renderer's flush-to-
+  // thinking on tool:start); </think> tags in the answer tail also move up.
+  const reasoningText = [allReasoning, narrThink, narrClean, answerThink]
+    .filter(s => s && s.trim()).join("\n\n");
+  return { bodyText: answerClean || answer.trim(), reasoningText };
 }
 
 // ── Vision capability: does this model understand image_url blocks? ──
@@ -91,7 +177,7 @@ const VISION_MODEL_PATTERNS = [
  * @param {string|null|undefined} model
  * @returns {boolean} true when the model ID matches a known-multimodal pattern.
  */
-export function supportsVision(model) {
+export function supportsVision(model?: string | null): boolean {
   if (!model) return false;
   return VISION_MODEL_PATTERNS.some(rx => rx.test(model));
 }
@@ -104,9 +190,9 @@ export function supportsVision(model) {
  * @param {{name?: string, dataUrl?: string}} f
  * @returns {{path: string} | null}
  */
-function saveImageAttachment(f) {
+function saveImageAttachment(f: { name?: string, dataUrl?: string }): { path: string } | null {
   try {
-    const base64Data = (f.dataUrl || "").includes("base64,") ? f.dataUrl.split("base64,")[1] : f.dataUrl || "";
+    const base64Data = (f.dataUrl || "").includes("base64,") ? (f.dataUrl as string).split("base64,")[1] : f.dataUrl || "";
     if (!base64Data) return null;
     const buffer = Buffer.from(base64Data, "base64");
     if (buffer.length === 0) return null;
@@ -116,7 +202,7 @@ function saveImageAttachment(f) {
     const path = join(dir, `attach-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
     writeFileSync(path, buffer);
     return { path };
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[agent-loop] saveImageAttachment failed:", e.message);
     return null;
   }
@@ -154,13 +240,13 @@ const VISION_BRIDGE_SCRIPT = VISION_BRIDGE_CANDIDATES.find(p => existsSync(p)) ?
  *   instead of leaking the in-flight request and writing a memory
  *   derived from a half-finished session.
  */
-async function autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal) {
+async function autoReview(msgs: LoopMessage[], apiKey: string, apiUrl: string, model: string, apiFormat: string, signal?: AbortSignal): Promise<void> {
   try {
     // Take last 8 exchanges (16 messages) for review
-    const recent = msgs.slice(-16).filter(/** @param {{role:string,content:any}} m */ m => m.role === "user" || m.role === "assistant");
+    const recent = msgs.slice(-16).filter(m => m.role === "user" || m.role === "assistant");
     if (recent.length < 4) return;
 
-    const convText = recent.map(/** @param {{role:string,content:any}} m */ m => {
+    const convText = recent.map(m => {
       const role = m.role === "user" ? "用户" : "助手";
       const text = (typeof m.content === "string" ? m.content : "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 800);
       return `[${role}] ${text}`;
@@ -183,25 +269,24 @@ DECISION: <内容>
 KNOWLEDGE: <内容>
 如果没有，回复 NONE。`;
 
-    const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, temperature?: number, stream: boolean, system?: string }} */ ({
+    const body: any = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: reviewPrompt }],
       max_tokens: 1024,
       temperature: 0.3,
       stream: false,
-    });
+    };
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
       : apiUrl;
-    /** @type {Record<string,string>} */
-    const headers = apiFormat === "anthropic"
+    const headers: Record<string, string> = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 
     if (apiFormat === "anthropic") {
       body.system = "你是一个对话分析助手。从对话中提取值得长期记忆的信息。";
       body.model = model || "claude-sonnet-4-20250514";
-      body.temperature = undefined;
+      delete body.temperature;
     }
 
     const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
@@ -234,7 +319,7 @@ KNOWLEDGE: <内容>
       }
     }
     console.log("[auto-review] Saved learnings:", lines.length, "items");
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[auto-review] Failed:", e.message);
   }
 }
@@ -257,7 +342,23 @@ KNOWLEDGE: <内容>
  *   model id the user picked from the picker (e.g. "anthropic/claude-sonnet-4").
  *   Forwarded to ACP `session/new` so opencode spawns with that model.
  */
-export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, isPlanMode = false, webSearchEnabled = true, silent = false, runtime = "aide", opencodeModelId) {
+export async function agentLoop(
+  prompt: string,
+  apiKey: string,
+  apiUrl: string,
+  model: string,
+  apiFormat = "openai",
+  files: any[] = [],
+  enabledSkills?: string[],
+  reasoning = true,
+  agentName?: string,
+  kbEnabled = false,
+  isPlanMode = false,
+  webSearchEnabled = true,
+  silent = false,
+  runtime = "aide",
+  opencodeModelId?: string,
+): Promise<{ text: string, aborted?: boolean }> {
   // Captured as closure-local: every saveSession call inside this agentLoop
   // invocation writes the SAME runtime value, regardless of what a concurrent
   // or later agentLoop call does to its own local copy.
@@ -267,26 +368,82 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
    * @param {Array<{role:string,content:any}>} history
    * @param {string} title
    */
-  const saveSession = async (id, history, title) => {
+  const saveSession = async (id: string, history: LoopMessage[], title: string): Promise<void> => {
     try { await sessionDb.saveSession(id, history, title, sessionRuntime); } catch { /* ignored */ }
   };
-  let abortCtrl = /** @type {AbortController | null} */ (getAbortCtrl());
+  // Full prior-turn rows (incl. tool entries) as they existed in the DB
+  // BEFORE this agentLoop call. getHistory() is only user+assistant text —
+  // using it as priorTurns would DELETE-all every previous tool row on save.
+  let priorTurnsSnapshot: LoopMessage[] = [];
+  let partialTurnPersisted = false;
+  /**
+   * Best-effort persist of the current (possibly partial) turn:
+   * prior DB history + this user prompt + tools so far + partial assistant text.
+   * Also appends the user/assistant pair to in-memory history so the next turn
+   * (and the final save) still sees this exchange. Runs at most once per turn.
+   *
+   * Layered like the final save: narration before `toolBoundary` goes to
+   * reasoning_content, text after it (the in-flight final answer) to content.
+   */
+  const persistPartialTurn = async (allText: string, allReasoning: string, toolBoundary: number, mainToolCalls: Array<{ id: string, name: string, args?: any, result?: any }>): Promise<void> => {
+    if (partialTurnPersisted) return;
+    try {
+      const sid = getSessionId();
+      if (!sid) return;
+      const { bodyText: partialBody, reasoningText: partialReasoning } = splitStreamText(allText, allReasoning, toolBoundary);
+      const saveHistory = buildTurnHistory({
+        priorTurns: priorTurnsSnapshot,
+        prompt,
+        files,
+        tools: mainToolCalls,
+        assistantContent: partialBody,
+        assistantReasoning: partialReasoning || undefined,
+      });
+      await saveSession(sid, saveHistory, getHistoryTitle(saveHistory));
+      partialTurnPersisted = true;
+      const histNow = getHistory();
+      histNow.push(
+        { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") },
+        {
+          role: "assistant",
+          content: partialBody,
+          ...(partialReasoning ? { reasoning_content: partialReasoning } : {}),
+        },
+      );
+    } catch { /* best-effort */ }
+  };
+  let abortCtrl = getAbortCtrl() as AbortController | null;
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   setAbortCtrl(abortCtrl);
   const { signal } = abortCtrl;
-  /** @type {(channel: string, data: any) => void} */
-  const sdr = (channel, data) => { if (!silent) sendToRenderer(channel, data); };
+  const sdr = (channel: string, data: any): void => { if (!silent) sendToRenderer(channel, data); };
 
-  let sessionId = /** @type {string | null} */ (getSessionId());
+  let sessionId = getSessionId() as string | null;
   if (!sessionId) { sessionId = genId(); setSessionId(sessionId); }
 
   hookManager.initHookManager(getWorkspace());
 
-  // Save placeholder session to DB immediately so it appears in sidebar
+  // Ensure the session row exists so it appears in the sidebar — but NEVER
+  // wipe existing messages. sessionDb.saveSession does DELETE-all + re-insert;
+  // writing a one-message placeholder here used to destroy prior turns, and
+  // an interrupt before the final save left only the current user prompt
+  // (refresh → previous answers gone / blank).
   const placeholderTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
-  const placeholderHistory = [{ role: "user", content: prompt || "" }];
-  await sessionDb.saveSession(/** @type {string} */ (sessionId), placeholderHistory, placeholderTitle, sessionRuntime);
+  try {
+    const existing = sessionDb.loadSession(sessionId);
+    priorTurnsSnapshot = (existing && Array.isArray(existing.history) ? existing.history : []) as LoopMessage[];
+    if (priorTurnsSnapshot.length === 0) {
+      await sessionDb.saveSession(
+        /** @type {string} */ (sessionId),
+        [{ role: "user", content: prompt || "" }],
+        placeholderTitle,
+        sessionRuntime,
+      );
+    } else {
+      sessionDb.updateTitle(sessionId, placeholderTitle);
+    }
+  } catch { /* sidebar presence is best-effort */ }
   sdr("session:update", { sessionId });
 
   // ── OpenCode runtime: delegate entirely to the local ACP client ──
@@ -308,6 +465,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       isPlanMode,
       signal,
       opencodeModelId,
+      priorTurnsSnapshot,
     });
   }
 
@@ -321,15 +479,15 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         setContextWindow(detectedCtx);
         console.log(`[agent-loop] Set context window to ${detectedCtx} for model: ${model}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[agent-loop] Failed to detect context window:', e.message);
     }
   }
 
   // ── Build user message with optional file attachments ──
-  let userMessage;
+  let userMessage: LoopMessage;
   if (files && files.length > 0) {
-    const contentParts = [];
+    const contentParts: any[] = [];
     if (prompt) contentParts.push({ type: "text", text: prompt });
 
     for (const f of files) {
@@ -384,11 +542,10 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           try {
             const extractor = await getExtractor(tempPath);
             if (extractor) {
-              /** @type {{ extract: (p: string) => Promise<{body: string}>, id: string }} */
-              const ext = /** @type {any} */ (extractor);
-              const result = await ext.extract(tempPath);
+              const ext2 = extractor as any;
+              const result = await ext2.extract(tempPath);
               fileText = result.body || "";
-              extractionNote = `[Extracted via ${ext.id} extractor from ${f.name}]`;
+              extractionNote = `[Extracted via ${ext2.id} extractor from ${f.name}]`;
             } else {
               // No extractor — fall back to utf-8 (works for .md/.txt/.json/.csv).
               fileText = buffer.toString("utf-8");
@@ -397,8 +554,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           } finally {
             try { unlinkSync(tempPath); } catch { /* tmp cleanup best-effort */ }
           }
-        } catch (e) {
-          fileText = `[Failed to read attachment: ${(/** @type {any} */ (e)).message}]`;
+        } catch (e: any) {
+          fileText = `[Failed to read attachment: ${e.message}]`;
           extractionNote = `[Extraction error for ${f.name}]`;
         }
         const fileDesc = `\n\n--- File: ${f.name} ---\n${extractionNote}\n${fileText}\n--- End of ${f.name} ---\n`;
@@ -413,11 +570,11 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // First turn OR process restarted (caches are null) — rebuild everything
   const isFirstTurn = getHistory().length === 0 || !_sysPromptCache;
 
-  let sysContent, contextBlockBase;
+  let sysContent: string, contextBlockBase: string;
 
   if (isFirstTurn) {
     // ── First turn: build full system prompt, cache everything ──
-    const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, true);
+    const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, true, model);
     sysContent = sysPrompt.content;
     contextBlockBase = sysPrompt.contextBlock || "";
 
@@ -427,7 +584,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       sysContent += `\n\n**AskUserQuestion:** You can ask the user up to 4 multiple-choice questions when you need clarification. Use this instead of guessing. The user will see a dialog and respond.`;
     }
     if (!sysContent.includes("`Agent`")) {
-      sysContent += `\n\n**Agent (Sub-Agent):** You can launch read-only sub-agents (\`Agent\` tool) for parallel independent research. Sub-agents have access to file_read, grep, glob, web_search, web_fetch. Use them to search for information in parallel while you continue other work. A sub-agent returns a single text result. Example: \`Agent(description="search AI news", prompt="Search the web for the latest AI news this week and summarize the top 3 stories.")\``;
+      sysContent += `\n\n**Agent (Sub-Agent):** You can launch sub-agents (\`Agent\` tool) for parallel independent work. Sub-agents have access to file_read, file_write, file_edit, grep, glob, bash, web_search, web_fetch, git tools, skills and memory/KB tools — they CAN modify files, so delegate only genuinely independent tasks. Use them to search for information in parallel while you continue other work. A sub-agent returns a single text result. Example: \`Agent(description="search AI news", prompt="Search the web for the latest AI news this week and summarize the top 3 stories.")\``;
     }
     if (!sysContent.includes("Do NOT save")) {
       sysContent += `\n\n**Memory hygiene:** Do NOT save code patterns, architecture, or file paths as memories — those are derivable from the current project state. Only save non-obvious context: user preferences, stakeholder decisions, deadlines, corrections, external system references. If a memory claims a function or file exists, verify with grep/file_read before acting on it.`;
@@ -448,20 +605,20 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       }
     }
 
-    _sysPromptCache = /** @type {string} */ (sysContent);
-    _contextBlockBaseCache = /** @type {string} */ (contextBlockBase);
+    _sysPromptCache = sysContent;
+    _contextBlockBaseCache = contextBlockBase;
   } else {
     // ── Turn 2+: use cached system prompt (already has KB/AGENTS.md from turn 1) ──
-    sysContent = _sysPromptCache;
-    contextBlockBase = _contextBlockBaseCache;
+    sysContent = _sysPromptCache!;
+    contextBlockBase = _contextBlockBaseCache ?? "";
   }
 
   // ── Build dynamic context block on top of cached base ──
-  const contextExtraMsgs = [];
+  const contextExtraMsgs: LoopMessage[] = [];
   // `contextBlock` keeps the combined string for continuation snapshot
   let contextBlock = contextBlockBase;
 
-  const activeTasks = Array.from(taskStore.values()).filter(t => t.status !== "completed" && t.status !== "deleted");
+  const activeTasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
   if (activeTasks.length > 0) {
     let taskBlock = "\n## 当前任务状态\n";
     for (const t of activeTasks) {
@@ -505,7 +662,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       contextBlock += memBlock;
       contextExtraMsgs.push({ role: "user", content: memBlock.trim() });
     }
-  } catch (/** @type {any} */ e) {
+  } catch (e: any) {
     console.error("[memory] selection error:", e.message);
   }
 
@@ -531,27 +688,39 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // [sys][ctx_base][history...][extra...][query]
   // → [sys][ctx_base][history] is the cacheable prefix;
   // ctxExtra (tasks/todos/memories) goes AFTER history so it doesn't break the prefix
-  /** @type {Array<{role:string,content:any,reasoning_content?:string,tool_calls?:Array<any>,tool_call_id?:string,system?:string}>} */
-  let msgs = [{ role: "system", content: sysContent }];
+  let msgs: LoopMessage[] = [{ role: "system", content: sysContent }];
   if (contextBlockBase && contextBlockBase.trim()) {
     msgs.push({ role: "user", content: contextBlockBase.trim() });
   }
   msgs.push(...history.map(m => ({ ...m })));
   msgs.push(...contextExtraMsgs);
   msgs.push(userMessage);
+  // Index of this turn's user message — the mid-turn checkpoint below must
+  // only snapshot from here onward (msgs[0..history] is prior/context, and
+  // contextExtraMsgs are injected user-role blocks that must not be saved
+  // as real conversation history).
+  const currentTurnMsgStart = msgs.length - 1;
   let allText = "", allReasoning = "";
+  // ── Output layering ──
+  // allText is the raw concatenation of every turn's content (kept for the
+  // API-context history). For DISPLAY/SAVE we split it at the last tool call:
+  //   toolBoundary   = index in allText right after the last turn that had
+  //                    tool_calls (the renderer flushes its narration into the
+  //                    thinking block at that same tool:start event)
+  //   text before it = process narration (goes to reasoning_content)
+  //   text after it  = the final answer (goes to `content`)
+  let toolBoundary = 0;
   let continuation = 0;
   let agentFinished = false;
-  /** @type {Array<{id:string,name:string,args?:any,result?:any}>} Collect tool calls so the final session save (line ~1077) can persist them alongside the text — getHistory() only carries user+assistant text, so without this the tool calls vanish on session reload. */
-  const mainToolCalls = [];
+  const mainToolCalls: Array<{ id: string, name: string, args?: any, result?: any }> = [];
   // ── P0 fix: rebuild context block from LIVE state on every continuation. ──
   // Previously this was a single-shot snapshot, so any task/todo changes that
   // happened mid-conversation were lost when the context was rebuilt.
-  const buildContextMsg = () => {
-    const liveActive = Array.from(taskStore.values()).filter(t => t.status !== "completed" && t.status !== "deleted");
+  const buildContextMsg = (): LoopMessage | null => {
+    const liveActive: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
     const liveTodos = getTodoList();
-    const liveUnverified = Array.from(taskStore.values()).filter(t => t.unverified === true);
-    const parts = [];
+    const liveUnverified: any[] = Array.from(taskStore.values()).filter((t: any) => t.unverified === true);
+    const parts: string[] = [];
     if (liveActive.length > 0) {
       let block = "## 当前任务状态\n";
       for (const t of liveActive) {
@@ -587,6 +756,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
     continuation++;
     let turns = 0;
     let toolsCalledThisTurn = 0;  // P0: track tool calls to prevent pure-text "completion"
+    let webSearchCalls = 0;       // time-sensitive guard: force ≥5 searches before final answer
+    let recencyNudges = 0;
 
     if (continuation > 1) {
       const banner = `\n\n--- 第 ${continuation} 次自动继续 ---\n`;
@@ -626,6 +797,10 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         allText += result.content;
         if (reasoningContent) allReasoning += reasoningContent;
         tcs = result.tcs;
+        // A turn with tool calls ends a "process narration" segment: the
+        // renderer flushes everything streamed so far into the thinking block
+        // when tool:start fires, so mirror that boundary here for save/reload.
+        if (tcs.length > 0) toolBoundary = allText.length;
         // B1: capture finishReason so we can detect length-truncated responses
         // and recover by asking the model to continue instead of accepting
         // the truncated tail as a final answer.
@@ -635,8 +810,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         }
         // ── Log cache metrics & forward to UI ──
         if (result.usage) {
-          /** @type {{ prompt_cache_hit_tokens?: number; prompt_tokens?: number; prompt_cache_miss_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; input_tokens?: number }} */
-          const u = result.usage;
+          const u: any = result.usage;
           if (u.prompt_cache_hit_tokens !== undefined) {
             const total = u.prompt_tokens || 0;
             const miss = u.prompt_cache_miss_tokens ?? 0;
@@ -657,10 +831,14 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             });
           }
         }
-      } catch (/** @type {any} */ err) {
+      } catch (err: any) {
         if (err.name === "AbortError") {
           hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
-          return { text: allText, aborted: true };
+          // Persist prior turns + this user message + whatever partial text
+          // streamed before Stop — otherwise reload shows only the placeholder
+          // (or an older snapshot) and the interrupted answer vanishes.
+          await persistPartialTurn(allText, allReasoning, toolBoundary, mainToolCalls);
+          return { text: splitStreamText(allText, allReasoning, toolBoundary).bodyText, aborted: true };
         }
         // Handle context size exceeded - compress and retry
         if (err.type === 'CONTEXT_SIZE_EXCEEDED' && err.detectedContextWindow) {
@@ -707,17 +885,20 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             finishReason = retryResult.finishReason || null;
             allText += retryResult.content;
             if (reasoningContent) allReasoning += reasoningContent;
-          } catch (retryErr) {
+            if (tcs.length > 0) toolBoundary = allText.length;
+          } catch (retryErr: any) {
             // If retry also fails, throw original error
             console.error(`[agent-loop] Retry also failed:`, retryErr.message);
+            await persistPartialTurn(allText, allReasoning, toolBoundary, mainToolCalls);
             throw err;
           }
         } else {
+          await persistPartialTurn(allText, allReasoning, toolBoundary, mainToolCalls);
           throw err;
         }
       }
 
-      const asst = /** @type {{ role: string, content: string | null, reasoning_content?: string, tool_calls?: Array<any> }} */ ({ role: "assistant", content: content || null });
+      const asst: LoopMessage = { role: "assistant", content: content || null };
       if (reasoningContent) asst.reasoning_content = reasoningContent;
       if (tcs.length > 0) asst.tool_calls = tcs;
       msgs.push(asst);
@@ -739,8 +920,8 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           turns++;
           if (turns < MAX_TURNS) continue;
         }
-        const unverified = Array.from(taskStore.values()).filter(t => t.unverified === true);
-        const activeTasks = Array.from(taskStore.values()).filter(t => t.status === "in_progress" || t.status === "pending");
+        const unverified: any[] = Array.from(taskStore.values()).filter((t: any) => t.unverified === true);
+        const activeTasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status === "in_progress" || t.status === "pending");
         if (unverified.length > 0 || activeTasks.length > 0) {
           // Don't finish — push a reminder and continue the loop
           const reminder = unverified.length > 0
@@ -761,7 +942,20 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         // the user see that it refused to act.
         const hasActionIntent = /(改|修|查|找|跑|执行|删除|创建|添加|读取|分析|搜索|运行|test|run|fix|search|read|write|delete|create|build|install|test|debug|find)/i.test(prompt || "");
         if (toolsCalledThisTurn === 0 && hasActionIntent && turns < MAX_TURNS - 2) {
-          msgs.push({ role: "user", content: "⚠️ 你还没调用任何工具就准备结束。用户的要求是操作性任务（不是纯聊天），请先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，再回答。如果你不确定要做什么，请用 AskUserQuestion 询问用户。" });
+          msgs.push({ role: "user", content: "⚠️ 你还没调用任何工具就准备结束。用户的要求是操作性任务（不是纯聊天），请先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，再回答。如果你不确定要做什么，请用 AskUserQuestion 向用户确认。" });
+          turns++;
+          continue;
+        }
+        // Recency guard: 昨天/最近/news-style prompts must not finish after
+        // 2-3 shallow searches — that is how stale/fake answers slip through.
+        const wantsRecency = webSearchEnabled && /(昨天|今日|今天|昨日|最近|最新|近期|刚刚|新闻|快讯|时事|yesterday|today|latest|recent|breaking|this\s+(week|month)|news)/i.test(prompt || "");
+        const RECENCY_MIN_SEARCHES = 5;
+        if (wantsRecency && webSearchCalls < RECENCY_MIN_SEARCHES && recencyNudges < 3 && turns < MAX_TURNS - 2) {
+          recencyNudges++;
+          msgs.push({
+            role: "user",
+            content: `⚠️ 时效性/新闻类问题证据不足：目前 ${webSearchCalls}/次 web_search（要求 ≥${RECENCY_MIN_SEARCHES}），且核心断言须有 ≥2 个不同 hostname 独立源一致（重大结论 ≥3 源 + 1 个一手/权威源）。请继续：① 换角度再搜（query 带当前日期，可传 days）；② 核对 published_date 与 hostname 多样性（同站多篇/转载只算 1 源）；③ 源冲突则再搜或并列标注"未证实"；④ 不足 2 独立源时用"仅见 X 报道"降级表述，禁止把单源当已证实事实。核够再给最终答案。`,
+          });
           turns++;
           continue;
         }
@@ -769,6 +963,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         break;
       }
       toolsCalledThisTurn += tcs.length;
+      webSearchCalls += tcs.filter((tc) => tc.function?.name === "web_search").length;
 
       // ── Execute tools (Agent calls in parallel, others sequential) ──
       const agentCalls = tcs.filter(tc => tc.function?.name === "Agent");
@@ -778,7 +973,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         for (const tc of agentCalls) {
           let args;
           try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
-          sdr("tool:start", { name: "Agent", args });
+          sdr("tool:start", { name: "Agent", args, toolCallId: tc.id });
         }
 
         const agentResults = await Promise.allSettled(
@@ -795,7 +990,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
           try { aArgs = JSON.parse(tc.function.arguments); } catch { aArgs = { raw: tc.function.arguments }; }
           let rStr = JSON.stringify(result);
           if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
-          sdr("tool:result", { name: "Agent", result });
+          sdr("tool:result", { name: "Agent", result, toolCallId: tc.id });
           mainToolCalls.push({ id: tc.id, name: "Agent", args: aArgs, result });
           msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
           hookManager.fire("PostToolUse", { tool: "Agent", result }).catch(() => {});
@@ -805,14 +1000,14 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       for (const tc of otherCalls) {
         let args;
         try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
-        sdr("tool:start", { name: tc.function.name, args });
+        sdr("tool:start", { name: tc.function.name, args, toolCallId: tc.id });
 
-        let result;
-        try { result = await runTool(tc); } catch (/** @type {any} */ e) { result = { error: e.message }; }
+        let result: any;
+        try { result = await runTool(tc); } catch (e: any) { result = { error: e.message }; }
 
         let rStr = JSON.stringify(result);
         if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
-        sdr("tool:result", { name: tc.function.name, result });
+        sdr("tool:result", { name: tc.function.name, result, toolCallId: tc.id });
         mainToolCalls.push({ id: tc.id, name: tc.function.name, args, result });
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
         hookManager.fire("PostToolUse", { tool: tc.function.name, result }).catch(() => {});
@@ -851,7 +1046,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             } else {
               msgs.push({
                 role: "user",
-                content: `[view_image 结果] 图片数据已返回（${result.media_type}，${((result.data.length * 3) / 4 / 1024).toFixed(0)}KB base64），但当前模型不支持直接读取图片。图片路径：${/** @type {any} */ (result).description || "(unknown)"}\n`,
+                content: `[view_image 结果] 图片数据已返回（${result.media_type}，${((result.data.length * 3) / 4 / 1024).toFixed(0)}KB base64），但当前模型不支持直接读取图片。图片路径：${result.description || "(unknown)"}\n`,
               });
             }
           }
@@ -860,11 +1055,17 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
         // P3: turn-level checkpoint — every 5 turns persist the current
         // history snapshot so a crash mid-task can be resumed. Cap the
         // snapshot at 200 messages to keep the DB write fast.
+        //
+        // Base = priorTurnsSnapshot (full DB history at agentLoop start,
+        // INCLUDING prior turns' tool rows). The old code saved only
+        // user/assistant rows sliced from `msgs`, and saveSession DELETEs
+        // then re-inserts — so a mid-task checkpoint used to wipe every
+        // prior tool entry (and injected context-block user messages).
         if (turns % 5 === 0 && sessionId) {
           try {
-            const histSnapshot = msgs
+            const currentTurnMsgs = msgs
+              .slice(currentTurnMsgStart)
               .filter(m => m.role === "user" || m.role === "assistant")
-              .slice(-200)
               .map(m => {
                 // Strip embedded <think> blocks so the saved `content` is
                 // the user-visible text only, and (re-)derive `reasoning_content`
@@ -882,6 +1083,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
                   tool_calls: Array.isArray(m.tool_calls) && m.tool_calls.length > 0 ? m.tool_calls : undefined,
                 };
               });
+            const histSnapshot = [...priorTurnsSnapshot, ...currentTurnMsgs].slice(-200);
             await sessionDb.saveSession(sessionId, histSnapshot, getHistoryTitle(histSnapshot), sessionRuntime);
             sessionDb.saveTurnProgress(sessionId, {
               currentTurn: turns,
@@ -890,7 +1092,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
               maxContinuations: MAX_CONTINUATIONS,
               lastSummary: "",
             });
-          } catch (/** @type {any} */ e) {
+          } catch (e: any) {
             console.error("[checkpoint] save failed:", e.message);
           }
         }
@@ -906,7 +1108,12 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
       const summary = await summarizeForContinuation(msgs, apiKey, apiUrl, model, apiFormat, signal);
 
       const sysMsg = msgs[0];
-      const recentMsgs = msgs.slice(-6);
+      // Don't cut mid-tool-pair: if the window starts on a tool row, extend
+      // back to the assistant that declared it (bounded by the system msg).
+      // A start index of 0 would duplicate sysMsg — min bound is 1.
+      let recentStart = Math.max(1, msgs.length - 6);
+      while (recentStart > 1 && msgs[recentStart]?.role === "tool") recentStart--;
+      const recentMsgs = msgs.slice(recentStart);
       // contextBlock at end → [sys][summary][recent...][ctx] = cacheable prefix for continuation
       const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
       // P0: rebuild context block from LIVE state instead of using stale snapshot
@@ -939,7 +1146,7 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
             maxContinuations: MAX_CONTINUATIONS,
             lastSummary: summary.slice(0, 2000),
           });
-        } catch (/** @type {any} */ e) {
+        } catch (e: any) {
           console.error("[turn-progress] save failed:", e.message);
         }
       }
@@ -961,17 +1168,17 @@ export async function agentLoop(prompt, apiKey, apiUrl, model, apiFormat = "open
   // `reasoning_content` column stays NULL — so the reasoning is visible during
   // the live chat and then vanishes on reload. To make the save robust to
   // both APIs, we:
-  //   1. pull <think>…</think> blocks out of `allText` and merge them into
+  //   1. pull <think>…</think> blocks out of each segment and merge them into
   //      `allReasoning` (preferring the API field if both are present)
   //   2. write the cleaned `content` so reload and live chat render identically
-  const { cleanText, thinkText } = extractThinkBlocks(allText);
-  const combinedReasoning = allReasoning
-    ? (thinkText ? `${allReasoning}\n\n${thinkText}` : allReasoning)
-    : thinkText;
-  const historyAsst = /** @type {{ role: string, content: string, reasoning_content?: string }} */ ({ role: "assistant", content: cleanText || allText || "" });
+  //   3. split at `toolBoundary`: narration before the last tool call is
+  //      PROCESS text → reasoning_content; only the answer tail → content
+  //      (mirrors the renderer flushing narration into thinking on tool:start)
+  const { bodyText, reasoningText: combinedReasoning } = splitStreamText(allText, allReasoning, toolBoundary);
+  const historyAsst: LoopMessage = { role: "assistant", content: bodyText };
   if (combinedReasoning) historyAsst.reasoning_content = combinedReasoning;
   if (process.env.DEBUG_REASONING === "1") {
-    console.log(`[reasoning-debug] agent-loop end: allReasoning.length=${allReasoning.length}, allText.length=${allText.length}, thinkText.length=${thinkText.length}, combinedReasoning.length=${combinedReasoning.length}`);
+    console.log(`[reasoning-debug] agent-loop end: allReasoning.length=${allReasoning.length}, allText.length=${allText.length}, toolBoundary=${toolBoundary}, bodyText.length=${bodyText.length}, combinedReasoning.length=${combinedReasoning.length}`);
     if (!combinedReasoning) {
       console.log(`[reasoning-debug] ⚠️ combined reasoning is EMPTY. Provider is not returning reasoning_content AND content has no <think> tags.`);
     }
@@ -1000,17 +1207,16 @@ ${convText}
 
 用一段简洁的摘要总结（中文）:`;
 
-      const body = /** @type {{ model: string, messages: Array<{role:string,content:string}>, max_tokens: number, stream: boolean, system?: string }} */ ({
+      const body: any = {
         model: model || "deepseek-chat",
         messages: [{ role: "user", content: compactPrompt }],
         max_tokens: 2048,
         stream: false,
-      });
+      };
       const endpoint = apiFormat === "anthropic"
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
         : apiUrl;
-      /** @type {Record<string,string>} */
-      const headers = apiFormat === "anthropic"
+      const headers: Record<string, string> = apiFormat === "anthropic"
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
         : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 
@@ -1023,14 +1229,14 @@ ${convText}
         method: "POST", headers,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(30000),
-      });
+      } as RequestInit);
       if (res.ok) {
         const data = await res.json();
         summary = apiFormat === "anthropic"
           ? (data.content?.[0]?.text || "")
           : (data.choices?.[0]?.message?.content || "");
       }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[compress] AI compaction failed, using fallback:", e.message);
     }
 
@@ -1082,39 +1288,26 @@ ${convText}
         );
         sessionDb.updateTitle(parentId, getHistoryTitle(recent));
         recent.unshift({ role: "user", content: `## 📋 对话摘要\n\n${summary}` });
-      } catch (/** @type {any} */ e) { console.error("[compress]", e.message); }
+      } catch (e: any) { console.error("[compress]", e.message); }
     }
 
     setHistory(recent);
   }
 
-  // Auto-save after each turn. Build a full history (user + each tool call
-  // as a flat role:"tool" entry + final assistant text) so the saved session
-  // keeps the tool calls — getHistory() only carries user+assistant text.
+  // Auto-save after each turn. priorTurnsSnapshot is the DB history from
+  // before this turn (incl. tool rows) — saveSession DELETEs then re-inserts,
+  // so omitting those tools would wipe them every turn.
   const finalSessionId = getSessionId();
-  if (finalSessionId) {
-    const title = getHistoryTitle(getHistory());
-    const saveHistory = [{ role: "user", content: prompt || "" }];
-    for (const tc of mainToolCalls) {
-      const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
-      const resultStr = tc.result != null
-        ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
-        : "";
-      saveHistory.push({
-        role: "tool",
-        content: resultStr,
-        tool_calls: [{
-          id: tc.id,
-          type: "function",
-          function: { name: tc.name, arguments: argsStr },
-        }],
-      });
-    }
-    saveHistory.push({
-      role: "assistant",
-      content: cleanText || allText || "",
-      reasoning_content: combinedReasoning || undefined,
+  if (finalSessionId && !partialTurnPersisted) {
+    const saveHistory = buildTurnHistory({
+      priorTurns: priorTurnsSnapshot,
+      prompt,
+      files,
+      tools: mainToolCalls,
+      assistantContent: bodyText,
+      assistantReasoning: combinedReasoning || undefined,
     });
+    const title = getHistoryTitle(saveHistory);
     saveSession(finalSessionId, saveHistory, title).catch(() => {});
   }
 
@@ -1129,18 +1322,16 @@ ${convText}
   if (!silent) {
     (async () => {
       try {
-        /** @type {any} */
-        const db = sessionDb;
-        const suggestions = await skills.detectPatterns(/** @type {any} */ (db));
+        const suggestions = await skills.detectPatterns(sessionDb as any);
         if (Array.isArray(suggestions) && suggestions.length > 0) {
           sdr("agent-skill:patterns-detected", { suggestions });
         }
-      } catch (/** @type {any} */ e) {
+      } catch (e: any) {
         console.error("[agent-loop] detectPatterns failed:", e?.message);
       }
     })();
   }
-  return { text: allText || "(no text response)" };
+  return { text: bodyText || "(no text response)" };
 }
 
 export function resetPromptCache() {
@@ -1167,7 +1358,19 @@ export function resetPromptCache() {
  * @param {string|null} [args.opencodeModelId]
  * @returns {Promise<{ text: string }>}
  */
-async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false, opencodeModelId }) {
+async function runOpencodeAcp({ prompt, files = [] as any[], silent, sessionId, sessionRuntime, saveSession, sdr, signal, isPlanMode = false, opencodeModelId, priorTurnsSnapshot = [] as LoopMessage[] }: {
+  prompt: string;
+  files?: any[];
+  silent?: boolean;
+  sessionId: string | null;
+  sessionRuntime: string;
+  saveSession: (id: string, history: LoopMessage[], title: string) => Promise<void>;
+  sdr: (channel: string, data: any) => void;
+  signal?: AbortSignal;
+  isPlanMode?: boolean;
+  opencodeModelId?: string | null;
+  priorTurnsSnapshot?: LoopMessage[];
+}): Promise<{ text: string, aborted?: boolean }> {
   const { OpencodeAcpClient } = await import("./opencode-acp-client.ts");
   const { detectOpencode } = await import("./opencode-detector.ts");
 
@@ -1223,8 +1426,7 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
   //   - Anything `buildFileBlocks` drops (e.g. empty payload, temp write
   //     failure) is surfaced to the user via `stream:error` so silent drops
   //     can't happen.
-  /** @type {Array<{name:string,type:string,dataUrl:string,size?:number}>} */
-  const binaryFiles = [];
+  const binaryFiles: Array<{ name: string, type: string, dataUrl: string, size?: number }> = [];
   if (Array.isArray(files) && files.length > 0) {
     for (const file of files) {
       const mime = file.type || "application/octet-stream";
@@ -1361,10 +1563,8 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
 
   let allText = "";
   let allReasoning = "";
-  /** @type {Array<{role:string, content:string, tool_name?:string, tool_args?:string, tool_result?:string}>} */
-  const allHistory = [];
-  /** @type {Array<{id:string,name:string,args?:any,result?:any}>} */
-  const toolCalls = [];
+  const allHistory: Array<{ role: string, content: string, tool_name?: string, tool_args?: string, tool_result?: string }> = [];
+  const toolCalls: Array<{ id: string, name: string, args?: any, result?: any }> = [];
   let aborted = false;
   let authFailed = false;
 
@@ -1380,18 +1580,22 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
   });
   client.on("tool-start", (e) => {
     if (aborted) return;
-    toolCalls.push({ id: e.toolCallId || String(toolCalls.length), name: e.name, args: e.args });
-    sdr("tool:start", { name: e.name, args: e.args || {} });
+    const id = e.toolCallId || String(toolCalls.length);
+    toolCalls.push({ id, name: e.name, args: e.args });
+    sdr("tool:start", { name: e.name, args: e.args || {}, toolCallId: id });
   });
   client.on("tool-result", (e) => {
     if (aborted) return;
-    // Attach the result to the most recent tool-start with the same name
-    // (toolCallId would be more precise, but the ACP client's tool-result
-    // event carries it — we match by name as a fallback).
-    const last = [...toolCalls].reverse().find((t) => t.name === e.name && !t.result);
-    if (last) last.result = e.result;
-    else toolCalls.push({ id: String(toolCalls.length), name: e.name, result: e.result });
-    sdr("tool:result", { name: e.name, result: e.result });
+    // Prefer toolCallId so parallel/out-of-order results mark the right entry.
+    let matched = e.toolCallId
+      ? toolCalls.find((t) => t.id === e.toolCallId && !t.result)
+      : undefined;
+    if (!matched) {
+      matched = [...toolCalls].reverse().find((t) => t.name === e.name && !t.result);
+    }
+    if (matched) matched.result = e.result;
+    else toolCalls.push({ id: e.toolCallId || String(toolCalls.length), name: e.name, result: e.result });
+    sdr("tool:result", { name: e.name, result: e.result, toolCallId: e.toolCallId || matched?.id });
   });
   client.on("auth-required", (e) => {
     // opencode needs `opencode auth login` run in a terminal. Surface a
@@ -1399,7 +1603,7 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     // cryptic "opencode exited" a few seconds later.
     authFailed = true;
     sdr("stream:error", {
-      message: `OpenCode 需要登录后才能使用。请在终端运行：opencode auth login（认证方式：${(e.authMethods || []).map((m) => m.id).join(", ")}）`,
+      message: `OpenCode 需要登录后才能使用。请在终端运行：opencode auth login（认证方式：${(e.authMethods || []).map((m: any) => m.id).join(", ")}）`,
     });
   });
   client.on("permission-request", (e) => {
@@ -1475,7 +1679,7 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
         });
         client.modelId = opencodeModelId;
         console.log(`[runOpencodeAcp] switched model mid-session to ${opencodeModelId}`);
-      } catch (/** @type {any} */ e) {
+      } catch (e: any) {
         console.warn(`[runOpencodeAcp] model switch to ${opencodeModelId} failed: ${e.message}`);
         sdr("stream:error", {
           message: `切换模型到 ${opencodeModelId} 失败：${e.message}（继续使用当前模型）`,
@@ -1487,14 +1691,15 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     const { stopReason } = await client.sendPrompt(promptBlocks);
     if (stopReason === "cancelled" || aborted) {
       hookManager.fire("SessionEnd", { sessionId, aborted: true }).catch(() => {});
-      persistSession = false;  // user-cancelled → don't persist the half-response
+      // Still persist prior turns + partial text so Stop doesn't wipe history.
+      persistSession = true;
       return { text: allText, aborted: true };
     }
     hookManager.fire("SessionEnd", { sessionId, aborted: false }).catch(() => {});
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "AbortError" || aborted) {
       hookManager.fire("SessionEnd", { sessionId, aborted: true }).catch(() => {});
-      persistSession = false;  // user-aborted → don't persist
+      persistSession = true;  // keep prior turns + partial answer on disk
       return { text: allText, aborted: true };
     }
     sdr("stream:error", { message: err.message || String(err) });
@@ -1533,39 +1738,31 @@ async function runOpencodeAcp({ prompt, files = [], silent, sessionId, sessionRu
     // fallback for binary files). Safe to call with null.
     try { client.cleanupFileBlocks(fileTempDir); } catch { /* ignore */ }
     // Persist to session DB so reload shows the same conversation. This runs
-    // on every exit path where persistSession is true (success + error).
-    // Abort paths set persistSession = false above to skip saving.
+    // on every exit path where persistSession is true (success + error +
+    // user abort — Stop must not wipe prior turns or the partial answer).
     if (persistSession) {
       try {
-        const finalTitle = (prompt || "").replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
-        // Build a full history: user message + each tool call as a separate
-        // entry + final assistant response. This preserves the complete chain
-        // of thought on session reload instead of just first+last.
-        const history = [{ role: "user", content: prompt || "" }];
-        for (const tc of toolCalls) {
-          const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
-          const resultStr = tc.result != null
-            ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
-            : "";
-          history.push({
-            role: "tool",
-            content: resultStr,
-            // Encode the tool name/args into the `tool_calls` column so they
-            // survive the round-trip (saveSession only persists role/content/
-            // reasoning_content/tool_calls — tool_name/tool_args are dropped).
-            tool_calls: [{
-              id: tc.id,
-              type: "function",
-              function: { name: tc.name, arguments: argsStr },
-            }],
-          });
-        }
-        history.push({
-          role: "assistant",
-          content: allText || "",
-          reasoning_content: allReasoning || undefined,
+        // priorTurnsSnapshot = DB history before this turn (incl. tool rows).
+        // saveSession DELETEs then re-inserts — getHistory() alone would wipe
+        // prior turns' tool entries every opencode save.
+        const saveHistory = buildTurnHistory({
+          priorTurns: priorTurnsSnapshot,
+          prompt,
+          files,
+          tools: toolCalls,
+          assistantContent: allText || "",
+          assistantReasoning: allReasoning || undefined,
         });
-        await saveSession(sessionId, history, finalTitle);
+        const finalTitle = getHistoryTitle(saveHistory);
+        if (sessionId) await saveSession(sessionId, saveHistory, finalTitle);
+        // Keep in-memory history aligned with what we just wrote so the next
+        // turn's context includes this exchange (tool rows stay DB-only,
+        // matching aide's user+assistant getHistory() shape).
+        const histNow = getHistory();
+        histNow.push(
+          { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") },
+          { role: "assistant", content: allText || "" },
+        );
       } catch { /* don't let a save failure mask the real return */ }
     }
   }

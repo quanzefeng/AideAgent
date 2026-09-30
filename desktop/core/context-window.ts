@@ -32,7 +32,7 @@ const CLOUD_CACHE_TTL_MS = 3_600_000; // 1h — saves a network round-trip per m
 // Order matters: first match wins, so keep specific versions before family
 // prefixes. Probe results override these when the provider reports a value.
 /** @type {Array<[RegExp, number]>} */
-const NAME_RULES = [
+const NAME_RULES: Array<[RegExp, number]> = [
   [/gemini-3\.5-pro/i,                          2_000_000],
   [/gpt-5\.6/i,                                 1_500_000],
   [/gpt-5\.5/i,                                 1_050_000],
@@ -60,9 +60,10 @@ const NAME_RULES = [
  * @param {string} [model]
  * @returns {number|null}
  */
-export function resolveByName(model) {
+export function resolveByName(model: string | undefined): number | null {
   if (!model) return null;
-  for (const [rx, window] of NAME_RULES) {
+  const rules: Array<[RegExp, number]> = NAME_RULES;
+  for (const [rx, window] of rules) {
     if (rx.test(model)) return window;
   }
   return null;
@@ -70,55 +71,35 @@ export function resolveByName(model) {
 
 // ── URL helpers ─────────────────────────────────────────────
 
-/** @param {string} [apiUrl] @returns {boolean} */
-export function isLocalUrl(apiUrl) {
+export function isLocalUrl(apiUrl: string | undefined): boolean {
   return !!apiUrl && /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(apiUrl);
 }
 
-/**
- * Strip transport suffixes to the server root:
- *   "http://localhost:1234/v1/chat/completions" → "http://localhost:1234"
- *   "http://localhost:1234/v1"                  → "http://localhost:1234"
- * @param {string} apiUrl
- * @returns {string}
- */
-function serverRoot(apiUrl) {
+function serverRoot(apiUrl: string): string {
   return apiUrl.replace(/\/+$/, "").replace(/\/v1\/chat\/completions$/i, "").replace(/\/v1$/i, "");
 }
 
-/**
- * The OpenAI-compatible root (keeps /v1):
- *   "http://host/v1/chat/completions" → "http://host/v1"
- * @param {string} apiUrl
- * @returns {string}
- */
-function openAiRoot(apiUrl) {
+function openAiRoot(apiUrl: string): string {
   return apiUrl.replace(/\/+$/, "").replace(/\/chat\/completions$/i, "");
 }
 
 // ── Probe cache ─────────────────────────────────────────────
 
-/** @type {Map<string, { value: number, ts: number, ttl: number, authoritative: boolean }>} */
-const _probeCache = new Map();
+interface ProbeCacheEntry { value: number, ts: number, ttl: number, authoritative: boolean }
+
+const _probeCache = new Map<string, ProbeCacheEntry>();
 
 /**
  * @param {string} key
  * @returns {{ value: number, fresh: boolean, authoritative: boolean } | null}
  */
-function cacheGet(key) {
+function cacheGet(key: string): { value: number, fresh: boolean, authoritative: boolean } | null {
   const hit = _probeCache.get(key);
   if (!hit) return null;
   return { value: hit.value, fresh: Date.now() - hit.ts < hit.ttl, authoritative: hit.authoritative };
 }
 
-/**
- * @param {string} key
- * @param {number} value
- * @param {number} ttl
- * @param {boolean} authoritative true for SERVED values (loaded_context_length,
- *   n_ctx), false for native-only caps that may overstate the served window.
- */
-function cacheSet(key, value, ttl, authoritative) {
+function cacheSet(key: string, value: number, ttl: number, authoritative: boolean) {
   _probeCache.set(key, { value, ts: Date.now(), ttl, authoritative });
   // Bound the map: probes are keyed per (server, model); a long-lived app
   // could accumulate hundreds of entries at most, but prune anyway.
@@ -142,13 +123,12 @@ export function _clearProbeCache() { _probeCache.clear(); }
  * @param {string} [model]
  * @returns {Promise<{ value: number, authoritative: boolean } | null>}
  */
-async function probeLmStudio(root, model) {
+async function probeLmStudio(root: string, model?: string): Promise<{ value: number, authoritative: boolean } | null> {
   try {
     const res = await fetch(`${root}/api/v0/models`, { signal: AbortSignal.timeout(LOCAL_PROBE_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json();
-    /** @type {Array<{ id?: string, max_context_length?: number, loaded_context_length?: number|null }>} */
-    const models = Array.isArray(data) ? data : (data.data || []);
+    const models: Array<{ id?: string, max_context_length?: number, loaded_context_length?: number | null }> = Array.isArray(data) ? data : (data.data || []);
     const lc = (model || "").toLowerCase();
     let entry = models.find(m => (m.id || "").toLowerCase() === lc);
     if (!entry) {
@@ -157,10 +137,10 @@ async function probeLmStudio(root, model) {
     }
     if (!entry) return null;
     if (Number.isFinite(entry.loaded_context_length) && (entry.loaded_context_length || 0) > 0) {
-      return { value: /** @type {number} */ (entry.loaded_context_length), authoritative: true };
+      return { value: entry.loaded_context_length as number, authoritative: true };
     }
     if (Number.isFinite(entry.max_context_length) && (entry.max_context_length || 0) > 0) {
-      return { value: Math.min(/** @type {number} */ (entry.max_context_length), LOCAL_NATIVE_CAP), authoritative: false };
+      return { value: Math.min(entry.max_context_length as number, LOCAL_NATIVE_CAP), authoritative: false };
     }
     return null;
   } catch { return null; }
@@ -172,7 +152,7 @@ async function probeLmStudio(root, model) {
  * @param {string} root
  * @returns {Promise<{ value: number, authoritative: boolean } | null>}
  */
-async function probeLlamaCpp(root) {
+async function probeLlamaCpp(root: string): Promise<{ value: number, authoritative: boolean } | null> {
   try {
     const res = await fetch(`${root}/props`, { signal: AbortSignal.timeout(LOCAL_PROBE_TIMEOUT_MS) });
     if (!res.ok) return null;
@@ -193,17 +173,16 @@ async function probeLlamaCpp(root) {
  * @param {string} [model]
  * @returns {Promise<{ value: number, authoritative: boolean } | null>}
  */
-async function probeOllama(root, model) {
+async function probeOllama(root: string, model?: string): Promise<{ value: number, authoritative: boolean } | null> {
   if (!model) return null;
   try {
     const ps = await fetch(`${root}/api/ps`, { signal: AbortSignal.timeout(LOCAL_PROBE_TIMEOUT_MS) });
     if (ps.ok) {
       const data = await ps.json();
-      /** @type {Array<{ name?: string, model?: string, context_length?: number }>} */
-      const running = data.models || [];
+      const running: Array<{ name?: string, model?: string, context_length?: number }> = data.models || [];
       const lc = model.toLowerCase();
       const hit = running.find(m => ((m.name || m.model || "").toLowerCase() === lc) && Number.isFinite(m.context_length) && (m.context_length || 0) > 0);
-      if (hit) return { value: /** @type {number} */ (hit.context_length), authoritative: true };
+      if (hit) return { value: hit.context_length as number, authoritative: true };
     }
   } catch { /* not Ollama or nothing running — try /api/show */ }
   try {
@@ -232,7 +211,7 @@ async function probeOllama(root, model) {
  * @param {string} [model]
  * @returns {Promise<{ value: number, authoritative: boolean } | null>}
  */
-async function probeLocal(apiUrl, model) {
+async function probeLocal(apiUrl: string, model?: string): Promise<{ value: number, authoritative: boolean } | null> {
   const root = serverRoot(apiUrl);
   return (await probeLmStudio(root, model))
       || (await probeLlamaCpp(root))
@@ -250,29 +229,26 @@ async function probeLocal(apiUrl, model) {
  * @param {string} [model]
  * @returns {Promise<number|null>}
  */
-async function probeCloudModels(apiUrl, apiKey, model) {
+async function probeCloudModels(apiUrl: string, apiKey: string, model?: string): Promise<number | null> {
   if (!model) return null;
   try {
-    /** @type {Record<string, string>} */
-    const headers = {};
+    const headers: Record<string, string> = {};
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     const res = await fetch(`${openAiRoot(apiUrl)}/models`, { headers, signal: AbortSignal.timeout(CLOUD_PROBE_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json();
-    /** @type {Array<{ id?: string, context_length?: number, max_context_length?: number, context_window?: number }>} */
-    const models = data.data || [];
+    const models: Array<{ id?: string, context_length?: number, max_context_length?: number, context_window?: number }> = data.data || [];
     const lc = model.toLowerCase();
     const entry = models.find(m => (m.id || "").toLowerCase() === lc);
     if (!entry) return null;
     const value = entry.context_length || entry.max_context_length || entry.context_window;
-    return Number.isFinite(value) && (value || 0) > 0 ? /** @type {number} */ (value) : null;
+    return Number.isFinite(value) && (value || 0) > 0 ? value as number : null;
   } catch { return null; }
 }
 
 // ── Orchestrator ────────────────────────────────────────────
 
-/** @type {number|null} */
-let _override = null;
+let _override: number | null = null;
 
 /**
  * Current manual override (null = automatic resolution).
@@ -294,7 +270,13 @@ export function getContextWindowOverride() { return _override; }
  * @param {number|string} [cfg.contextWindowOverride] undefined = keep existing
  *   override (WeChat sync path sends no field); ""/0/null = clear; >=4096 = set.
  */
-export function updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride } = {}) {
+export function updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride }: {
+  model?: string;
+  apiUrl?: string;
+  apiKey?: string;
+  apiFormat?: string;
+  contextWindowOverride?: number | string;
+} = {}) {
   if (contextWindowOverride !== undefined) {
     const n = Number(contextWindowOverride);
     _override = Number.isFinite(n) && n >= 4096 ? Math.floor(n) : null;

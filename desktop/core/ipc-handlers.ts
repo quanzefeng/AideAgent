@@ -32,36 +32,85 @@ import { hasPersistedWorkspace } from "./workspace-config.ts";
 import { setRendererSnapshot } from "./session-info.ts";
 import { updateContextWindowForModel } from "./context-window.ts";
 
-/** @type {Map<string, AbortController>} */
-const _subAgentCtrls = _subAgentCtrlsRaw;
+const _subAgentCtrls: Map<string, AbortController> = _subAgentCtrlsRaw as any;
 
-/** @param {Array<{role: string, content: string}>} history */
-function getHistoryTitle(history) {
+function getHistoryTitle(history: Array<{ role: string, content: string }>): string {
   const firstUser = history.find(m => m.role === "user");
   if (!firstUser) return "新对话";
   const text = typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content || "");
   return text.replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "新对话";
 }
 
-/** @param {string} id @param {Array<{role: string, content: string}>} history @param {string} title */
-async function saveSession(id, history, title) {
+async function saveSession(id: string, history: Array<{ role: string, content: string }>, title: string): Promise<void> {
   // Helper invoked outside agentLoop's closure (e.g. by `session:reset`).
   // Read the runtime from module state so OpenCode sessions get tagged
   // correctly instead of being hardcoded to "aide".
-  try { await sessionDb.saveSession(id, history, title, getCurrentRuntime()); } catch { /* ignored */ }
+  try { await sessionDb.saveSession(id, history, title, getCurrentRuntime() as any); } catch { /* ignored */ }
 }
 
 export function registerIpcHandlers() {
   // Detect locally-installed opencode CLI for the runtime selector.
   ipcMain.handle("agent:detect-opencode", async () => {
     try { return await detectOpencode(); }
-    catch (/** @type {any} */ e) { return { installed: false, path: null, version: null, available: false, reason: "error", error: e.message }; }
+    catch (e: any) { return { installed: false, path: null, version: null, available: false, reason: "error", error: e.message }; }
   });
   // List available OpenCode models without spawning a full ACP session.
   // Populates the renderer's model picker BEFORE the first prompt.
   ipcMain.handle("opencode:list-models", async () => {
     try { return await listOpencodeModels(); }
-    catch (/** @type {any} */ e) { console.warn("[ipc] opencode:list-models failed:", e.message); return []; }
+    catch (e: any) { console.warn("[ipc] opencode:list-models failed:", e.message); return []; }
+  });
+
+  // Fetch remote model list from the provider's /models endpoint.
+  // Runs in MAIN process: renderer fetch is subject to CORS preflight, and
+  // many providers (e.g. sensenova) answer OPTIONS with 404, so the browser
+  // blocks the request as "Failed to fetch". Node fetch ignores CORS.
+  ipcMain.handle("api:fetch-models", async (_event, args: { baseUrl?: string; apiKey?: string }) => {
+    const rawBase = String(args?.baseUrl || "").trim();
+    const apiKey = String(args?.apiKey || "").trim();
+    let baseUrl: string;
+    try {
+      const u = new URL(rawBase);
+      if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("protocol");
+      baseUrl = u.href.replace(/\/+$/, "").replace(/\/v1$/, "");
+    } catch {
+      return { models: [], errors: ["invalid_url"] };
+    }
+
+    const endpoints = [baseUrl + "/v1/models", baseUrl + "/models", baseUrl + "/api/tags"];
+    const models: Array<{ id: string; label: string }> = [];
+    const errors: string[] = [];
+    for (const url of endpoints) {
+      const shortUrl = url.replace(baseUrl, "") || url;
+      try {
+        const headers: Record<string, string> = {};
+        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+        if (!res.ok) {
+          let detail = [res.status, res.statusText].filter(Boolean).join(" ");
+          try {
+            const body: any = await res.json();
+            const msg = body?.error?.message || body?.message ||
+              (typeof body?.error === "string" ? body.error : null);
+            if (msg) detail += ` — ${msg}`;
+          } catch { /* no body */ }
+          errors.push(`${shortUrl}: ${detail}`);
+          continue;
+        }
+        const data: any = await res.json();
+        const list = data?.data || data?.models || [];
+        if (Array.isArray(list) && list.length > 0) {
+          for (const m of list) {
+            const id = m?.id || m?.name || "";
+            if (id) models.push({ id: String(id), label: String(id) });
+          }
+          break;
+        }
+      } catch (e: any) {
+        errors.push(`${shortUrl}: ${e?.message || String(e)}`);
+      }
+    }
+    return { models, errors };
   });
 
   // Open an external URL in the user's default browser (used by the opencode
@@ -81,7 +130,7 @@ export function registerIpcHandlers() {
       if (!OPEN_EXTERNAL_ALLOWED_HOSTS.has(u.hostname)) return { ok: false, error: "host_not_allowed" };
       await shell.openExternal(u.href);
       return { ok: true };
-    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+    } catch (e: any) { return { ok: false, error: e.message }; }
   });
 
   // Renderer pushes its localStorage snapshot here whenever an
@@ -106,7 +155,16 @@ export function registerIpcHandlers() {
     updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride });
     sendToRenderer("stream:start", {});
     try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
-    catch (/** @type {any} */ err) { sendToRenderer("stream:error", { message: err.message }); }
+    catch (err: any) {
+      const raw = String(err?.message || err || "");
+      // Surface connection drops as an actionable message instead of the
+      // raw undici text ("terminated").
+      const dropped = raw.includes("terminated")
+        || /ECONNRESET|other side closed|socket hang up|UND_ERR_SOCKET/i.test(raw);
+      sendToRenderer("stream:error", {
+        message: dropped ? `连接被服务端中断，请重试（网络或 API 网关断流）。原文: ${raw}` : raw,
+      });
+    }
     sendToRenderer("stream:done", {});
   });
 
@@ -142,9 +200,9 @@ export function registerIpcHandlers() {
       }
       // P2: persist the current task/todo state before clearing in-memory
       try {
-        sessionDb.saveSessionTasks(sessionId, Array.from(taskStore.values()).filter(t => t.status !== "deleted"));
+        sessionDb.saveSessionTasks(sessionId, Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted") as any);
         sessionDb.saveSessionTodos(sessionId, getTodoList());
-      } catch (e) { console.error("[session:reset] task persist failed:", e?.message); }
+      } catch (e: any) { console.error("[session:reset] task persist failed:", e?.message); }
     }
     setSessionId(null); setHistory([]);
     setEpisodicSearched(false);
@@ -182,11 +240,11 @@ export function registerIpcHandlers() {
         // session is being actively loaded, so any old "interrupted at turn N"
         // record is no longer relevant.
         try { sessionDb.clearTurnProgress(id); } catch { /* ignored */ }
-        setSessionId(/** @type {string} */ (data.id));
-        setHistory(/** @type {Array<{role: string, content: string}>} */ (data.history || []));
+        setSessionId(data.id as string);
+        setHistory((data.history || []) as Array<{ role: string, content: string }>);
         // P2: restore task/todo state from DB
         try {
-          const tasks = sessionDb.loadSessionTasks(id) || [];
+          const tasks: any[] = sessionDb.loadSessionTasks(id) || [];
           taskStore.clear();
           for (const t of tasks) {
             taskStore.set(t.id, {
@@ -199,10 +257,10 @@ export function registerIpcHandlers() {
           const todos = sessionDb.loadSessionTodos(id) || [];
           setTodoList(todos);
           sendToRenderer("task:restored", { taskCount: tasks.length, todoCount: todos.length });
-        } catch (e) { console.error("[session:load] task restore failed:", e?.message); }
+        } catch (e: any) { console.error("[session:load] task restore failed:", e?.message); }
         sendToRenderer("session:update", { sessionId: data.id });
       }
-      return { sessionId: data.id, title: data.title, runtime: data.runtime || "aide", history: /** @type {Array<{role: string, content: string}>} */ (data.history || []) };
+      return { sessionId: data.id, title: data.title, runtime: data.runtime || "aide", history: (data.history || []) as Array<{ role: string, content: string }> };
     }
     return null;
   });
@@ -221,22 +279,22 @@ export function registerIpcHandlers() {
       console.log("[session:delete-all] result:", result, "checkpoint done");
       setSessionId(null); setHistory([]);
       return result;
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[session:delete-all] error:", e);
       return { error: e.message };
     }
   });
 
   ipcMain.handle("session:delete-message", async (_event, messageId) => {
-    try { return sessionDb.deleteMessage(messageId); } catch (/** @type {any} */ e) { return { error: e.message }; }
+    try { return sessionDb.deleteMessage(messageId); } catch (e: any) { return { error: e.message }; }
   });
 
   ipcMain.handle("session:edit-message", async (_event, messageId, newContent) => {
-    try { return sessionDb.editMessage(messageId, newContent); } catch (/** @type {any} */ e) { return { error: e.message }; }
+    try { return sessionDb.editMessage(messageId, newContent); } catch (e: any) { return { error: e.message }; }
   });
 
   ipcMain.handle("session:export-markdown", async (_event, id) => {
-    try { return sessionDb.exportSession(id); } catch (/** @type {any} */ e) { return { error: e.message }; }
+    try { return sessionDb.exportSession(id); } catch (e: any) { return { error: e.message }; }
   });
 
   ipcMain.handle("session:search", async (_event, query, limit) => {
@@ -364,7 +422,7 @@ export function registerIpcHandlers() {
   ipcMain.handle("skills:load-one", async (_e, name) => skills.loadSkill(name));
   ipcMain.handle("skills:set-status", async (_e, name, status) => skills.setSkillStatus(name, status));
   ipcMain.handle("skills:delete", async (_e, name) => skills.deleteSkill(name));
-  ipcMain.handle("skills:detect-patterns", async () => skills.detectPatterns(/** @type {any} */ (sessionDb)));
+  ipcMain.handle("skills:detect-patterns", async () => skills.detectPatterns(sessionDb as any));
   ipcMain.handle("skills:curator-run", async () => skills.runCurator());
   ipcMain.handle("skills:curator-status", async () => skills.getCuratorStatus());
   ipcMain.handle("skills:curator-config", async (_e, config) => skills.setCuratorConfig(config || {}));
@@ -388,17 +446,17 @@ export function registerIpcHandlers() {
         : { apiKey: "", apiUrl: "", model: "", apiFormat: "openai" };
       if (!cfg.apiKey || !cfg.apiUrl) return { saved: false, error: "api config missing" };
 
-      const suggestions = skills.detectPatterns(sessionDb);
+      const suggestions = skills.detectPatterns(sessionDb as any);
       const match = suggestions.find(s => s.phrase === phrase);
       if (!match) return { saved: false, error: "phrase not in detected patterns" };
 
       // Pull recent sessions whose first user message contains the phrase,
-      // then ship their transcripts to the LLM as raw material for the distill.
+      // and ship their transcripts to the LLM as raw material for the distill.
       const recentSessions = sessionDb.listSessions(30);
-      const matchingMsgs = /** @type {Array<{role: string, content: string}>} */ ([]);
+      const matchingMsgs: Array<{ role: string, content: string }> = [];
       for (const s of recentSessions.slice(0, 10)) {
         try {
-          const data = sessionDb.loadSession(/** @type {string} */ (/** @type {any} */ (s).id));
+          const data = sessionDb.loadSession((s as any).id as string);
           if (!data?.history) continue;
           /** @type {any[]} */
           const hist = data.history;
@@ -423,7 +481,7 @@ export function registerIpcHandlers() {
       // Tell the L2 panel to refresh so the new skill shows up immediately.
       try { sendToRenderer("skills:translations-updated", { count: 1, generated: result.name }); } catch { /* renderer may be gone */ }
       return result;
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { saved: false, error: e?.message || String(e) };
     }
   });
@@ -442,16 +500,16 @@ export function registerIpcHandlers() {
         : { apiKey: "", apiUrl: "", model: "", apiFormat: "openai" };
       if (!cfg.apiKey || !cfg.apiUrl) return [];
 
-      const suggestions = skills.detectPatterns(sessionDb);
+      const suggestions = skills.detectPatterns(sessionDb as any);
       if (!suggestions.length) return [];
 
       const recentSessions = sessionDb.listSessions(30);
       for (const cand of suggestions.slice(0, 5)) {
         try {
-          const matchingMsgs = /** @type {Array<{role: string, content: string}>} */ ([]);
+          const matchingMsgs: Array<{ role: string, content: string }> = [];
           for (const s of recentSessions.slice(0, 10)) {
             try {
-              const data = sessionDb.loadSession(/** @type {string} */ (/** @type {any} */ (s).id));
+              const data = sessionDb.loadSession((s as any).id as string);
               if (!data?.history) continue;
               /** @type {any[]} */
               const hist = data.history;
@@ -468,12 +526,12 @@ export function registerIpcHandlers() {
             signal,
           });
           results.push({ phrase: cand.phrase, saved: r.saved === true, name: r.name, error: r.error, alreadyExisted: r.alreadyExisted });
-        } catch (/** @type {any} */ e) {
+        } catch (e: any) {
           results.push({ phrase: cand.phrase, saved: false, error: e?.message || String(e) });
         }
       }
       try { sendToRenderer("skills:translations-updated", { count: results.filter(r => r.saved).length, generatedBatch: true }); } catch { /* renderer may be gone */ }
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       console.error("[skills:auto-generate-all] error:", e?.message);
     }
     return results;
@@ -484,7 +542,7 @@ export function registerIpcHandlers() {
   // keys line up with what the user actually sees in the skills panel.
   ipcMain.handle("skills:translations-get", async () => {
     try { return { ok: true, translations: skills.loadTranslations() }; }
-    catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+    catch (e: any) { return { ok: false, error: e.message }; }
   });
   ipcMain.handle("skills:translations-missing", async () => {
     try {
@@ -494,8 +552,8 @@ export function registerIpcHandlers() {
       const l2 = skills.listSkills() || [];
       const seen = new Set(l3.map((/** @type {any} */ s) => s.name));
       const all = /** @type {any} */ ([...l3, ...l2.filter((/** @type {any} */ s) => !seen.has(s.name))]);
-      return { ok: true, missing: skills.getMissingTranslations(all) };
-    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+      return { ok: true, missing: skills.getMissingTranslations(all as any) };
+    } catch (e: any) { return { ok: false, error: e.message }; }
   });
   ipcMain.handle("skills:translations-ensure", async (_e, apiConfig) => {
     try {
@@ -505,7 +563,7 @@ export function registerIpcHandlers() {
       const l2 = skills.listSkills() || [];
       const seen = new Set(l3.map((/** @type {any} */ s) => s.name));
       const all = /** @type {any} */ ([...l3, ...l2.filter((/** @type {any} */ s) => !seen.has(s.name))]);
-      const missing = skills.getMissingTranslations(all);
+      const missing = skills.getMissingTranslations(all as any);
       if (missing.length === 0) return { ok: true, translated: 0, totalMissing: 0, errors: 0 };
       /** @type {any} */
       const cfg = apiConfig && apiConfig.apiKey ? apiConfig : (getLastApiConfig() || {});
@@ -514,7 +572,7 @@ export function registerIpcHandlers() {
         sendToRenderer("skills:translations-updated", { count: result.translated });
       }
       return { ok: true, ...result, skipped: result.skipped || (!cfg.apiKey ? "no api key in main process" : undefined) };
-    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+    } catch (e: any) { return { ok: false, error: e.message }; }
   });
   // Manual override for a single skill's display name (renderer "✎ edit" button).
   // Pass "" to remove the override and fall back to heuristic. Broadcasts the
@@ -524,16 +582,16 @@ export function registerIpcHandlers() {
       const result = skills.setTranslation(name, zh);
       if (result.ok) sendToRenderer("skills:translations-updated", { count: 1 });
       return result;
-    } catch (/** @type {any} */ e) { return { ok: false, error: e.message }; }
+    } catch (e: any) { return { ok: false, error: e.message }; }
   });
 
   ipcMain.handle("permission:respond", (event, { id, allow }) => {
-    const resolve = pendingPerms.get(id);
+    const resolve = pendingPerms.get(id) as ((allow: boolean) => void) | undefined;
     if (resolve) { resolve(allow); pendingPerms.delete(id); }
   });
 
   ipcMain.handle("ask:respond", (_event, { id, answers }) => {
-    const resolve = _askResolvers.get(id);
+    const resolve = _askResolvers.get(id) as ((v: any) => void) | undefined;
     if (resolve) { resolve({ answers: answers || {} }); _askResolvers.delete(id); }
   });
 
@@ -652,7 +710,7 @@ export function registerIpcHandlers() {
     try {
       await mcpManager.addServer(name, config);
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -666,7 +724,7 @@ export function registerIpcHandlers() {
       };
       await mcpManager.addServer(name, config);
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -675,7 +733,7 @@ export function registerIpcHandlers() {
     try {
       mcpManager.saveAllServers();
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -684,7 +742,7 @@ export function registerIpcHandlers() {
     try {
       await mcpManager.removeServer(name);
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -693,7 +751,7 @@ export function registerIpcHandlers() {
     try {
       const tools = await mcpManager.restartServer(name);
       return { success: true, tools };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -706,7 +764,7 @@ export function registerIpcHandlers() {
     try {
       await mcpManager.toggleBuiltin(name, enabled);
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -716,29 +774,23 @@ export function registerIpcHandlers() {
     const PLATFORM = process.platform;
     const found = [];
 
-    /**
-     * @param {string} filePath
-     * @param {string} source
-     * @param {{keys?: string[]}} [opts]
-     */
-    function readMcpServers(filePath, source, opts = {}) {
+    function readMcpServers(filePath: string, source: string, opts: { keys?: string[] } = {}): any[] {
       if (!existsSync(filePath)) return [];
       try {
         const raw = readFileSync(filePath, "utf-8");
         const data = JSON.parse(raw);
         const keys = opts.keys || ["mcpServers"];
-        let servers = {};
+        let servers: Record<string, any> = {};
         for (const k of keys) {
           if (data[k] && typeof data[k] === "object") {
             servers = data[k];
             break;
           }
         }
-        const entries = [];
+        const entries: any[] = [];
         for (const [name, cfg] of Object.entries(servers)) {
           if (!cfg || typeof cfg !== "object") continue;
-          /** @type {{ source: string, serverName: string, kind: string, command: string, args: string[], env: Record<string, string>, url: string, headers: Record<string, string>, description: string, disabled?: boolean }} */
-          const normalized = {
+          const normalized: any = {
             source,
             serverName: name,
             kind: cfg.command ? "stdio" : "remote",
@@ -755,7 +807,7 @@ export function registerIpcHandlers() {
           entries.push(normalized);
         }
         return entries;
-      } catch (/** @type {any} */ e) {
+      } catch (e: any) {
         console.error(`[mcp] Failed to read ${filePath}:`, e.message);
         return [];
       }
@@ -824,7 +876,7 @@ export function registerIpcHandlers() {
       };
       await mcpManager.addServer("searxng", config);
       return { success: true };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -846,7 +898,7 @@ export function registerIpcHandlers() {
     try {
       writeFileSync(result.filePath, content, "utf-8");
       return { success: true, filePath: result.filePath };
-    } catch (/** @type {any} */ e) {
+    } catch (e: any) {
       return { success: false, error: e.message };
     }
   });
@@ -861,8 +913,7 @@ export function registerIpcHandlers() {
   // switch. Normalize "" to a stable sentinel key (matching the existing
   // `_search_provider` naming style) so custom keys are stored like any other.
   const CUSTOM_KEYSTORE_ID = "_custom";
-  /** @param {string} provider @returns {string} non-empty keystore key */
-  const keyStoreId = (provider) => provider || CUSTOM_KEYSTORE_ID;
+  const keyStoreId = (provider: string): string => provider || CUSTOM_KEYSTORE_ID;
 
   function loadKeyStore() {
     try {
@@ -878,8 +929,7 @@ export function registerIpcHandlers() {
     return {};
   }
 
-  /** @param {Record<string, string>} store */
-  function saveKeyStore(store) {
+  function saveKeyStore(store: Record<string, string>): void {
     const json = JSON.stringify(store);
     if (safeStorage.isEncryptionAvailable()) {
       const encrypted = safeStorage.encryptString(json);
