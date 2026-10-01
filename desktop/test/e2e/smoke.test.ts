@@ -290,7 +290,12 @@ test("full-site polish applies with hud on and reverts when off", async () => {
     return { borderTop: before.borderTopWidth, content: before.content };
   });
   expect(corner).toBeTruthy();
-  expect(corner!.borderTop).toBe("2px");
+  // Chromium 会把边框宽度向下取整到设备像素再换算回来：
+  // dPR=1.25（125% 缩放）时 2px → 1.6px，dPR=1 时 → 2px。
+  // 断言"约 2px"而不是精确字符串，避免不同屏幕缩放下误报。
+  const bw = parseFloat(corner!.borderTop);
+  expect(bw).toBeGreaterThanOrEqual(1.5);
+  expect(bw).toBeLessThanOrEqual(2.5);
 
   await closeApp(app);
 });

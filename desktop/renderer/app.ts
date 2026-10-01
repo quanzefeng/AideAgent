@@ -3016,6 +3016,9 @@ if (cfg.provider) {
   if (cwdDisplay) cwdDisplay.textContent = t("misc.unconfigured");
 }
 updateInfoBar();
+// 配置是异步加载的，横幅必须在 initApiKeys 完成后再刷新一次，
+// 否则启动时 hasApiConfig() 还是空 → 误报"请先配置 API"。
+updateConfigBanner();
 if (hasApiConfig()) {
   promptInput.focus();
 }
