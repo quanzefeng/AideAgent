@@ -1,8 +1,25 @@
 # AideAgent
 
+[![License](https://img.shields.io/github/license/quanzefeng/AideAgent)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/quanzefeng/AideAgent)](https://github.com/quanzefeng/AideAgent/releases)
+[![Stars](https://img.shields.io/github/stars/quanzefeng/AideAgent)](https://github.com/quanzefeng/AideAgent/stargazers)
+
 > A desktop assistant that puts AI on your machine. Not just chat — it actually does the work.
 
 ![AideAgent home screen — sidebar with new chat and settings, centered welcome avatar, prompt box with model picker and capability toggles](docs/screenshots/00-首页.png)
+
+## Contents
+
+- [What this is](#what-this-is)
+- [The problem it solves](#the-problem-it-solves)
+- [Two runtimes](#two-runtimes--pick-on-the-welcome-screen)
+- [What it can do](#what-it-can-do-matching-the-four-toggles-in-the-ui)
+- [Six capabilities](#six-capabilities-ordered-from-lightest-touch-to-deepest-reach)
+- [Project layout](#project-layout)
+- [Quick start](#quick-start)
+- [Nice details](#nice-details)
+- [Contact & thanks](#contact--thanks)
+- [A final word](#a-final-word)
 
 ---
 
@@ -77,7 +94,7 @@ When toggled, the AI won't just dive in. It plans first, then executes. For "I w
 
 ### 2. 📚 KB — knowledge base search
 
-Point it at your Obsidian vault (or any Markdown folder), and the AI will search your notes before answering. Think of it as local RAG glued onto your AI.
+Local RAG over your notes and documents — formats, internals, and setup are covered in [§2 Knowledge base](#2-knowledge-base--ai-reads-your-notes-and-documents) below.
 
 ### 3. 🌐 Web Search — live web search
 
@@ -87,12 +104,7 @@ Toggle it on when you need real-time info. A built-in meta-search engine (Bing +
 
 Lets the model spend more time thinking, for more thorough answers (only works if your model supports it).
 
-The four buttons above the input box — **Messages**, **Tools**, **Skill**, **MCP** — are the extension layers:
-
-- **Tools** — built-in tools (read file, write file, run command, fetch web page, etc.)
-- **Skill** — auto-discovered from `.agents/skills/` or `.claude/skills/` directories (200+ found on a typical scan)
-- **MCP** — external services via Model Context Protocol (Edge browser, local search, remote APIs, …)
-- **+** (next to the input box) — popover with quick access to file upload, prompt library, and skills
+The `+` button beside the input box opens a popover — file upload, prompt library, and skills. Built-in tools (read/write files, run commands, fetch web pages, …) are always available to the agent, and the extension layers — knowledge base, skills, MCP servers, memory — are all configured in **Settings**.
 
 ---
 
@@ -131,7 +143,7 @@ Supported file formats (toggleable in Settings → Knowledge Base):
 - **PowerPoint** — `.pptx` (default on, parsed via direct OOXML XML extraction)
 - **CSV / TSV** — `.csv` / `.tsv` (default off, each row → "column: value" sentence)
 - **Excel** — `.xlsx` (default off, parsed via SheetJS, multi-sheet support)
-- **PDF** — `.pdf` (shipped in v1.29, parsed via `pdf-parse`)
+- **PDF** — `.pdf` (shipped in v1.0.29, parsed via `pdf-parse`)
 
 Under the hood: SQLite + FTS5 full-text search + ONNX running a local embedding model (`all-MiniLM-L6-v2`, 384 dimensions), fused with RRF. Fully offline. Nothing leaves your machine.
 
@@ -145,7 +157,7 @@ The extractor architecture is pluggable — each format lives in `desktop/kb/ext
 
 A Skill is a folder under `.agents/skills/` or `.claude/skills/` containing a SKILL.md that says "I can do X". The AI invokes the right one when it fits.
 
-- **Local Skills** — auto-scanned, individually toggleable
+- **Local Skills** — auto-scanned, individually toggleable (200+ found on a typical scan)
 - **Agent Skills** — skills you create yourself
 - Writing a Skill is just writing a Markdown file — low barrier
 
@@ -321,6 +333,7 @@ npm run typecheck    # tsc --noEmit
 - **MCP config compatible with Claude Code format** — copy your existing `.mcp.json` over and it just works
 - **Per-runtime persistence** — your runtime pick (AideAgent / OpenCode), OpenCode mode (Build / Plan / Authorize), and OpenCode model are all stored in `localStorage` and re-applied on every launch
 - **i18n** — Chinese and English UI, switchable in Settings → Language. Every label, button, modal, and toast has a translation entry
+- **Cyberpunk HUD theme** — optional neon chrome (corner brackets, scanlines) with a customizable accent color; automatically quiets down when the system asks for reduced motion
 - **OpenCode resilience** — per-request 120s timeout on the ACP channel, so a dead subprocess surfaces "opencode 无响应" instead of hanging the UI
 
 ---
