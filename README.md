@@ -79,8 +79,6 @@ When toggled, the AI won't just dive in. It plans first, then executes. For "I w
 
 Point it at your Obsidian vault (or any Markdown folder), and the AI will search your notes before answering. Think of it as local RAG glued onto your AI.
 
-![Knowledge base panel](docs/screenshots/04-知识库配置.png)
-
 ### 3. 🌐 Web Search — live web search
 
 Toggle it on when you need real-time info. A built-in meta-search engine (Bing + GitHub, no API key required).
@@ -147,9 +145,7 @@ The extractor architecture is pluggable — each format lives in `desktop/kb/ext
 
 A Skill is a folder under `.agents/skills/` or `.claude/skills/` containing a SKILL.md that says "I can do X". The AI invokes the right one when it fits.
 
-![Skills panel](docs/screenshots/03-技能总开关.png)
-
-- **Local Skills** — auto-scanned, individually toggleable (the screenshot shows 209 skills enabled)
+- **Local Skills** — auto-scanned, individually toggleable
 - **Agent Skills** — skills you create yourself
 - Writing a Skill is just writing a Markdown file — low barrier
 
@@ -158,8 +154,6 @@ A Skill is a folder under `.agents/skills/` or `.claude/skills/` containing a SK
 ### 4. MCP ecosystem — plug in any external service
 
 MCP (Model Context Protocol) is Anthropic's protocol — think of it as a "USB port" for AI apps. AideAgent ships with several one-click services:
-
-![MCP panel](docs/screenshots/02-MCP工具生态.png)
 
 - **Edge Browser** — Playwright-driven Edge, can screenshot, fill forms, scrape data
 - **Computer Use** — simulates mouse and keyboard through system accessibility APIs (off by default, turn on with care)
