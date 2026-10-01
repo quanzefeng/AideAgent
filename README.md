@@ -65,7 +65,7 @@ OpenCode's `initialize` handshake returns the models the server supports; AideAg
 
 ---
 
-## What it can do (one screenshot per capability, matching the toggles in the UI)
+## What it can do (matching the four toggles in the UI)
 
 The four toggles under the input box correspond to four capabilities:
 
@@ -104,16 +104,18 @@ The four buttons above the input box — **Messages**, **Tools**, **Skill**, **M
 
 Click **API Config** and you'll see 10 presets, ready to go:
 
-- **DeepSeek** — V4-Flash / V4-Pro
-- **GLM (Zhipu)** — GLM-4.7-Flash / GLM-4-Plus / GLM-4-Air
-- **Qwen (Tongyi Qianwen, Alibaba)** — Qwen3.7-Max / Qwen-Plus / Qwen-Turbo
-- **Claude (Anthropic)** — Sonnet 4 / Opus 4 / Haiku 4.5
-- **MiniMax** — M2.7 / M2.7-Highspeed
+- **DeepSeek** — flagship and flash tiers
+- **GLM (Zhipu)** — flash / plus / air tiers
+- **Qwen (Tongyi Qianwen, Alibaba)** — max / plus / turbo tiers
+- **Claude (Anthropic)** — Sonnet / Opus / Haiku lines
+- **MiniMax** — standard / high-speed variants
 - **Ollama** — local, drop in any model you've pulled
 - **LM Studio** — local, with the GUI
 - **llama.cpp** — local, the server mode
-- **OpenCode Go (OpenAI-compatible)** — `opencode.ai/zen/go` (GLM 5.1/5.2, Kimi K2.6/K2.7, DeepSeek V4, Mimo V2.5, …)
-- **OpenCode Go (Anthropic-compatible)** — `opencode.ai/zen/go` (MiniMax M2.5/M2.7/M3, Qwen3.6/3.7-Plus, Qwen3.7-Max, …)
+- **OpenCode Go (OpenAI-compatible)** — `opencode.ai/zen/go` (GLM, Kimi, DeepSeek, Mimo, …)
+- **OpenCode Go (Anthropic-compatible)** — `opencode.ai/zen/go` (MiniMax, Qwen, …)
+
+Preset model lists track vendor releases — the in-app picker is always the source of truth.
 
 Both **OpenAI-compatible** and **Anthropic** API formats are supported, so you can swap in any third-party proxy or self-hosted endpoint that speaks the same language. Custom base URLs are also fine — just paste your own.
 
@@ -178,7 +180,7 @@ On startup the app tries to launch the WeChat iLink Bot bridge. Scan to log in a
 
 API config syncs to the WeChat side too (same conversation context).
 
-> Implementation lives in `desktop/core/wechat-bridge.mjs` — QR scan → polling → bearer token → bidirectional message push, all wired up.
+> Implementation lives in `desktop/core/wechat-bridge.ts` — QR scan → polling → bearer token → bidirectional message push, all wired up.
 
 ---
 
@@ -188,8 +190,8 @@ If you're a developer, these will keep you busy for a while:
 
 - **Full IPC interface** — every feature exposed as an IPC handler, script it however you like
 - **Two agent runtimes** — built-in AideAgent loop + OpenCode via ACP. Same UI, different engines
-- **Test scaffolding** — Vitest + Playwright are configured in `package.json` (`npm test`, `npm run test:e2e`); actual test files are still being added. Type checking (`tsc --noEmit`) covers the main process with JSDoc types
-- **Type checking** — `tsc --noEmit` passes across the whole project (JS source with JSDoc type annotations)
+- **Tests** — Vitest unit suites (renderer, stores, agent loop, kb quality — 450+ assertions) plus Playwright e2e suites (smoke, scroll, kb, skills, memory, agent flows) via `npm run test` / `npm run test:e2e`
+- **Type checking** — `tsc --noEmit` passes across the whole TypeScript project
 - **Cross-platform packaging** — `electron-builder` produces Windows NSIS, macOS DMG, and Linux deb+AppImage in one shot
 - **Auto-update** — `electron-updater` pulls new versions from GitHub Releases
 - **i18n** — Chinese and English UI, switchable in Settings → Language
@@ -201,65 +203,66 @@ If you're a developer, these will keep you busy for a while:
 ```
 AideAgent/
 ├── desktop/                          # Electron desktop app
-│   ├── main.mjs                      # main process entry
-│   ├── preload.cjs                   # preload bridge (CJS)
+│   ├── main.ts                       # main process entry
+│   ├── preload.ts                    # preload bridge
 │   ├── core/                         # core modules (IPC, tool execution, state, ...)
-│   │   ├── agent-loop.mjs            # built-in agent loop (tool calls + reasoning)
-│   │   ├── opencode-acp-client.mjs   # OpenCode ACP client (spawns `opencode acp`, JSON-RPC over stdio)
-│   │   ├── opencode-detector.mjs     # detects local `opencode` binary (PATH + common install locations)
-│   │   ├── ipc-handlers.mjs
-│   │   ├── state.mjs
-│   │   ├── tool-executor.mjs
-│   │   ├── tool-definitions.mjs
-│   │   ├── wechat-bridge.mjs
+│   │   ├── agent-loop.ts             # built-in agent loop (tool calls + reasoning)
+│   │   ├── opencode-acp-client.ts    # OpenCode ACP client (spawns `opencode acp`, JSON-RPC over stdio)
+│   │   ├── opencode-detector.ts      # detects local `opencode` binary (PATH + common install locations)
+│   │   ├── ipc-handlers.ts
+│   │   ├── state.ts
+│   │   ├── tool-executor.ts
+│   │   ├── tool-definitions.ts
+│   │   ├── wechat-bridge.ts
 │   │   └── ...
 │   ├── kb/                           # knowledge base (FTS5 + vector + format extractors)
-│   │   ├── vault-scanner.mjs         # recursive vault scan (format-aware)
-│   │   ├── indexer.mjs               # full rebuild + single-file reindex
-│   │   ├── search.mjs                # hybrid RAG: FTS5 + vector + RRF + LLM rerank
-│   │   ├── markdown.mjs              # Markdown parsing + heading-based chunking
-│   │   ├── formats.mjs               # extension → extractor registry + enable/disable
+│   │   ├── vault-scanner.ts          # recursive vault scan (format-aware)
+│   │   ├── indexer.ts                # full rebuild + single-file reindex
+│   │   ├── search.ts                 # hybrid RAG: FTS5 + vector + RRF + LLM rerank
+│   │   ├── markdown.ts               # Markdown parsing + heading-based chunking
+│   │   ├── formats.ts                # extension → extractor registry + enable/disable
 │   │   ├── extractors/               # per-format text extractors (pluggable)
-│   │   │   ├── index.mjs             # extractor dispatch
-│   │   │   ├── markdown.mjs          # .md adapter (wraps kb/markdown.mjs)
-│   │   │   ├── docx.mjs              # .docx via mammoth
-│   │   │   ├── pptx.mjs              # .pptx via OOXML ZIP parsing
-│   │   │   ├── csv.mjs               # .csv/.tsv → "col: val" sentences
-│   │   │   ├── xlsx.mjs              # .xlsx via SheetJS (multi-sheet)
-│   │   │   └── chunk-utils.mjs       # paragraph-based chunking for non-Markdown
+│   │   │   ├── index.ts              # extractor dispatch
+│   │   │   ├── markdown.ts           # .md adapter (wraps kb/markdown.ts)
+│   │   │   ├── docx.ts               # .docx via mammoth
+│   │   │   ├── pptx.ts               # .pptx via OOXML ZIP parsing
+│   │   │   ├── csv.ts                # .csv/.tsv → "col: val" sentences
+│   │   │   ├── xlsx.ts               # .xlsx via SheetJS (multi-sheet)
+│   │   │   ├── pdf.ts                # .pdf via pdf-parse
+│   │   │   └── chunk-utils.ts        # paragraph-based chunking for non-Markdown
 │   │   └── ...
-│   ├── renderer/                     # renderer (vanilla JS, no framework)
-│   │   ├── app.js                    # main entry (orchestrates modules)
-│   │   ├── translations.js           # i18n (zh + en)
+│   ├── renderer/                     # renderer (vanilla TypeScript, no framework)
+│   │   ├── app.ts                    # main entry (orchestrates modules)
+│   │   ├── translations.ts           # i18n (zh + en)
 │   │   ├── index.html                # UI shell
 │   │   ├── style.css
 │   │   └── modules/                  # feature modules
-│   │       ├── runtime-selector.mjs  # AideAgent vs OpenCode chooser + 3-mode dropdown
-│   │       ├── file-previews.mjs     # shared file-chip renderer for both runtimes
-│   │       ├── knowledge-base.mjs
-│   │       ├── skills-panel.mjs
-│   │       ├── mcp.mjs
-│   │       ├── wechat.mjs
-│   │       ├── memory-panel.mjs
-│   │       ├── prompt-store.mjs
+│   │       ├── runtime-selector.ts   # AideAgent vs OpenCode chooser + 3-mode dropdown
+│   │       ├── file-previews.ts      # shared file-chip renderer for both runtimes
+│   │       ├── knowledge-base.ts
+│   │       ├── skills-panel.ts
+│   │       ├── mcp.ts
+│   │       ├── wechat.ts
+│   │       ├── memory-panel.ts
+│   │       ├── prompt-store.ts
 │   │       └── ...
-│   ├── mcp-manager.mjs               # MCP protocol manager
-│   ├── lsp-manager.mjs               # LSP client (TS/JS)
-│   ├── session-db.mjs                # session storage (SQLite + FTS5)
-│   ├── knowledge-store.mjs           # knowledge base (FTS5 + vector)
-│   ├── memory-store.mjs              # memory storage
-│   ├── skills-store.mjs              # skills catalog
-│   ├── prompts-store.mjs             # prompts storage
-│   ├── update-manager.mjs            # auto-update manager
+│   ├── mcp-manager.ts                # MCP protocol manager
+│   ├── lsp-manager.ts                # LSP client (TS/JS)
+│   ├── session-db.ts                 # session storage (SQLite + FTS5)
+│   ├── knowledge-store.ts            # knowledge base (FTS5 + vector)
+│   ├── memory-store.ts               # memory storage
+│   ├── skills-store.ts               # skills catalog
+│   ├── prompts-store.ts              # prompts storage
+│   ├── update-manager.ts             # auto-update manager
 │   ├── search-engine/                # meta-search engine (Bing + GitHub)
 │   └── scripts/
-│       └── download-model.mjs        # downloads ONNX model on first run
+│       └── download-model.ts         # downloads ONNX model on first run
 ├── kb/                               # default knowledge base directory
 ├── models/                           # local model files (generated at runtime)
 └── docs/                             # documentation + screenshots
 ```
 
-Tech stack, one line: **Electron 40 + vanilla JS (no frontend framework) + node:sqlite + ONNX Runtime + MCP + Agent Client Protocol**.
+Tech stack, one line: **Electron 40 + vanilla TypeScript (no frontend framework) + node:sqlite + ONNX Runtime + MCP + Agent Client Protocol**.
 
 ---
 
@@ -282,7 +285,7 @@ npm start
 If the model download fails (network issues), set an env var and retry:
 
 ```bash
-# China mirror takes priority (default order in download-model.mjs)
+# China mirror takes priority (default order in download-model.ts)
 HF_ENDPOINT=https://hf-mirror.com npm install
 ```
 
@@ -307,8 +310,8 @@ Built installers land in `desktop/release/`.
 
 ```bash
 npm run dev          # Electron + DevTools
-npm run test         # Vitest unit tests (when test files exist)
-npm run test:e2e     # Playwright E2E (when test files exist)
+npm run test         # Vitest unit suites (renderer/stores/agent loop/kb)
+npm run test:e2e     # Playwright E2E (smoke/scroll/kb/skills/memory/agent)
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
 ```
