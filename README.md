@@ -12,8 +12,6 @@ AideAgent is an AI desktop app that runs on your computer (cloud models are supp
 
 If you're the kind of person who wants AI to *do things for you*, not just *talk to you* — this project is for you.
 
-![AideAgent main interface — welcome screen with the AideAgent / OpenCode runtime picker, model selector, and capability toggles](docs/screenshots/01-主对话界面.png)
-
 ---
 
 ## The problem it solves
