@@ -2114,7 +2114,10 @@ function addToolCall(name, args, toolCallId) {
   entry.id = `tool-${state._toolCallCount}`;
   if (toolCallId) entry.dataset.toolCallId = String(toolCallId);
   entry.dataset.start = String(Date.now());
-  scrollToBottom();
+  // 工具开始/结束不再无条件 scrollToBottom：agent 每隔几秒就有工具事件，
+  // 会把用户刚滚上去的位置强行拽回底部（流式期间“滑不动”）。与文本 chunk
+  // 一致，只在用户已在底部附近(≤120px)时跟随。
+  autoFollowScroll();
   return entry;
 }
 
@@ -2155,7 +2158,7 @@ function completeToolCall(name, result, toolCallId) {
   }
   if (!el) return;
   _markToolEntryDone(el, result);
-  scrollToBottom();
+  autoFollowScroll();
 }
 
 /* ── Force-finish any tool entries still stuck in .running ── */

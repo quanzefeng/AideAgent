@@ -89,6 +89,17 @@ export function looksLikeBareLatex(s: any): boolean {
   if (!s || s.length < 2 || s.length > 300) return false;
   if (/\$\$|\\\(|\\\[|class="kp"/.test(s)) return false;
   if (/^[A-Za-z]:\\/.test(s.trim())) return false;
+  // Markdown table rows (| c1 | c2 | ...) are never LaTeX. Cells like
+  // `IQ2_XS(2.50bpw)` match hasSub+hasOps, which used to swallow the whole
+  // row into a .kp span → marked lost the pipes, closed the table early,
+  // and the remaining rows rendered as raw math crammed to one side.
+  const trow = s.trim();
+  if (trow.startsWith("|") && (trow.match(/\|/g) || []).length >= 3) return false;
+  // Block markers at fragment start (`- `, `* `, `> `, `# ` …) must never
+  // be swallowed into math either — eating the marker silently destroys
+  // the list/quote/heading (same bug class as the table-pipe case: fuzzy
+  // math detection ran before markdown structure was parsed).
+  if (/^\s*(?:[-*+]\s|>\s|#{1,6}\s)/.test(s)) return false;
   // Multiple "f(x) =" starts glued together = model repetition, not one formula
   const starts = s.match(/[A-Za-z]\([A-Za-z0-9]\)\s*=/g);
   if (starts && starts.length >= 2) return false;
@@ -223,6 +234,14 @@ export function splitBareLatexSegments(seg: any): string[] {
       out.push("");
       continue;
     }
+    // Markdown table rows are structural — never split or collapse them.
+    // `f(1)=` style cells would otherwise tear the row into multiple lines
+    // and break the table in marked.
+    const tr = rawLine.trim();
+    if (tr.startsWith("|") && (tr.match(/\|/g) || []).length >= 3) {
+      out.push(restore(rawLine));
+      continue;
+    }
     // Collapse model triple-quads: ABCABCABC → ABC, ∠C∠C∠C → ∠C.
     // Tempered so the repeated unit cannot contain `|` (markdown tables
     // like |---|---| must survive untouched).
@@ -266,19 +285,28 @@ function wrapBareOutsideKp(text: string): string {
       const tex = envs[+i] ?? "";
       return `<span class="kp" data-m="d">${tex}</span>`;
     });
-  const parts = masked.split(CJK_SPLIT);
-  let out = "";
-  for (const part of parts) {
-    if (!part) continue;
-    if (/[㐀-䶿一-鿿豈-﫿　-〿＀-￯]/.test(part)) {
-      out += part;
+  // Line-by-line so markdown structure survives. Table rows (≥3 pipes,
+  // leading `|`) stay ATOMIC: the CJK split below would tear a row like
+  // `| 64 GB …追求最高质量 | **IQ3_S（…）** |` into fragments, and a
+  // fragment such as ` | **IQ3_S` passes looksLikeBareLatex (subscript +
+  // pipe ops), wraps the cell delimiter into a .kp span — marked then
+  // loses the pipe, drops the column, and the text crams into column 1.
+  const lines = masked.split("\n");
+  const outLines: string[] = [];
+  for (const line of lines) {
+    const trow = line.trim();
+    if (trow.startsWith("|") && (trow.match(/\|/g) || []).length >= 3) {
+      outLines.push(line);
       continue;
     }
-    // Process line-by-line so newlines (markdown structure) are preserved
-    const lines = part.split("\n");
-    const lineOuts = lines.map((line) => {
-      if (!line) return "";
-      const chunks = dedupeSimilarMath(splitBareLatexSegments(line));
+    let lineOut = "";
+    for (const part of line.split(CJK_SPLIT)) {
+      if (!part) continue;
+      if (/[㐀-䶿一-鿿豈-﫿　-〿＀-￯]/.test(part)) {
+        lineOut += part;
+        continue;
+      }
+      const chunks = dedupeSimilarMath(splitBareLatexSegments(part));
       let acc = "";
       for (const chunk of chunks) {
         if (!chunk) continue;
@@ -301,11 +329,11 @@ function wrapBareOutsideKp(text: string): string {
           acc += chunk;
         }
       }
-      return acc;
-    });
-    out += lineOuts.join("\n");
+      lineOut += acc;
+    }
+    outLines.push(lineOut);
   }
-  return restoreEnvs(out);
+  return restoreEnvs(outLines.join("\n"));
 }
 
 /**

@@ -76,11 +76,36 @@ describe("looksLikeBareLatex", () => {
       "P(x)=axn+an-1(a≠0)P(x)=a_n x^n+a_{n-1}(a_n≠0)P(x)=axn+an-1(a≠0)";
     expect(looksLikeBareLatex(glued)).toBe(false);
   });
+
+  it("rejects markdown table rows (subscript cells must not swallow the row)", () => {
+    expect(looksLikeBareLatex("|Q2_0|2.40|37.6GB|28.8GB|66.4GB|")).toBe(false);
+    expect(looksLikeBareLatex("|IQ2_XS(2.50bpw)|77.16|100.3|")).toBe(false);
+    expect(looksLikeBareLatex("| log | 3.2 | 1.1 |")).toBe(false);
+    expect(looksLikeBareLatex("  | a_b | c | d |")).toBe(false);
+    expect(looksLikeBareLatex("|x_1| + |y_1|")).toBe(false); // leading pipe + ≥3 pipes → treated as table row
+  });
+
+  it("never swallows markdown block markers (same class as table-pipe bug)", () => {
+    expect(looksLikeBareLatex("- IQ3_S")).toBe(false);
+    expect(looksLikeBareLatex("- Q2_0")).toBe(false);
+    expect(looksLikeBareLatex("> x_1 + x_2")).toBe(false);
+    expect(looksLikeBareLatex("* IQ3_XXS")).toBe(false);
+    expect(looksLikeBareLatex("## GSQ_2")).toBe(false);
+    // genuine bare formulas still wrap (no space after the minus, etc.)
+    expect(looksLikeBareLatex("-a(x_1 + x_2) = b \\Longrightarrow c")).toBe(true);
+    expect(looksLikeBareLatex("x_1 + x_2 = -b/a")).toBe(true);
+  });
 });
 
 describe("splitBareLatexSegments", () => {
   it("splits on newlines", () => {
     expect(splitBareLatexSegments("a=1\nb=2")).toEqual(["a=1", "b=2"]);
+  });
+
+  it("keeps markdown table rows intact (no mid-row splits)", () => {
+    const row = "| f(1)=2 | g(2)=3 | h(3)=4 |";
+    expect(splitBareLatexSegments(row)).toEqual([row]);
+    expect(splitBareLatexSegments("| A=B | A=B | A=B |")).toEqual(["| A=B | A=B | A=B |"]);
   });
 
   it("splits glued f(x)= repetitions", () => {
@@ -93,6 +118,22 @@ describe("splitBareLatexSegments", () => {
 
   it("keeps a single formula intact", () => {
     expect(splitBareLatexSegments("x_1 + x_2 = -b/a")).toEqual(["x_1 + x_2 = -b/a"]);
+  });
+});
+
+describe("wrapBareLatexRuns (tables)", () => {
+  it("keeps CJK table rows atomic — cell pipes must never enter a .kp span", () => {
+    const rows = [
+      "| 你的显存/用途 | 推荐档位 |",
+      "| 64 GB 以上显存，追求最高质量 | **IQ3_S（83.6 GB，驻留 54.8 GB）** |",
+      "| 48–64 GB，质量/体积平衡 | **IQ3_XXS（75.8 GB，驻留 47 GB）**——多数人的最佳选择 |",
+      "| 40 GB 级别，磁盘 mmap 分片 2 | IQ2_XS（68 GB） |",
+      "| 追求吞吐（服务场景、长上下文） | **Q2_0（66.4 GB）**，prompt 吞吐碾压其他档 |",
+    ];
+    const src = rows.join("\n");
+    const out = wrapBareLatexRuns(src);
+    expect(out).toBe(src); // untouched: no kp wrap, pipes all survive
+    expect(out).not.toContain('class="kp"');
   });
 });
 

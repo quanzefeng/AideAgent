@@ -1,10 +1,8 @@
 /**
  * HUD 遥测（赛博朋克皮肤 · 阶段 3）
  *
- * 把主进程的实时 IPC 事件接入 HUD 覆盖层顶部数据条：
- *   - engine   ← runtime 选择 + 会话模型（session:update / onOpencodeModels）
- *   - token    ← L0 预算（l0:budget，估算 token 数）
- *   - ctx      ← 上下文占用（context:usage，usagePct）
+ * 把主进程的实时 IPC 事件接入 HUD 覆盖层：
+ *   - sess     ← 会话短哈希（session:update）
  *   - status   ← 流状态（stream:start / tool:start / tool:result / stream:done）
  *
  * 设计目标：
@@ -17,12 +15,6 @@
 
 import { hudEnabled, hudSetData } from "./hud-overlay.ts";
 
-/** 引擎显示名（runtime → label） */
-const RUNTIME_LABEL = {
-  aide: "AIDeAgent",
-  opencode: "OpenCode",
-};
-
 /** 状态行文案（kebab key → display） */
 const STATUS_TEXT = {
   idle: "STANDBY",
@@ -33,13 +25,9 @@ const STATUS_TEXT = {
 };
 
 /** 内部状态快照（模块级，避免闭包散落） */
-/** @type {{ runtime: string, model: string, sessionId: string, tokens: number, ctxPct: number, status: string }} */
+/** @type {{ sessionId: string, status: string }} */
 const _state = {
-  runtime: "aide",
-  model: "",
   sessionId: "",
-  tokens: 0,
-  ctxPct: 0,
   status: "idle",
 };
 
@@ -55,13 +43,7 @@ function shortSessionHash(id: any) {
 
 /** @returns {Record<string, string|number>} 组装 HUD 展示数据 */
 function _snapshot() {
-  const engine = (RUNTIME_LABEL as any)[/** @type {keyof typeof RUNTIME_LABEL} */ (_state.runtime)] || _state.runtime || "?";
-  const model = _state.model ? ` · ${_state.model}` : "";
   return {
-    engine: `ENGINE: ${engine}${model}`,
-    token: `TOKEN: ${_state.tokens ? _state.tokens.toLocaleString() : "--"}`,
-    ctx: `CTX: ${_state.ctxPct ? _state.ctxPct + "%" : "--%"}`,
-    ctxBar: typeof _state.ctxPct === "number" ? _state.ctxPct : 0,
     sess: `SID: ${shortSessionHash(_state.sessionId)}`,
     status: (STATUS_TEXT as any)[/** @type {keyof typeof STATUS_TEXT} */ (_state.status)] || "STANDBY",
   };
@@ -84,32 +66,10 @@ function flushAll() {
 export function initHudTelemetry(bridge = window.aideagent) {
   if (!bridge) return;
 
-  // 引擎：会话更新携带 sessionId；模型名来自 opencode 模型列表
+  // 引擎：会话更新携带 sessionId（用于右下角 SID 短哈希）
   /** @param {any} d */
   const onSession = (d: any) => {
     if (d?.sessionId) _state.sessionId = String(d.sessionId);
-    flushAll();
-  };
-  // 模型名：opencode 握手返回的模型列表（opencode:ready → { models, ... }）
-  /** @param {any} d */
-  const onModels = (d: any) => {
-    const list = Array.isArray(d) ? d : (d?.models || []);
-    const first = list[0];
-    const id = typeof first === "string" ? first : (first?.id || "");
-    if (id) { _state.model = String(id); flushAll(); }
-  };
-
-  // token：L0 预算估算
-  /** @param {any} d */
-  const onBudget = (d: any) => {
-    if (typeof d?.estimatedTokens === "number") _state.tokens = d.estimatedTokens;
-    flushAll();
-  };
-
-  // ctx：上下文占用百分比
-  /** @param {any} d */
-  const onCtx = (d: any) => {
-    if (typeof d?.usagePct === "number") _state.ctxPct = d.usagePct;
     flushAll();
   };
 
@@ -133,9 +93,6 @@ export function initHudTelemetry(bridge = window.aideagent) {
   };
 
   bind("onSessionUpdate", onSession);
-  bind("onOpencodeModels", onModels);
-  bind("onL0Budget", onBudget);
-  bind("onContextUsage", onCtx);
   bind("onStreamStart", onStreamStart);
   bind("onToolStart", onToolStart);
   bind("onToolResult", onToolResult);

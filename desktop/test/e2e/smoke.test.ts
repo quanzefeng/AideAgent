@@ -247,25 +247,12 @@ test("boot sequence skips on click", async () => {
   await closeApp(app);
 });
 
-// ── 13. 阶段3 实时数据：IPC 事件填充 HUD 数据条 ────────
-test("hud telemetry fills topbar from IPC events", async () => {
+// ── 13. 阶段3 实时数据：IPC 事件填充 HUD ────────
+test("hud telemetry fills HUD from IPC events", async () => {
   const { app, window } = await launchApp();
 
   // 初始：遥测模块自绘 STANDBY（而非 HTML 默认的 SYSTEM ONLINE）
   await expect(window.locator("#hud-status")).toHaveText("STANDBY", { timeout: 3000 });
-
-  // 通过真实 preload 桥发送 context:usage
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].webContents.send("context:usage", {
-      totalTokens: 5000,
-      systemTokens: 1000,
-      historyTokens: 3000,
-      toolResultTokens: 1000,
-      windowSize: 20000,
-      usagePct: 25,
-    });
-  });
-  await expect(window.locator("#hud-ctx")).toHaveText("CTX: 25%", { timeout: 3000 });
 
   // 发送 tool:start → 状态切到 TOOL RUNNING
   await app.evaluate(({ BrowserWindow }) => {
@@ -322,103 +309,5 @@ test("boot sequence is skipped when HUD is off", async () => {
 
   const bootCount = await window.locator("#boot-screen").count();
   expect(bootCount).toBe(0);
-  await closeApp(app);
-});
-
-// ── 13. HUD 动画开关：reduced-motion 下强制雷达转动 ──
-test("HUD motion toggle forces radar animation under reduced-motion", async () => {
-  const { app, window } = await launchApp();
-
-  // 模拟系统"减少动态效果"（Playwright 页面级 emulateMedia）
-  await window.emulateMedia({ reducedMotion: "reduce" });
-  await window.waitForTimeout(300);
-
-  // 降级生效：雷达扫掠动画应为 none
-  const before = await window.evaluate(() => {
-    const sweep = document!.querySelector(".hud-radar-sweep");
-    if (!sweep) return null;
-    return getComputedStyle(sweep).animationName;
-  });
-  expect(before).toBe("none");
-
-  // 打开设置 → 外观 → HUD 动画开关
-  await window.locator("#settings-btn").click();
-  await window.waitForTimeout(400);
-  await window.locator('#settings-modal [data-tab="appearance"]').click();
-  await window.waitForTimeout(400);
-
-  // input 被 toggle-switch 样式隐藏（opacity:0），改点 label 触发切换
-  await window.locator("label.reasoning-toggle-wide").click();
-
-  // 强制开启：data-hud-motion="on" + 雷达动画恢复运行
-  const forced = await window.evaluate(() => {
-    const sweep = document!.querySelector(".hud-radar-sweep");
-    const anim = sweep ? getComputedStyle(sweep).animationName : null;
-    return {
-      attr: document.documentElement.dataset.hudMotion,
-      stored: localStorage.getItem("AideAgent_hud_motion"),
-      anim,
-    };
-  });
-  expect(forced.attr).toBe("on");
-  expect(forced.stored).toBe("on");
-  expect(forced.anim).not.toBe("none");
-
-  // 重新加载后仍保持强制（持久化）
-  await window.reload();
-  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
-  await window.waitForTimeout(500);
-  const persisted = await window.evaluate(() => ({
-    attr: document.documentElement.dataset.hudMotion,
-    anim: (() => {
-      const sweep = document!.querySelector(".hud-radar-sweep");
-      return sweep ? getComputedStyle(sweep).animationName : null;
-    })(),
-  }));
-  expect(persisted.attr).toBe("on");
-  expect(persisted.anim).not.toBe("none");
-
-  await closeApp(app);
-});
-
-// ── 14. 双雷达：右上 + 左上镜像，面积加大 ──────────
-test("hud renders two radar scans (top-right + mirrored top-left) at enlarged size", async () => {
-  const { app, window } = await launchApp();
-
-  // 两个雷达 + 两个扫掠
-  const radarCount = await window.locator(".hud-radar").count();
-  expect(radarCount).toBe(2);
-  const sweepCount = await window.locator(".hud-radar-sweep").count();
-  expect(sweepCount).toBe(2);
-
-  // 位置：右上雷达靠右，左上雷达靠左（镜像）
-  const right = await window.evaluate(() => {
-    const el = document.getElementById("hud-radar");
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { left: r.left, right: r.right, width: r.width, height: r.height };
-  });
-  const left = await window.evaluate(() => {
-    const el = document.getElementById("hud-radar-left");
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { left: r.left, right: r.right, width: r.width, height: r.height };
-  });
-
-  expect(right).not.toBeNull();
-  expect(left).not.toBeNull();
-  // 左雷达整体位于右雷达左侧（镜像）
-  expect(left!.left).toBeLessThan(right!.left);
-  // 都贴近各自边缘
-  expect(right!.left).toBeGreaterThan(window!.viewportSize()!.width / 2);
-  expect(left!.left).toBeLessThan(window!.viewportSize()!.width / 2);
-  // 左雷达避开侧栏：起点 = 侧栏宽(240px) + 16px 内边距
-  expect(left!.left).toBeCloseTo(256, -1);
-  // 面积加大：由 96px 提升到 140px
-  expect(right!.width).toBe(140);
-  expect(right!.height).toBe(140);
-  expect(left!.width).toBe(140);
-  expect(left!.height).toBe(140);
-
   await closeApp(app);
 });

@@ -404,10 +404,6 @@ const translations = {
     "bg.preview_user": "用户消息气泡预览",
     "bg.hint": "点击预设或拖动滑杆实时生效；推荐使用预设以保证文字对比度",
 
-    // ── HUD Motion ──
-    "hud.motion_label": "HUD 动画",
-    "hud.motion_hint": "开启后忽略系统「减少动态效果」，雷达扫描与开机动画始终播放",
-
     // ── HUD 垂直扫描线 ──
     "hud.vscan_label": "垂直扫描线",
     "hud.vscan_hint": "在对话主界面显示从上往下重复扫描的动效线",
@@ -1087,10 +1083,6 @@ const translations = {
     "bg.preview_msg": "Sample message to preview the theme",
     "bg.preview_user": "User message bubble preview",
     "bg.hint": "Click a preset or drag the slider for instant effect; presets ensure good text contrast",
-
-    // ── HUD Motion ──
-    "hud.motion_label": "HUD Animation",
-    "hud.motion_hint": "Always play HUD animations (radar sweep, boot sequence) even when the system reduces motion",
 
     // ── HUD Vertical Scan Line ──
     "hud.vscan_label": "Vertical Scan Line",
