@@ -15,11 +15,15 @@ const stateMock = {
   _subAgentCtrls: new Map(),
   getLastApiConfig: vi.fn(),
   sendToRenderer: vi.fn(),
+  parseContextWindowFromError: vi.fn(() => null),
+  setContextWindow: vi.fn(),
 };
 vi.mock("../core/state.ts", () => stateMock);
 
 // Mock format-adapters.mjs
 vi.mock("../core/format-adapters.ts", () => ({
+  computeMaxTokens: () => 65536,
+  isContextOverflowText: (errText: string) => errText.includes("exceed_context_size_error") || errText.includes("exceeds the context"),
   getAllToolDefs: () => [
     { function: { name: "bash", description: "Run shell", parameters: { type: "object" } } },
     { function: { name: "file_read", description: "Read file", parameters: { type: "object" } } },

@@ -2,7 +2,8 @@
 
 import mcpManager from "../mcp-manager.ts";
 import { TOOL_DEFS } from "./tool-definitions.ts";
-import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.ts";
+import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, CONTEXT_WINDOW, DEFAULT_CONTEXT_WINDOW, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.ts";
+import { estimateMessageTokens } from "./token-budget.ts";
 
 // ── API retry helpers (rate limit / transient 5xx) ────────────
 
@@ -46,6 +47,44 @@ function notifyRetry(source: string, info: { attempt: number, maxAttempts: numbe
   sendToRenderer("stream:retrying", info);
 }
 
+// ── Context-overflow detection ─────────────────────────────
+// Every gateway words this differently; all of them mean "prompt + max_tokens
+// no longer fits the window", so all must route to the compress-and-retry path
+// instead of surfacing a raw 400 to the user.
+export function isContextOverflowText(errText: string): boolean {
+  return errText.includes("exceed_context_size_error")
+    || errText.includes("exceeds the available context size")
+    || errText.includes("exceeds the context")
+    || /prompt .*exceeds.*context/i.test(errText);
+}
+
+// ── Dynamic max_tokens ─────────────────────────────────────
+// A fixed 65536 collides with the window as soon as the prompt grows past
+// (window - 65536): 65816 + 65536 > 131072 → 400. Size the reply allowance
+// from what is actually left in the window instead.
+const MAX_TOKENS_CAP = 65536;
+const MAX_TOKENS_FLOOR = 4096;
+// estimateMessageTokens under-counts (no template overhead, no tool schemas),
+// so scale the prompt estimate up and add a fixed allowance for the request
+// template before taking the window remainder.
+const PROMPT_SAFETY_FACTOR = 1.25;
+const PROMPT_OVERHEAD_TOKENS = 1024;
+
+/**
+ * Compute a max_tokens that fits prompt + reply inside the model's context.
+ * @param {any[]} msgs - the messages about to be sent
+ * @param {unknown} [toolDefs] - tool schemas (also consume prompt tokens)
+ * @returns {number} clamped to [MAX_TOKENS_FLOOR, MAX_TOKENS_CAP]
+ */
+export function computeMaxTokens(msgs: any[], toolDefs?: unknown): number {
+  const window = CONTEXT_WINDOW || DEFAULT_CONTEXT_WINDOW;
+  const promptTokens = estimateMessageTokens(msgs).totalTokens;
+  const toolsTokens = toolDefs ? Math.ceil(JSON.stringify(toolDefs).length / 4) : 0;
+  const promptCost = Math.ceil(promptTokens * PROMPT_SAFETY_FACTOR) + toolsTokens + PROMPT_OVERHEAD_TOKENS;
+  const available = window - promptCost;
+  return Math.max(MAX_TOKENS_FLOOR, Math.min(MAX_TOKENS_CAP, available));
+}
+
 export async function fetchWithRetry(doFetch: () => Promise<Response>, buildErrorMsg: (res: Response, errText: string) => string, classify?: (errText: string, errorMsg: string) => Error | null, source = "api"): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -72,7 +111,7 @@ export async function fetchWithRetry(doFetch: () => Promise<Response>, buildErro
 
     if (res.ok) return res;
 
-    const errText = (await res.text().catch(() => "")).slice(0, 500);
+    const errText = (await res.text().catch(() => "")).slice(0, 1000);
     const errorMsg = buildErrorMsg(res, errText);
 
     // Classifier may produce a special error (e.g. CONTEXT_SIZE_EXCEEDED).
@@ -310,7 +349,7 @@ export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, mo
   msgs = normalizeToolPairing(msgs);
   const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
-  const body: Record<string, any> = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: 65536 };
+  const body: Record<string, any> = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: computeMaxTokens(msgs, toolDefs) };
   if (reasoning) body.reasoning_effort = "high";
   const buildRes = () => fetchWithRetry(
     () => fetch(apiUrl, {
@@ -323,7 +362,7 @@ export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, mo
     (errText, errorMsg) => {
       // Context size error — throw a special error for the agent loop to
       // compress-and-retry.
-      if (errText.includes('exceed_context_size_error') || errText.includes('exceeds the available context size')) {
+      if (isContextOverflowText(errText)) {
         const detectedCtx = parseContextWindowFromError(errText);
         if (detectedCtx) {
           setContextWindow(detectedCtx);
@@ -474,7 +513,7 @@ export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string,
 
   const body: Record<string, any> = {
     model: model || "claude-sonnet-4-20250514",
-    max_tokens: 65536,
+    max_tokens: computeMaxTokens(msgs, cachedTools),
     system: systemBlock,
     messages,
     tools: cachedTools,
@@ -499,7 +538,7 @@ export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string,
     (errText, errorMsg) => {
       // Context size error — throw a special error for the agent loop to
       // compress-and-retry.
-      if (errText.includes('exceed_context_size_error') || errText.includes('exceeds the available context size')) {
+      if (isContextOverflowText(errText)) {
         const detectedCtx = parseContextWindowFromError(errText);
         if (detectedCtx) {
           setContextWindow(detectedCtx);

@@ -7,8 +7,8 @@ interface ApiConfig {
   apiFormat?: string;
 }
 
-import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer } from "./state.ts";
-import { getAllToolDefs } from "./format-adapters.ts";
+import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer, parseContextWindowFromError, setContextWindow } from "./state.ts";
+import { getAllToolDefs, computeMaxTokens, isContextOverflowText } from "./format-adapters.ts";
 import { runTool } from "./tool-executor.ts";
 
 // Hard cap on a single sub-agent LLM request so a hung API never blocks the
@@ -46,6 +46,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
 
   console.error("[sub-agent] starting:", id, description);
   let allText = "";
+  let ctxRetries = 0;
 
   try {
     for (let turns = 0; turns < SUB_AGENT_MAX_TURNS; turns++) {
@@ -70,7 +71,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
         tools: isAnthropic
           ? subTools.map(t => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }))
           : subTools,
-        max_tokens: 65536,
+        max_tokens: computeMaxTokens(cleanMsgs, subTools),
         stream: true,
       };
       const endpoint = isAnthropic
@@ -114,7 +115,18 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
       });
 
       if (!res.ok) {
-        const errText = (await res.text().catch(() => "")).slice(0, 300);
+        const errText = (await res.text().catch(() => "")).slice(0, 1000);
+        // Prompt + max_tokens overflowed the window — learn the real window
+        // (max_tokens is recomputed from it) and retry once.
+        if (isContextOverflowText(errText) && ctxRetries < 1) {
+          const detected = parseContextWindowFromError(errText);
+          if (detected) {
+            ctxRetries++;
+            console.warn(`[sub-agent] context overflow, window=${detected}. Retrying with recomputed max_tokens.`);
+            setContextWindow(detected);
+            continue;
+          }
+        }
         throw new Error(`API ${res.status}: ${errText}`);
       }
 

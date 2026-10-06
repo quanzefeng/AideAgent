@@ -1,5 +1,66 @@
-import { describe, it, expect } from "vitest";
-import { toAnthropicMessages } from "../core/format-adapters.ts";
+import { describe, it, expect, afterEach } from "vitest";
+import { toAnthropicMessages, computeMaxTokens, isContextOverflowText } from "../core/format-adapters.ts";
+import { setContextWindow, DEFAULT_CONTEXT_WINDOW, CONTEXT_WINDOW } from "../core/state.ts";
+import { estimateTokens } from "../core/token-budget.ts";
+
+afterEach(() => {
+  setContextWindow(DEFAULT_CONTEXT_WINDOW);
+});
+
+describe("computeMaxTokens", () => {
+  it("caps at 65536 when the window is roomy", () => {
+    setContextWindow(262144);
+    expect(computeMaxTokens([{ role: "user", content: "hi" }], [])).toBe(65536);
+  });
+
+  it("shrinks below the cap once the prompt eats the window", () => {
+    setContextWindow(131072);
+    const content = "x".repeat(300_000);
+    const msgs = [{ role: "user", content }];
+    const toolDefs = [{ type: "function", function: { name: "bash", description: "run", parameters: { type: "object", properties: { command: { type: "string" } } } } }];
+    const max = computeMaxTokens(msgs, toolDefs);
+    expect(max).toBeLessThan(65536);
+    expect(max).toBeGreaterThanOrEqual(4096);
+    // The exact inequality the API rejected: prompt + max_tokens <= window.
+    expect(estimateTokens(content) + max).toBeLessThanOrEqual(CONTEXT_WINDOW);
+    // Still leaves the model a usable reply budget.
+    expect(max).toBeGreaterThan(10_000);
+  });
+
+  it("never drops below the 4096 floor", () => {
+    setContextWindow(4096);
+    expect(computeMaxTokens([{ role: "user", content: "y".repeat(100_000) }])).toBe(4096);
+  });
+
+  it("reproduces the reported failure: 65816 prompt + 65536 > 131072", () => {
+    setContextWindow(131072);
+    const content = "x".repeat(65816 * 4); // ≈65816 ASCII tokens
+    expect(estimateTokens(content)).toBe(65816);
+    const max = computeMaxTokens([{ role: "user", content }]);
+    expect(max).toBeLessThan(65536);
+    expect(estimateTokens(content) + max).toBeLessThanOrEqual(131072);
+  });
+});
+
+describe("isContextOverflowText", () => {
+  it("matches llama.cpp exceed_context_size_error", () => {
+    expect(isContextOverflowText('{"error":{"type":"exceed_context_size_error","n_ctx":65536}}')).toBe(true);
+  });
+
+  it("matches the strata 'exceeds the context (N)' 400 body", () => {
+    const body = '{"error": {"type": "invalid_request_error", "message": "prompt (65816 tokens) + max tokens (65536) exceeds the context (131072); requests are never truncated."}}';
+    expect(isContextOverflowText(body)).toBe(true);
+  });
+
+  it("matches 'exceeds the available context size'", () => {
+    expect(isContextOverflowText("exceeds the available context size (65536)")).toBe(true);
+  });
+
+  it("ignores unrelated errors", () => {
+    expect(isContextOverflowText('{"error":{"type":"invalid_request_error","message":"model not found"}}')).toBe(false);
+    expect(isContextOverflowText("429 too many requests")).toBe(false);
+  });
+});
 
 describe("Format Adapters", () => {
   describe("toAnthropicMessages", () => {

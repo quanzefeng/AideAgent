@@ -468,5 +468,30 @@ export function parseContextWindowFromError(errorMessage: string) {
     }
   }
 
+  // 3) OpenAI-compatible gateways (llama.cpp / strata / vLLM proxies) report
+  //    the window inside the prose instead of n_ctx, e.g.
+  //    "prompt (65816 tokens) + max tokens (65536) exceeds the context (131072)"
+  //    or "...exceeds the available context size (65536); requests are never truncated."
+  const exceedsMatch = errorMessage.match(/exceeds the (?:available )?context(?: size| window)?\s*\(?(\d{4,})/i);
+  if (exceedsMatch) {
+    const nCtx = parseInt(exceedsMatch[1], 10);
+    if (Number.isFinite(nCtx) && nCtx >= minCtx) {
+      console.log(`[context-detect] Extracted from "exceeds the context": ${nCtx}`);
+      return nCtx;
+    }
+  }
+
+  // 4) Same error, differently phrased: derive the window from the two numbers
+  //    the gateway does give us — "prompt (65816 tokens) + max tokens (65536)
+  //    exceeds the context..." / "...at most 65248 here".
+  const promptMax = errorMessage.match(/prompt \((\d+) tokens\)[\s\S]*?at most (\d+)/i);
+  if (promptMax) {
+    const nCtx = parseInt(promptMax[1], 10) + parseInt(promptMax[2], 10);
+    if (Number.isFinite(nCtx) && nCtx >= minCtx) {
+      console.log(`[context-detect] Derived from prompt+max_tokens: ${nCtx}`);
+      return nCtx;
+    }
+  }
+
   return null;
 }
