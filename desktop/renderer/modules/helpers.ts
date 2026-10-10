@@ -592,6 +592,10 @@ export function scrollToBottom() {
       el.style.setProperty("overflow-y", "auto", "important");
       el.style.setProperty("flex", "1 1 0", "important");
       el.style.setProperty("min-height", "0", "important");
+      // 兜底同样要覆盖 max-height：#chat-area.is-blank 态把 #message-list 设成
+      // flex:0 1 auto + max-height:100%，若 is-blank 残留或 :has() 规则失效瞬间，
+      // 列表会退化回内容撑高被 #chat-area 裁切（scrollHeight===clientHeight）。
+      el.style.setProperty("max-height", "none", "important");
     }
   }
   const top = el.scrollHeight;
@@ -621,6 +625,12 @@ export function pinScrollBottom(durationMs = 400) {
   const start = performance.now();
   let raf = 0;
   let timeout: ReturnType<typeof setTimeout> | null = null;
+  function onUserScroll() { stop(); }
+  function stop() {
+    cancelAnimationFrame(raf);
+    if (timeout) clearTimeout(timeout);
+    window.removeEventListener("wheel", onUserScroll);
+  }
   const tick = () => {
     scrollToBottom();
     if (performance.now() - start < durationMs) {
@@ -630,12 +640,13 @@ export function pinScrollBottom(durationMs = 400) {
   raf = requestAnimationFrame(tick);
   timeout = setTimeout(() => {
     scrollToBottom();
-    cancelAnimationFrame(raf);
-    timeout = null;
+    stop();
   }, durationMs);
+  // 用户一动滚轮就立刻让路：收尾 pin 不该和用户上下滚动搏斗几百 ms
+  // （表现为"回答刚结束滚轮就滚不动"的起始卡顿）。
+  window.addEventListener("wheel", onUserScroll, { passive: true });
   return () => {
-    cancelAnimationFrame(raf);
-    if (timeout) clearTimeout(timeout);
+    stop();
   };
 }
 

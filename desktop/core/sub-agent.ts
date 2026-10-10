@@ -36,7 +36,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
   const subTools = allToolDefs.filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
 
   const sysContent = `你是 AideAgent 的子代理，拥有完整工具集。
-可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
+可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, context_recall（取回被压缩移出上下文的原文）, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
 你的任务是: ${prompt}
 完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。`;
   const msgs: SubAgentMessage[] = [

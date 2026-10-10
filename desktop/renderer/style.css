@@ -2751,12 +2751,14 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   user-select: none;
 }
 .thinking-body {
-  max-height: 200px;
-  overflow-y: auto;
-  /* 不要 overscroll-behavior:contain —— 它在内部滚到边界(甚至无溢出)时
-     阻断滚轮向 #message-list 的链路，光标停在展开的思考区上主列表就
-     完全滑不动（e2e scroll-diag 实测 delta=0）。contain 去掉后：
-     内部先滚，到边再链给主列表（标准嵌套滚动行为）。 */
+  /* 不要 max-height + overflow-y:auto：那会造出一个纵向嵌套滚动容器，
+     光标停在展开的思考区上时滚轮先被它吃掉——实测 494px 余量下连滚 6 格
+     (720px) 主列表只动 120px；真实 reasoning 动辄数千 px 余量，主列表
+     十几格不动一次，用户感知就是"回答结束后滚轮滑不动、看不到下面内容"
+     （切会话走 rebuildMessages 全量折叠 details 才恢复）。
+     与 .message-text pre 同一约定：消息列表内不做纵向 scroller，
+     展开后正文直接铺开，滚动只由 #message-list 负责。
+     也不要 overscroll-behavior:contain —— 它在边界/无溢出时阻断滚轮链。 */
   padding: 4px 0;
   margin-top: 2px;
 }
@@ -2835,10 +2837,9 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 /* 展开后的参数+结果 */
 .tool-entry-body {
   padding: 2px 0 2px 16px;
-  max-height: 160px;
-  overflow-y: auto;
-  /* 同 .thinking-body：contain 会让光标悬停在展开的工具结果上时
-     滚轮被吞（结果短、内部无溢出时也吞——最隐蔽）→ 主列表卡死。 */
+  /* 同 .thinking-body：不做 max-height + overflow-y:auto 的纵向嵌套 scroller。
+     参数按 120 字、结果按 200 字截断，展开后本就只有几行，限高只会把它
+     变成吞滚轮的小滚动条（滚轮被吞 → 主列表"滑不动"，切会话才恢复）。 */
 }
 .tool-entry-args {
   display: flex;
@@ -4477,10 +4478,11 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 }
 .context-usage-text {
   font-variant-numeric: tabular-nums;
-  min-width: 30px;
+  min-width: 105px;
   text-align: right;
 }
 .context-usage.ok { color: var(--text-muted, #888); }
+.context-usage.soft { color: #facc15; }
 .context-usage.warn { color: #f59e0b; }
 .context-usage.danger { color: #ef4444; font-weight: var(--fw-semibold); }
 
@@ -4534,7 +4536,11 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 .resume-banner pre {
   margin:4px 0 0; padding:6px 8px;
   background:rgba(0,0,0,.3); border-radius:4px;
-  font-size:11px; max-height:120px; overflow:auto;
+  font-size:11px;
+  /* 不设 max-height + overflow:auto：这个 banner 插在 #message-list 里，
+     限高会多出一个纵向嵌套滚动容器，光标落在上面时滚轮被吞（同
+     .thinking-body / .tool-entry-body / .message-text pre 的约定）。
+     已 pre-wrap，高度随内容，无需滚动。 */
   white-space:pre-wrap; word-break:break-all;
 }
 .resume-banner-close {

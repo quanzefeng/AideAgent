@@ -127,7 +127,12 @@ function loadContextMd() {
 
 function _initPromptStorePath() {
   if (!getPromptStorePath()) {
-    setPromptStorePath(join(app.getPath("userData"), "system-prompt-profiles.json"));
+    // `app` is undefined outside the Electron main process (vitest); never
+    // let profile loading crash on a non-Electron context.
+    try {
+      const base = typeof app?.getPath === "function" ? app.getPath("userData") : null;
+      if (base) setPromptStorePath(join(base, "system-prompt-profiles.json"));
+    } catch { /* ignored */ }
   }
 }
 
@@ -135,7 +140,7 @@ export function loadPromptProfiles() {
   _initPromptStorePath();
   try {
     const storePath = getPromptStorePath() as string;
-    if (existsSync(storePath)) {
+    if (storePath && existsSync(storePath)) {
       const raw = readFileSync(storePath, "utf-8");
       const store: any = JSON.parse(raw);
       let migrated = false;
@@ -177,6 +182,7 @@ export function savePromptProfiles(data: any): void {
   _initPromptStorePath();
   try {
     const storePath = getPromptStorePath() as string;
+    if (!storePath) return;
     const dir = dirname(storePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(storePath, JSON.stringify(data, null, 2), "utf-8");
@@ -200,6 +206,36 @@ function trainingCutoffNote(model: string): string {
   return `${ref}。此日期之后的事件必须用 web_search 验证，不要凭训练数据答。当前日期之前的"昨天" = Current Date 减 1 天，算完再搜。`;
 }
 
+/** Top-N sessions surfaced in the "最近对话" context section (Phase 3a). */
+const RECENT_SESSIONS_TOP = 3;
+/** Whole-section cap for "最近对话" — was ~5.1k chars unbounded. */
+const RECENT_SESSIONS_MAX_CHARS = 1200;
+/** Whole-section cap for injected knowledge-base notes (Phase 3b). */
+const KB_CONTEXT_MAX_CHARS = 6000;
+/** Per-note snippet cap inside the KB section. */
+const KB_SNIPPET_MAX_CHARS = 2000;
+
+/**
+ * Phase 3a relevance terms for ranking past sessions against the live prompt.
+ * ASCII words ≥2 chars plus CJK bigrams (Chinese prompts have no spaces, so
+ * whole-run matching would almost never hit). Capped at 40 terms to keep the
+ * ranking O(40) per candidate session.
+ */
+export function promptRelevanceTerms(prompt: string): string[] {
+  if (!prompt) return [];
+  const p = prompt.toLowerCase();
+  const terms = new Set<string>();
+  for (const w of p.split(/[^\p{L}\p{N}_]+/u)) {
+    if (w.length >= 2) terms.add(w);
+  }
+  const runs = p.match(/[\u3400-\u9fff\uf900-\ufaff]+/g) || [];
+  for (const run of runs) {
+    if (run.length === 1) terms.add(run);
+    for (let i = 0; i + 1 < run.length; i++) terms.add(run.slice(i, i + 2));
+  }
+  return [...terms].slice(0, 40);
+}
+
 export async function buildSystemPrompt(
   enabledSkills?: string[],
   agentName?: string,
@@ -209,7 +245,7 @@ export async function buildSystemPrompt(
   webSearchEnabled = true,
   kbInject = true,
   model = "",
-): Promise<{ role: string, content: string, contextBlock: string | null }> {
+): Promise<{ role: string, content: string, contextBlock: string | null, dynamicContextBlock: string | null, staticContextBlock: string | null }> {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
   const allSkills = scanSkills();
@@ -394,8 +430,12 @@ You can use the MCP tools listed above just like any other tool.`;
   let toolShadowLine = "";
   try {
     const { getAllToolDefs } = await import("./format-adapters.ts");
+    const { TOOL_DEFS } = await import("./tool-definitions.ts");
     const allDefs = getAllToolDefs(true, true) || [];
-    const BUILTIN_NAMES = new Set(["bash","file_read","file_write","file_edit","grep","glob","lsp","web_search","web_fetch","write_memory","skill","invoke_skill","create_skill","TaskCreate","TaskUpdate","TaskList","TodoWrite","AskUserQuestion","Agent","kb_search","kb_write","kb_get_note","git_diff","git_commit","git_branch","gh_pr","gh_issue","gh_repo","list_skills","list_memories","list_kb","list_mcp","list_tools"]);
+    // Derive builtin names from the source of truth instead of a hardcoded
+    // list — the old copy was already stale (missing view_image,
+    // get_session_info) and miscounted them as MCP tools.
+    const BUILTIN_NAMES = new Set(TOOL_DEFS.map(t => t.function.name));
     const builtin = allDefs.filter(d => BUILTIN_NAMES.has(d.function.name)).length;
     sourceParts.push(`Tools: \`list_tools\` (${allDefs.length}: ${builtin} built-in + ${allDefs.length - builtin} MCP)`);
     // Shadow detection
@@ -429,7 +469,12 @@ Working directory: ${WORKSPACE}`;
   }
 
   // ── Build dynamic context block (NOT in system prompt — preserved for caching) ──
-  let contextBlock = "";
+  // Phase 3c split: dynamicCtx changes turn-to-turn (episodic/recent-session
+  // hits, KB notes) while staticCtx (skill inventory, matched skill, repeated
+  // patterns) is stable for the whole session. contextBlock is both joined so
+  // existing callers keep working; the split lets callers re-append the stable
+  // part after a continuation rebuild without paying for the stale dynamic part.
+  let dynamicCtx = "";
 
   let memorySections = [];
   try {
@@ -444,15 +489,37 @@ Working directory: ${WORKSPACE}`;
         memorySections.push(`\n\n**对话记忆：**\n${lines}`);
       }
     }
+    // Phase 3a: was getRecentSessions(10, 4) with 200-char message slices —
+    // up to 10 sessions × 4 messages ≈ 5.1k chars (measured), nearly half the
+    // whole context block and mostly irrelevant to the current question.
+    // Now: rank candidate sessions by relevance to the live prompt, keep at
+    // most 3, and hard-cap the section at 1,200 chars (drop whole sessions
+    // that don't fit rather than emitting a useless fragment).
     const recentSessions = sessionDb.getRecentSessions(10, 4, sessionId ?? undefined);
     if (recentSessions?.length) {
-      const sessionContexts = recentSessions.map(s => {
-        if (!s.messages?.length) return null;
-        const lines = s.messages.map(m => `- ${m.role}: ${String(m.content || "").slice(0, 200)}`).join("\n");
-        return `**[${s.title}]**\n${lines}`;
-      }).filter(Boolean).join("\n\n");
-      if (sessionContexts) {
-        memorySections.push(`\n\n**最近对话：**\n${sessionContexts}`);
+      const terms = promptRelevanceTerms(userPrompt);
+      const ranked = recentSessions
+        .map((s: any, idx: number) => {
+          const hay = `${s.title}\n${(s.messages || []).map((m: any) => m.content || "").join("\n")}`.toLowerCase();
+          const score = terms.reduce((acc: number, t: string) => acc + (hay.includes(t) ? 1 : 0), 0);
+          return { s, idx, score };
+        })
+        // Most relevant first; ties keep original recency order (idx asc).
+        .sort((a: any, b: any) => (b.score - a.score) || (a.idx - b.idx));
+      let usedChars = 0;
+      const parts: string[] = [];
+      for (const { s } of ranked.slice(0, RECENT_SESSIONS_TOP)) {
+        if (!s.messages?.length) continue;
+        const lines = s.messages
+          .map((m: any) => `- ${m.role}: ${String(m.content || "").replace(/\s+/g, " ").slice(0, 150)}`)
+          .join("\n");
+        const entry = `**[${s.title}]**\n${lines}`;
+        if (usedChars + entry.length > RECENT_SESSIONS_MAX_CHARS) continue;
+        usedChars += entry.length;
+        parts.push(entry);
+      }
+      if (parts.length) {
+        memorySections.push(`\n\n**最近对话：**\n${parts.join("\n\n")}`);
       }
     }
     try {
@@ -476,19 +543,19 @@ Working directory: ${WORKSPACE}`;
   if (memBudget > 500) {
     for (const sec of memorySections) {
       if (typeof sec === 'string') {
-        contextBlock += sec;
+        dynamicCtx += sec;
       } else {
         const trimmed = sec.text.length > 2000 ? sec.text.slice(0, 2000) : sec.text;
-        contextBlock += `\n\n**${sec.label} — 永久记忆：**\n${trimmed}`;
+        dynamicCtx += `\n\n**${sec.label} — 永久记忆：**\n${trimmed}`;
       }
     }
   } else {
     for (const sec of memorySections) {
       if (typeof sec === 'string') {
-        contextBlock += trimToBudget(sec, Math.max(200, memBudget));
+        dynamicCtx += trimToBudget(sec, Math.max(200, memBudget));
       } else {
         const trimmed = sec.text.length > 800 ? sec.text.slice(0, 800) : sec.text;
-        contextBlock += `\n\n**${sec.label} (摘要):**\n${trimmed}`;
+        dynamicCtx += `\n\n**${sec.label} (摘要):**\n${trimmed}`;
       }
     }
   }
@@ -497,27 +564,46 @@ Working directory: ${WORKSPACE}`;
     try {
       const kbCfg = kb.getConfig();
       const maxNotes = kbCfg.maxNotes ?? 20;
-      const maxChars = kbCfg.maxChars ?? 20000;
       const kbResults = await kb.search(userPrompt, maxNotes);
       if (kbResults.length > 0) {
-        const kbContext = kbResults.map(r => {
+        // Phase 3b: global cap. kb-config `maxChars` (default 20k) was applied
+        // PER NOTE and there was no aggregate limit — 20 notes × 20k could
+        // quadruple the context block on its own. Now each snippet is bounded
+        // AND the whole section stops at KB_CONTEXT_MAX_CHARS.
+        const perNote = Math.min(kbCfg.maxChars ?? KB_SNIPPET_MAX_CHARS, KB_SNIPPET_MAX_CHARS);
+        let usedChars = 0;
+        const parts: string[] = [];
+        for (const r of kbResults) {
+          if (usedChars >= KB_CONTEXT_MAX_CHARS) break;
           let snippet = r.snippet || "";
-          if (snippet.length > maxChars) snippet = snippet.slice(0, maxChars) + "...";
-          return `**[${r.title}]** (${r.rel_path})\n${snippet}`;
-        }).join("\n\n");
-        contextBlock += `\n\n<knowledge-base>\n**知识库相关内容：**\n${kbContext}\n</knowledge-base>`;
+          if (snippet.length > perNote) snippet = snippet.slice(0, perNote) + "...";
+          const entry = `**[${r.title}]** (${r.rel_path})\n${snippet}`;
+          if (usedChars + entry.length > KB_CONTEXT_MAX_CHARS) {
+            const room = KB_CONTEXT_MAX_CHARS - usedChars;
+            if (room < 200) break;
+            parts.push(entry.slice(0, room) + "…");
+            break;
+          }
+          usedChars += entry.length;
+          parts.push(entry);
+        }
+        if (parts.length) {
+          dynamicCtx += `\n\n<knowledge-base>\n**知识库相关内容：**\n${parts.join("\n\n")}\n</knowledge-base>`;
+        }
       }
     } catch { /* ignored */ }
   }
 
+  // ── Static context: stable for the session (skill inventory etc.) ──
+  let staticCtx = "";
   // ── Skill list (reference data — moved from system prompt to contextBlock) ──
-  contextBlock += `\n\n**Available Skills (${filterSkills.length} total):**\n${skillList}`;
-  if (matchedSection) contextBlock += `\n\n${matchedSection}`;
+  staticCtx += `\n\n**Available Skills (${filterSkills.length} total):**\n${skillList}`;
+  if (matchedSection) staticCtx += `\n\n${matchedSection}`;
 
   const skillsCtx = skills.buildSkillsContext();
-  if (skillsCtx) contextBlock += skillsCtx;
+  if (skillsCtx) staticCtx += skillsCtx;
 
-  if (skillMatchWarning) contextBlock += `\n\n${skillMatchWarning}`;
+  if (skillMatchWarning) staticCtx += `\n\n${skillMatchWarning}`;
 
   try {
     const patterns = skills.detectPatterns(sessionDb as any);
@@ -525,9 +611,20 @@ Working directory: ${WORKSPACE}`;
       const hints = patterns.slice(0, 3).map(p =>
         `- "${p.phrase}" (${p.count} 次). 示例: "${p.examples[0]}"`
       ).join("\n");
-      contextBlock += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
+      staticCtx += `\n\n**Repeated patterns detected in your conversation history:** These topics appear multiple times across sessions. If a pattern represents a reusable workflow, use \`create_skill\` to save it:\n${hints}`;
     }
   } catch { /* ignored */ }
 
-  return { role: "system", content, contextBlock: contextBlock.trim() || null };
+  const dyn = dynamicCtx.trim();
+  const stat = staticCtx.trim();
+  // Contract: contextBlock === [dynamic, static].filter(Boolean).join("\n\n")
+  // (tests assert this). Empty halves collapse to the other one.
+  const contextBlock = [dyn, stat].filter(Boolean).join("\n\n") || null;
+  return {
+    role: "system",
+    content,
+    contextBlock,
+    dynamicContextBlock: dyn || null,
+    staticContextBlock: stat || null,
+  };
 }

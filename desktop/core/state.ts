@@ -216,7 +216,7 @@ export function getCurrentRuntime() { return currentRuntime; }
 export const PLAN_MODE_READONLY = new Set([
   "file_read", "view_image", "grep", "glob", "web_search", "web_fetch",
   "Agent", "AskUserQuestion", "TaskList", "TodoWrite", "write_memory", "kb_write",
-  "skill", "invoke_skill", "lsp",
+  "skill", "invoke_skill", "lsp", "context_recall",
 ]);
 
 // ── Permissions ─────────────────────────────────────────────
@@ -231,7 +231,7 @@ export const SUB_AGENT_TOOL_NAMES = new Set([
   "create_skill", "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite",
   "AskUserQuestion", "kb_write", "lsp", "git_diff", "git_commit",
   "git_branch", "gh_pr", "gh_issue", "gh_repo",
-  "kb_search", "kb_get_note",
+  "kb_search", "kb_get_note", "context_recall",
 ]);
 export const SUB_AGENT_MAX_TURNS = 12;
 export const _subAgentCtrls = new Map<string, unknown>();

@@ -583,4 +583,20 @@ export const TOOL_DEFS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "context_recall",
+      description: "Recover context that was moved OUT of the conversation to save tokens (compressed tool outputs, pruned history, summarized-away segments).\n\nBackground: when the context window fills up, large tool results and old messages are copied into a permanent archive and replaced in the prompt by a short pointer like `ca_ab12cd34ef`. Compression markers (`[系统] ⚠️ 上下文已自动压缩…`, `...(truncated, 原文已归档 #ca_…)`) list those pointers.\n\nUSE for:\n- `id`: fetch the FULL original text of one archived item — this is the only way to see content that was truncated or summarized away.\n- `query`: full-text search across the archive when you know what you need but not the id.\n- no arguments: list recent archived items (id, kind, size, 200-char preview).\n\nDO NOT use for: current files on disk (use file_read), knowledge-base notes (kb_search / kb_get_note), memories (list_memories / write_memory), or session history you can still see in the conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Archive pointer like 'ca_ab12cd34ef' taken from a compression/truncation marker. Returns the complete original content." },
+          query: { type: "string", description: "Full-text search over archived content. Use when you don't have an id." },
+          limit: { type: "integer", description: "Max results for query/list mode (default 5, max 20)." },
+        },
+        required: [],
+      },
+    },
+  },
 ];

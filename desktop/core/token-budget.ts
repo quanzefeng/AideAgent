@@ -1,6 +1,7 @@
 // ── Token Budget & Context Compression ──────────────────────
 
-import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.ts";
+import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, CONTEXT_WARN_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.ts";
+import { archiveDropped, pointerSuffix } from "./context-archive.ts";
 
 const TOKEN_BUDGET_WARN = 50000;
 const TOKEN_BUDGET_HARD = 80000;
@@ -29,7 +30,46 @@ export function trimToBudget(text: string, budget: number): string {
   return text.slice(0, half) + `\n\n...(truncated ${Math.ceil(estimateTokens(text) - budget)} tokens)...\n\n` + text.slice(-Math.floor(maxChars * 0.3));
 }
 
-export function estimateMessageTokens(msgs: Message[]): { totalTokens: number, systemTokens: number, historyTokens: number, toolResultTokens: number } {
+// ── Tool-schema token accounting ────────────────────────────
+// Tool schemas travel in the request's `tools` field, NOT in the message
+// array, so they were invisible to every budget check — yet on this app they
+// are the single largest context consumer (~16k tokens for 35 builtins + 38
+// MCP tools, ≈65% of a bare "你好" request). agent-loop sets this once per
+// loop via setToolSchemaTokens(); estimateMessageTokens() folds it into
+// totalTokens so the 70% continuation trigger, compressContext's budget
+// comparison and the renderer's usage bar all see the real prompt cost.
+let _toolSchemaTokens = 0;
+
+/** @param {number} n */
+export function setToolSchemaTokens(n: number): void {
+  _toolSchemaTokens = Number.isFinite(n) && n > 0 ? Math.ceil(n) : 0;
+}
+
+export function getToolSchemaTokens(): number {
+  return _toolSchemaTokens;
+}
+
+/**
+ * Estimate tokens for a tool-definition array (JSON travels in `tools`).
+ * Same basis as computeMaxTokens' `JSON.stringify(toolDefs).length / 4`.
+ * @param {unknown} defs
+ * @returns {number}
+ */
+export function estimateToolDefsTokens(defs: unknown): number {
+  if (!defs) return 0;
+  try {
+    return estimateTokens(JSON.stringify(defs));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * @param {Message[]} msgs
+ * @param {boolean} [includeToolSchema=true] — pass false where the caller
+ *   adds tool tokens itself (computeMaxTokens) to avoid double counting.
+ */
+export function estimateMessageTokens(msgs: Message[], includeToolSchema = true): { totalTokens: number, systemTokens: number, historyTokens: number, toolResultTokens: number, toolSchemaTokens: number } {
   let systemTokens = 0, historyTokens = 0, toolResultTokens = 0;
   for (const m of msgs) {
     const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
@@ -42,7 +82,11 @@ export function estimateMessageTokens(msgs: Message[]): { totalTokens: number, s
       }
     }
   }
-  return { totalTokens: systemTokens + historyTokens + toolResultTokens, systemTokens, historyTokens, toolResultTokens };
+  const toolSchemaTokens = includeToolSchema ? _toolSchemaTokens : 0;
+  return {
+    totalTokens: systemTokens + historyTokens + toolResultTokens + toolSchemaTokens,
+    systemTokens, historyTokens, toolResultTokens, toolSchemaTokens,
+  };
 }
 
 /**
@@ -117,19 +161,25 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
   if (before.totalTokens <= budget) return { estimatedTokens: before.totalTokens, compressed: false, removedMessages: 0 };
 
   let removedMessages = 0;
+  /** Archive ids of everything dropped this call — advertised in markers. */
+  const removedIds: Array<string | null> = [];
 
   // Step 1: truncate long tool results (cheapest reduction).
   // Head+tail splice instead of keep-head-only: a long diff/log's tail
   // (errors, final status) is often the most decision-relevant part.
   // Split ~60% head / ~30% tail with a marked middle gap.
+  // REVERSIBLE: the full original is archived first, so the gap carries a
+  // `ca_*` pointer instead of being a silent, unrecoverable deletion.
   for (let i = 1; i < msgs.length - 6; i++) {
     const m = msgs[i];
     if (m.role === "tool" && typeof m.content === "string" && m.content.length > TOOL_RESULT_KEEP_CHARS + 100) {
       const origLen = m.content.length;
       const keepHead = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.6);
       const keepTail = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.3);
+      const archiveId = archiveDropped({ content: m.content, kind: "tool_result", source: "compressContext", role: "tool" });
+      removedIds.push(archiveId);
       m.content = m.content.slice(0, keepHead) +
-        `\n\n...(中段已截断: ${origLen - keepHead - keepTail} chars 被丢弃, 保留头尾)...\n\n` +
+        `\n\n...(中段已截断: ${origLen - keepHead - keepTail} chars 被移出上下文, ${pointerSuffix([archiveId])}, 保留头尾)...\n\n` +
         m.content.slice(-keepTail);
     }
   }
@@ -167,6 +217,14 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
   for (const idx of [...protectedInMiddle].sort((a: number, b: number) => a - b)) {
     rescued.push(msgs[idx]);
   }
+  // REVERSIBLE: archive every middle message that is about to be pruned
+  // (must happen before the splice destroys them).
+  for (let i = middleStart; i < middleEnd; i++) {
+    if (protectedInMiddle.has(i)) continue;
+    const dm = msgs[i];
+    const text = typeof dm.content === "string" ? dm.content : JSON.stringify(dm.content || "");
+    removedIds.push(archiveDropped({ content: text, kind: "message", source: "compressContext", role: dm.role }));
+  }
   removedMessages = msgs.length - prefix.length - suffix.length - rescued.length;
   msgs.splice(0, msgs.length, ...prefix, ...rescued, ...suffix);
 
@@ -176,12 +234,18 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
     // pruned mid-task. Append to the FIRST system message — stays at index 0
     // for OpenAI-compatible providers (some reject system mid-array) and
     // Anthropic merges all system messages to the top-level `system` param,
-    // so both formats stay valid. Guard against duplicate injection on
-    // repeated compressContext calls in the same turn.
+    // so both formats stay valid. Exactly one marker: a repeat compression
+    // REPLACES the previous one (its ids are superseded by the new set).
+    const idsNote = removedIds.length ? `；归档 ${removedIds.filter(Boolean).length} 段：${pointerSuffix(removedIds)}` : "";
+    const marker = `\n\n[系统] ⚠️ 上下文已自动压缩：${removedMessages} 条早期消息被裁剪（保留任务锚点、最近一次用户请求与所有工具调用对）${idsNote}。需要时调用 context_recall 取回，或重新读取相关文件。`;
     const firstSystem = msgs.findIndex(m => m.role === "system");
-    const marker = `\n\n[系统] ⚠️ 上下文已自动压缩：${removedMessages} 条早期消息被裁剪（保留任务锚点、最近一次用户请求与所有工具调用对）。如需回顾被裁剪的细节，可要求 agent 重新读取相关文件。`;
-    if (firstSystem !== -1 && typeof msgs[firstSystem].content === "string" && !msgs[firstSystem].content.includes("[系统] ⚠️ 上下文已自动压缩")) {
-      msgs[firstSystem].content += marker;
+    if (firstSystem !== -1 && typeof msgs[firstSystem].content === "string") {
+      const existing = msgs[firstSystem].content as string;
+      if (existing.includes("[系统] ⚠️ 上下文已自动压缩")) {
+        msgs[firstSystem].content = existing.replace(/\n\n\[系统\] ⚠️ 上下文已自动压缩[\s\S]*$/, marker);
+      } else {
+        msgs[firstSystem].content = existing + marker;
+      }
     } else if (firstSystem === -1) {
       msgs.unshift({ role: "system", content: marker.trim() });
     }
@@ -199,8 +263,13 @@ export function sendContextUsage(msgs: Message[]) {
     systemTokens: usage.systemTokens,
     historyTokens: usage.historyTokens,
     toolResultTokens: usage.toolResultTokens,
+    toolSchemaTokens: usage.toolSchemaTokens,
     windowSize: CONTEXT_WINDOW,
     usagePct: Math.round((usage.totalTokens / CONTEXT_WINDOW) * 100),
+    // Tier thresholds: soft-offload at warn (CONTEXT_WARN_PCT), compress at
+    // CONTEXT_COMPRESS_PCT, renderer colors at 80/90.
+    warnThresholdPct: Math.round(CONTEXT_WARN_PCT * 100),
+    compressThresholdPct: Math.round(CONTEXT_COMPRESS_PCT * 100),
   });
 }
 

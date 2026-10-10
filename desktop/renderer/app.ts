@@ -781,9 +781,9 @@ function updateThinkingSection(msgEl, text) {
 
   const textEl = thinkingEl.querySelector(".thinking-text");
   if (textEl) textEl.textContent = text;
-  // Auto-scroll the inner thinking body so the latest text is visible
-  const bodyEl = thinkingEl.querySelector(".thinking-body");
-  if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+  // 不再滚动 .thinking-body：它已不是纵向 scroller（style.css 约定：消息列表内
+  // 不做嵌套纵向滚动，否则滚轮被吞），"最新推理可见"由流式 handler 末尾的
+  // autoFollowScroll() 跟随 #message-list 完成。
 }
 
 /**
@@ -822,8 +822,8 @@ function flushNarrationToThinking() {
   const thinkingEl = state._currentThinkingEl;
   const textEl = thinkingEl?.querySelector(".thinking-text");
   if (textEl) textEl.textContent = state._reasoningBlockText;
-  const bodyEl = thinkingEl?.querySelector(".thinking-body");
-  if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+  // .thinking-body 不再是纵向 scroller（见 updateThinkingSection 注释），无需也无法
+  // 滚动它；主列表跟随由各流式 handler 末尾的 autoFollowScroll() 负责。
 
   // Clear the body — narration is no longer the answer
   const bodyTextEl = msg.querySelector(".message-text");
@@ -895,14 +895,13 @@ function finishAssistantMessage(msgEl) {
   // exception cannot leave the list stuck without a bottom pin.
   try {
     msgEl.classList.remove("streaming");
-    // 折叠所有展开的 thinking details
+    // 收尾折叠当前消息的思考块（保持静止视图紧凑）。注意这里【不再】是为了
+    // 防滚轮被吞：真正的修复在 style.css —— .thinking-body/.tool-entry-body
+    // 不再是纵向嵌套滚动容器（见该处注释）。工具条目由用户主动点开，不自动收。
     msgEl.querySelectorAll(".thinking-details[open]").forEach(d => d.removeAttribute("open"));
     // Tool entries left in .running (missed/out-of-order tool:result) would
     // otherwise blink "运行中" forever via the :has(.running) CSS rule.
     finalizeRunningToolEntries(msgEl);
-    // Collapse open tool bodies: nested overflow-y scrollers under the cursor
-    // swallow wheel-down and make the main list look "stuck" after the answer.
-    msgEl.querySelectorAll(".tool-entry[open]").forEach(d => d.removeAttribute("open"));
 
     // If message only has thinking indicator (no content), replace it
     const textEl = msgEl.querySelector(".message-text");
@@ -2043,6 +2042,7 @@ function toolMeta(name) {
     { re: /web[_ ]?fetch|fetch/i,               icon: "🌐", label: "tool.label.fetch" },
     { re: /file[_ ]?read|read[_ ]?file/i,       icon: "📄", label: "tool.label.read" },
     { re: /file[_ ]?write|write[_ ]?file|edit|patch/i, icon: "✏️", label: "tool.label.write" },
+    { re: /context[_ ]?recall/i,                 icon: "🗄️", label: "tool.label.recall" },
     { re: /task/i,                              icon: "📋", label: "tool.label.task" },
     { re: /agent|subagent/i,                    icon: "🤖", label: "tool.label.agent" },
     { re: /bash|command|exec|shell|terminal/i,  icon: "💻", label: "tool.label.command" },
@@ -2065,6 +2065,14 @@ function formatDuration(ms) {
   const m = Math.floor(s / 60);
   const rs = Math.round(s % 60);
   return `${m}m${rs}s`;
+}
+
+/** token 数 → 千位简写（25400 → "25.4k"，262144 → "262k"） */
+function fmtK(n) {
+  if (!Number.isFinite(n) || n < 0) return "?";
+  if (n < 1000) return String(Math.round(n));
+  const k = n / 1000;
+  return (k < 100 ? k.toFixed(1) : Math.round(k)) + "k";
 }
 
 /* ── Helper: append a thinking details block to message-content ── */
@@ -2371,8 +2379,6 @@ function setupIPC() {
     const textEl = thinkingEl.querySelector(".thinking-text");
     if (textEl) textEl.textContent = state._reasoningBlockText;
     // Auto-scroll the inner thinking body so the latest text is visible
-    const bodyEl = thinkingEl.querySelector(".thinking-body");
-    if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
     autoFollowScroll();
   });
 
@@ -2564,11 +2570,14 @@ function setupIPC() {
     window.aideagent.onContextUsage?.((data) => {
       const el = document.getElementById("context-usage");
       if (!el) return;
-      el.classList.remove("hidden", "ok", "warn", "danger");
+      el.classList.remove("hidden", "ok", "soft", "warn", "danger");
+      const warnPct = typeof data.warnThresholdPct === "number" ? data.warnThresholdPct : 60;
       if (data.usagePct >= 90) {
         el.classList.add("danger");
       } else if (data.usagePct >= 80) {
         el.classList.add("warn");
+      } else if (data.usagePct >= warnPct) {
+        el.classList.add("soft");
       } else if (data.totalTokens > 5000) {
         el.classList.add("ok");
       } else {
@@ -2576,8 +2585,25 @@ function setupIPC() {
         return;
       }
       el.querySelector(".context-usage-bar").style.setProperty("--fill", data.usagePct + "%");
-      el.querySelector(".context-usage-text").textContent = data.usagePct + "%";
-      el.title = `${data.totalTokens.toLocaleString()} / ${data.windowSize.toLocaleString()} tokens`;
+      // 已用/上限在前、百分比在后 —— 百分比 alone 不足以判断「还剩多少 k」，
+      // windowSize 由主进程 context:usage 载荷提供（默认 262144，可被 API
+      // 报错解析更新，见 state.ts setContextWindow）。
+      const win = Number(data.windowSize) || 0;
+      el.querySelector(".context-usage-text").textContent = win
+        ? `${fmtK(data.totalTokens)}/${fmtK(win)} · ${data.usagePct}%`
+        : `${fmtK(data.totalTokens)} · ${data.usagePct}%`;
+      // Breakdown: tool schemas ride in the `tools` field and used to be
+      // invisible here — they're the largest single block (~65% of a bare
+      // request), so the tooltip must surface them.
+      const segs: string[] = [];
+      if (data.systemTokens) segs.push(t("ctx.sys", { n: data.systemTokens.toLocaleString() }));
+      if (data.historyTokens) segs.push(t("ctx.hist", { n: data.historyTokens.toLocaleString() }));
+      if (data.toolResultTokens) segs.push(t("ctx.tool_result", { n: data.toolResultTokens.toLocaleString() }));
+      if (data.toolSchemaTokens) segs.push(t("ctx.tool_schema", { n: data.toolSchemaTokens.toLocaleString() }));
+      let title = `${data.totalTokens.toLocaleString()} / ${data.windowSize.toLocaleString()} tokens`;
+      if (segs.length) title += `\n${segs.join(" · ")}`;
+      if (data.usagePct >= warnPct) title += `\n⚠️ ${t("ctx.soft_warn", { pct: warnPct })}`;
+      el.title = title;
     });
   } catch (e) { /* preload may not be updated yet */ }
 }
@@ -2994,6 +3020,13 @@ document.getElementById("input-area")?.addEventListener(
   },
   { passive: true },
 );
+// ── 消息列表内不再有纵向嵌套滚动容器 ──
+// .thinking-body / .tool-entry-body / .resume-banner pre 的 max-height +
+// overflow-y:auto 已移除（style.css）：展开的思考块/工具结果曾是上千 px 余量
+// 的嵌套 scroller，滚轮先被它吃掉，主列表要等它滚到边才动（实测 494px 余量
+// 时 6 格滚轮主列表只动 120px；真实 reasoning 余量数千 px → 完全滑不动）。
+// 这里曾加过 capture 阶段"假滚动容器转发"兜底，容器不再是 scroller 后它会
+// 造成双倍滚动，故删除。新增消息内可滚动块时必须遵守 overflow-y 不可滚动约定。
 // Session info: wrap localStorage.setItem so any write to an
 // `AideAgent_*` key auto-pushes the snapshot to main. After install,
 // do an initial push so the main process has the current state before

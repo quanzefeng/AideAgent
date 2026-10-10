@@ -2,10 +2,11 @@
 
 import sessionDb from "../session-db.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { openaiCall, anthropicCall } from "./format-adapters.ts";
+import { openaiCall, anthropicCall, getAllToolDefs } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.ts";
-import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation } from "./token-budget.ts";
+import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation, setToolSchemaTokens, estimateToolDefsTokens } from "./token-budget.ts";
+import { archiveDropped, pointerSuffix } from "./context-archive.ts";
 import * as hookManager from "./hook-manager.ts";
 import * as memory from "../memory-store.ts";
 import * as skills from "../skills-store.ts";
@@ -589,6 +590,9 @@ export async function agentLoop(
     if (!sysContent.includes("Do NOT save")) {
       sysContent += `\n\n**Memory hygiene:** Do NOT save code patterns, architecture, or file paths as memories — those are derivable from the current project state. Only save non-obvious context: user preferences, stakeholder decisions, deadlines, corrections, external system references. If a memory claims a function or file exists, verify with grep/file_read before acting on it.`;
     }
+    if (!sysContent.includes("context_recall")) {
+      sysContent += `\n\n**Reversible context compression:** To stay within the context window, oversized tool outputs and old messages are moved into a permanent archive and replaced by short pointers such as \`ca_ab12cd34ef\`. Compression markers (\`[系统] ⚠️ 上下文已自动压缩…\`, \`...(truncated, 原文已归档 #ca_…)\`) list them. When you need the exact original text, call \`context_recall(id="ca_…")\` — with \`query\` instead of \`id\` it full-text searches the archive, with no arguments it lists recent items. Never fabricate archived content from a pointer alone.`;
+    }
 
     // ── L0 token budget check (system content only) ──
     const estTokens = estimateTokens(sysContent);
@@ -748,6 +752,18 @@ export async function agentLoop(
   };
   let _contextMsg = buildContextMsg();
 
+  // ── Tool-schema accounting (P0): schemas travel in the `tools` field, not
+  // in msgs, so they used to be invisible to every budget check despite being
+  // ~65% of a bare request (35 builtins + 38 MCP tools ≈ 16k tokens). Set the
+  // cache once here; estimateMessageTokens() folds it into every total below
+  // (compressContext budget, 70% continuation trigger, context:usage bar).
+  try {
+    setToolSchemaTokens(estimateToolDefsTokens(getAllToolDefs(kbEnabled, webSearchEnabled)));
+  } catch (e: any) {
+    console.error("[agent-loop] tool schema token accounting failed:", e.message);
+    setToolSchemaTokens(0);
+  }
+
   compressContext(msgs);
   sendContextUsage(msgs);
 
@@ -844,9 +860,9 @@ export async function agentLoop(
         if (err.type === 'CONTEXT_SIZE_EXCEEDED' && err.detectedContextWindow) {
           console.log(`[agent-loop] Context size exceeded. Detected window: ${err.detectedContextWindow}. Compressing and retrying...`);
           
-          // Force compress context to 50% of detected window. Use 50% (not 60%)
-          // because our token estimation doesn't count tool_defs or the prompt
-          // template overhead — the API-side real token count is always higher.
+          // Force compress context to 50% of detected window. Tool schemas are
+          // now counted (setToolSchemaTokens above), but the request template
+          // overhead still isn't — so 50% keeps a real margin for retry.
           const targetTokens = Math.floor(err.detectedContextWindow * 0.5);
           let compressAttempt = 0;
           const MAX_COMPRESS_ATTEMPTS = 3;
@@ -862,9 +878,11 @@ export async function agentLoop(
             console.log(`[agent-loop] Compress attempt ${compressAttempt}: ${afterCompress.totalTokens} tokens (target ${targetTokens})`);
             if (afterCompress.totalTokens <= targetTokens) break;
             // Still over target — cut deeper: drop tool results entirely then retry.
+            // REVERSIBLE: archive the full text first, leave a pointer behind.
             for (const m of msgs) {
               if (m.role === "tool" && typeof m.content === "string" && estimateTokens(m.content) > 1000) {
-                m.content = m.content.slice(0, 500) + "\n...(工具输出已截断)...";
+                const id = archiveDropped({ content: m.content, kind: "tool_result", source: "hard_cut", role: "tool", sessionId });
+                m.content = m.content.slice(0, 500) + `\n...(工具输出已截断, ${pointerSuffix([id])})...`;
               }
             }
           }
@@ -989,7 +1007,10 @@ export async function agentLoop(
           let aArgs;
           try { aArgs = JSON.parse(tc.function.arguments); } catch { aArgs = { raw: tc.function.arguments }; }
           let rStr = JSON.stringify(result);
-          if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
+          if (rStr.length > MAX_OUTPUT) {
+            const id = archiveDropped({ content: rStr, kind: "tool_result", source: "MAX_OUTPUT", role: "tool", sessionId });
+            rStr = rStr.slice(0, MAX_OUTPUT) + `\n...(truncated, ${pointerSuffix([id])})`;
+          }
           sdr("tool:result", { name: "Agent", result, toolCallId: tc.id });
           mainToolCalls.push({ id: tc.id, name: "Agent", args: aArgs, result });
           msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
@@ -1006,7 +1027,10 @@ export async function agentLoop(
         try { result = await runTool(tc); } catch (e: any) { result = { error: e.message }; }
 
         let rStr = JSON.stringify(result);
-        if (rStr.length > MAX_OUTPUT) rStr = rStr.slice(0, MAX_OUTPUT) + "\n...(truncated)";
+        if (rStr.length > MAX_OUTPUT) {
+          const id = archiveDropped({ content: rStr, kind: "tool_result", source: "MAX_OUTPUT", role: "tool", sessionId });
+          rStr = rStr.slice(0, MAX_OUTPUT) + `\n...(truncated, ${pointerSuffix([id])})`;
+        }
         sdr("tool:result", { name: tc.function.name, result, toolCallId: tc.id });
         mainToolCalls.push({ id: tc.id, name: tc.function.name, args, result });
         msgs.push({ role: "tool", tool_call_id: tc.id, content: rStr });
@@ -1114,8 +1138,21 @@ export async function agentLoop(
       let recentStart = Math.max(1, msgs.length - 6);
       while (recentStart > 1 && msgs[recentStart]?.role === "tool") recentStart--;
       const recentMsgs = msgs.slice(recentStart);
+      // REVERSIBLE: everything before recentStart is about to disappear from
+      // the live context — archive it first so the model can pull any piece
+      // back with context_recall instead of losing it to summarization.
+      const droppedIds: Array<string | null> = [];
+      for (let i = 1; i < recentStart; i++) {
+        const dm = msgs[i];
+        const text = typeof dm.content === "string" ? dm.content : JSON.stringify(dm.content || "");
+        droppedIds.push(archiveDropped({ content: text, kind: "dropped_segment", source: "continuation", role: dm.role, sessionId }));
+      }
+      const realIds = droppedIds.filter(Boolean) as string[];
+      const archiveNote = realIds.length
+        ? `\n\n> 已裁剪的历史段归档：${realIds.slice(0, 8).map((x) => `#${x}`).join(" ")}${realIds.length > 8 ? ` 等 ${realIds.length} 段` : ""}。需要被裁剪的原文细节时用 context_recall(id=...) 取回。`
+        : "";
       // contextBlock at end → [sys][summary][recent...][ctx] = cacheable prefix for continuation
-      const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。` };
+      const continuationMsg = { role: "user", content: `## 📋 对话摘要\n\n${summary}\n\n请继续完成未完成的工作，避免重复已完成的内容。${archiveNote}` };
       // P0: rebuild context block from LIVE state instead of using stale snapshot
       _contextMsg = buildContextMsg();
       // B6: continuation should re-surface previously-surfaced memories —
@@ -1126,6 +1163,15 @@ export async function agentLoop(
       // the summary's limited budget.
       resetSurfacedMemories();
       msgs = [sysMsg, continuationMsg, ...recentMsgs];
+      // Phase 3c: the rebuild above drops the context block (skills inventory,
+      // MEMORY.md, KB notes, 最近对话) — it sits at index 1, far outside the
+      // 6-message recent window, so every continuation silently lost it and
+      // the model forgot which skills/memories exist. Re-append it (skipping
+      // when the recent window already happens to contain it verbatim).
+      const ctxBaseText = contextBlockBase?.trim() || "";
+      if (ctxBaseText && !recentMsgs.some(m => typeof m.content === "string" && m.content === ctxBaseText)) {
+        msgs.push({ role: "user", content: ctxBaseText });
+      }
       if (_contextMsg) msgs.push(_contextMsg);
 
       sdr("context:continuation-done", {

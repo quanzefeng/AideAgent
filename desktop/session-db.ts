@@ -163,6 +163,33 @@ class SessionDB {
       )
     `);
 
+    // ── Context archive (reversible compression) ──────────────────────
+    // When compressContext / continuation / MAX_OUTPUT drop or truncate
+    // content from the LIVE context, the full original text is stored here
+    // and a short `ca_*` pointer is left in its place. The LLM reads those
+    // pointers back with the `context_recall` tool, which is what makes
+    // compression reversible instead of lossy (previously the text was
+    // destroyed in place and only a 2000-char copy survived in `messages`).
+    this.#ensureOpen().exec(`
+      CREATE TABLE IF NOT EXISTS context_archive (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        kind TEXT NOT NULL,
+        source TEXT,
+        role TEXT,
+        content TEXT NOT NULL,
+        orig_chars INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `);
+    this.#ensureOpen().exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS context_archive_fts USING fts5(
+        archive_id UNINDEXED,
+        content,
+        tokenize='unicode61'
+      )
+    `);
+
     this.#ready = true;
     return this;
   }
@@ -613,6 +640,130 @@ editMessage(messageId: string, newContent: string) {
       }
       throw err;
     }
+  }
+
+  // ── Context archive (reversible compression) ────────────────────────
+
+  /**
+   * Persist content that is about to be dropped/truncated from the live
+   * context, returning a short `ca_*` pointer the model can hand back to
+   * `context_recall`. This is the difference between lossy truncation and
+   * reversible compression: the original text always survives in storage.
+   *
+   * @param {{content: string, kind?: string, source?: string, role?: string, sessionId?: string|null, minChars?: number}} opts
+   *   minChars: skip tiny fragments (noise); callers doing intentional
+   *   large drops pass a threshold, default 0 = archive whatever it gets.
+   * @returns {string|null} archive id, or null when nothing was stored
+   */
+  archiveContext(opts: { content: string, kind?: string, source?: string, role?: string, sessionId?: string | null, minChars?: number }): string | null {
+    const content = opts?.content || "";
+    if (!content) return null;
+    const minChars = opts.minChars ?? 0;
+    if (content.length < minChars) return null;
+    try {
+      const db = this.#ensureOpen();
+      const id = "ca_" + randomUUID().replace(/-/g, "").slice(0, 10);
+      const now = new Date().toISOString();
+      db.prepare(
+        "INSERT INTO context_archive (id, session_id, kind, source, role, content, orig_chars, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(id, opts.sessionId || null, opts.kind || "message", opts.source || "", opts.role || "", content, content.length, now);
+      try {
+        db.prepare("INSERT INTO context_archive_fts(archive_id, content) VALUES (?, ?)").run(id, fts5Normalize(content));
+      } catch { /* FTS failure must not lose the archive row itself */ }
+      this.#pruneContextArchive(opts.sessionId || null);
+      return id;
+    } catch (err: any) {
+      console.error("[session-db] archiveContext failed:", err.message);
+      return null;
+    }
+  }
+
+  /** @param {string} id */
+  readContext(id: string) {
+    if (!id) return null;
+    try {
+      return (this.#ensureOpen().prepare(
+        "SELECT id, session_id, kind, source, role, content, orig_chars, created_at FROM context_archive WHERE id = ?"
+      ).get(id) || null) as any;
+    } catch { return null; }
+  }
+
+  /**
+   * Full-text search over archived content. Used by `context_recall(query)`.
+   * @param {string} query
+   * @param {number} [limit]
+   */
+  searchContext(query: string, limit = 5): Array<{ id: string, kind: string, source: string, orig_chars: number, created_at: string, snippet: string }> {
+    if (!query?.trim()) return [];
+    const out: any[] = [];
+    try {
+      const rows = this.#ensureOpen().prepare(
+        `SELECT a.id, a.kind, a.source, a.orig_chars, a.created_at,
+                snippet(context_archive_fts, 1, '<mark>', '</mark>', '…', 60) AS snippet
+         FROM context_archive_fts JOIN context_archive a ON a.id = context_archive_fts.archive_id
+         WHERE context_archive_fts MATCH ? ORDER BY rank LIMIT ?`
+      ).all(query, limit) as any[];
+      out.push(...rows);
+    } catch { /* MATCH syntax errors fall through to LIKE */ }
+    if (out.length === 0) {
+      try {
+        const rows = this.#ensureOpen().prepare(
+          `SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 120) AS snippet
+           FROM context_archive WHERE content LIKE ? ORDER BY created_at DESC LIMIT ?`
+        ).all("%" + query + "%", limit) as any[];
+        out.push(...rows);
+      } catch { /* ignored */ }
+    }
+    return out;
+  }
+
+  /**
+   * Recent archive entries (metadata + preview). Used by
+   * `context_recall()` with no arguments so the model can see what exists.
+   * @param {number} [limit]
+   * @param {string|null} [sessionId]
+   */
+  listContextArchive(limit = 20, sessionId: string | null = null): Array<{ id: string, kind: string, source: string, orig_chars: number, created_at: string, preview: string }> {
+    try {
+      const sql = sessionId
+        ? "SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 200) AS preview FROM context_archive WHERE session_id = ? ORDER BY created_at DESC LIMIT ?"
+        : "SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 200) AS preview FROM context_archive ORDER BY created_at DESC LIMIT ?";
+      const args: any[] = sessionId ? [sessionId, limit] : [limit];
+      return this.#ensureOpen().prepare(sql).all(...args) as any[];
+    } catch { return []; }
+  }
+
+  /** Remove one archive entry (both FTS and row). Used by TTL pruning/tests. */
+  deleteContext(id: string): boolean {
+    if (!id) return false;
+    try {
+      const db = this.#ensureOpen();
+      try { db.prepare("DELETE FROM context_archive_fts WHERE archive_id = ?").run(id); } catch { /* ignored */ }
+      const info = db.prepare("DELETE FROM context_archive WHERE id = ?").run(id) as any;
+      return Number(info.changes || 0) > 0;
+    } catch { return false; }
+  }
+
+  /** Bounded growth: keep the newest 200 entries per session + 30-day TTL. */
+  #pruneContextArchive(sessionId: string | null) {
+    try {
+      const db = this.#ensureOpen();
+      const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+      const stale = db.prepare("SELECT id FROM context_archive WHERE created_at < ?").all(cutoff) as any[];
+      if (sessionId) {
+        const overflow = db.prepare(
+          "SELECT id FROM context_archive WHERE session_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET 200"
+        ).all(sessionId) as any[];
+        stale.push(...overflow);
+      }
+      if (!stale.length) return;
+      const del = db.prepare("DELETE FROM context_archive WHERE id = ?");
+      const delFts = db.prepare("DELETE FROM context_archive_fts WHERE archive_id = ?");
+      for (const r of stale) {
+        del.run(r.id);
+        try { delFts.run(r.id); } catch { /* ignored */ }
+      }
+    } catch { /* pruning must never break archiving */ }
   }
 
   /** @param {number} [limit] @param {string} [excludeId] */

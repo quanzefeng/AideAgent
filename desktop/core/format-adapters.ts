@@ -4,6 +4,7 @@ import mcpManager from "../mcp-manager.ts";
 import { TOOL_DEFS } from "./tool-definitions.ts";
 import { getPlanMode, PLAN_MODE_READONLY, sendToRenderer, parseContextWindowFromError, setContextWindow, CONTEXT_WINDOW, DEFAULT_CONTEXT_WINDOW, MAX_API_RETRIES, RETRY_BACKOFF_MS, RETRY_MAX_SINGLE_WAIT } from "./state.ts";
 import { estimateMessageTokens } from "./token-budget.ts";
+import { trimToolDefs, defsChars, MCP_TRIM_OPTIONS } from "./tool-schema-trim.ts";
 
 // ── API retry helpers (rate limit / transient 5xx) ────────────
 
@@ -64,7 +65,9 @@ export function isContextOverflowText(errText: string): boolean {
 // from what is actually left in the window instead.
 const MAX_TOKENS_CAP = 65536;
 const MAX_TOKENS_FLOOR = 4096;
-// estimateMessageTokens under-counts (no template overhead, no tool schemas),
+// estimateMessageTokens(msgs, false) omits request-template overhead; tool
+// schemas are added explicitly below from `toolDefs` (the global schema
+// cache is intentionally excluded here to avoid double counting).
 // so scale the prompt estimate up and add a fixed allowance for the request
 // template before taking the window remainder.
 const PROMPT_SAFETY_FACTOR = 1.25;
@@ -78,7 +81,9 @@ const PROMPT_OVERHEAD_TOKENS = 1024;
  */
 export function computeMaxTokens(msgs: any[], toolDefs?: unknown): number {
   const window = CONTEXT_WINDOW || DEFAULT_CONTEXT_WINDOW;
-  const promptTokens = estimateMessageTokens(msgs).totalTokens;
+  // includeToolSchema=false: we add toolsTokens ourselves below, and the
+  // global schema cache may already be populated for this same request.
+  const promptTokens = estimateMessageTokens(msgs, false).totalTokens;
   const toolsTokens = toolDefs ? Math.ceil(JSON.stringify(toolDefs).length / 4) : 0;
   const promptCost = Math.ceil(promptTokens * PROMPT_SAFETY_FACTOR) + toolsTokens + PROMPT_OVERHEAD_TOKENS;
   const available = window - promptCost;
@@ -170,8 +175,17 @@ export function getAllToolDefs(kbEnabled = true, webSearchEnabled = true): Array
   const mcpFilter = webSearchEnabled ? {} : { excludeCategories: ["web-search"] };
   const mcpDefs = mcpManager.listAllToolDefs(mcpFilter);
   console.log("[plan-mode] getAllToolDefs planMode =", planMode, "builtins =", builtins.length, "mcp =", planMode ? 0 : mcpDefs.length);
+  // Phase 4: MCP defs arrive raw from the servers (annotation keys, verbose
+  // property prose) — strip/cap them. Built-ins pass through byte-identical
+  // (their descriptions are hand-tuned for tool choice; see tool-definitions.ts).
+  const mcpRawChars = mcpDefs.length ? defsChars(mcpDefs) : 0;
+  const mcpTrimmed = mcpDefs.length ? trimToolDefs(mcpDefs, MCP_TRIM_OPTIONS) : mcpDefs;
+  if (mcpRawChars) {
+    const saved = mcpRawChars - defsChars(mcpTrimmed);
+    if (saved > 0) console.log(`[mcp-schema] trimmed ${mcpTrimmed.length} defs: ${mcpRawChars} → ${defsChars(mcpTrimmed)} chars (-${saved} ≈ -${Math.round(saved * 0.25)} tok)`);
+  }
   // Deduplicate by tool name — duplicate MCP servers (builtin + imported) can collide
-  const merged = planMode ? builtins : [...builtins, ...mcpDefs];
+  const merged = planMode ? builtins : [...builtins, ...mcpTrimmed];
   const seen = new Set<string>();
   const result: Array<{ type: string, function: { name: string, description: string, parameters: object } }> = [];
   for (const def of merged) {

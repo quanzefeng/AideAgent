@@ -691,7 +691,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           if (["TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent"].includes(name)) return "task";
           if (["skill", "invoke_skill", "create_skill", "list_skills"].includes(name)) return "skill";
           if (name === "write_memory") return "memory";
-          if (["list_memories", "list_kb", "list_mcp", "list_tools"].includes(name)) return "meta";
+          if (["list_memories", "list_kb", "list_mcp", "list_tools", "context_recall"].includes(name)) return "meta";
           return "other";
         };
         const byCategory: Record<string, number> = {};
@@ -711,7 +711,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
             "kb_search", "kb_write", "kb_get_note",
             "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
             "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
-            "get_session_info",
+            "get_session_info", "context_recall",
           ]);
           if (KNOWN_BUILTINS.has(n)) builtins.add(n);
         }
@@ -1184,6 +1184,36 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           format: note.format || null,
           chunks: note.chunks || null,
         };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case "context_recall": {
+      // Phase 2: recover text that compression/continuation moved out of the
+      // live context into session_db.context_archive. Reads are session-scoped
+      // so one session can never surface another session's history.
+      try {
+        const { readArchived, searchArchived, listArchived } = await import("./context-archive.ts");
+        const id = typeof args.id === "string" ? args.id.trim() : "";
+        const query = typeof args.query === "string" ? args.query.trim() : "";
+        const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 20);
+        if (id) {
+          const item = readArchived(id.startsWith("ca_") ? id : `ca_${id}`);
+          if (!item) return { error: `Archived context not found: ${id}. Call context_recall() with no arguments to list recent ids.` };
+          return {
+            id: item.id, kind: item.kind, source: item.source,
+            role: item.role || null, originalChars: item.orig_chars,
+            createdAt: item.created_at, content: item.content,
+          };
+        }
+        if (query) {
+          const results = searchArchived(query, limit);
+          return results.length
+            ? { query, count: results.length, results }
+            : { query, results: [], note: "Nothing matched. Call context_recall() with no arguments to browse recent ids, or re-read the file from disk." };
+        }
+        const results = listArchived(limit, getSessionId() || null);
+        return results.length
+          ? { count: results.length, results }
+          : { results: [], note: "No archived context in this session." };
       } catch (e: any) { return { error: e.message }; }
     }
     case "lsp": {

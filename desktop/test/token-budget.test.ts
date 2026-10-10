@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateTokens, trimToBudget, estimateMessageTokens, compressContext, summarizeForContinuation } from "../core/token-budget.ts";
+import { estimateTokens, trimToBudget, estimateMessageTokens, compressContext, summarizeForContinuation, setToolSchemaTokens, getToolSchemaTokens, estimateToolDefsTokens } from "../core/token-budget.ts";
 
 describe("Token Budget", () => {
   describe("estimateTokens", () => {
@@ -186,6 +186,103 @@ describe("Token Budget", () => {
       expect(summary).toMatch(/src\/auth\/login\.ts|login\.ts/);
       expect(summary).toMatch(/validateToken/);
       expect(summary).toMatch(/TypeError|exp|Cannot read/);
+    });
+  });
+
+  // P0: tool schemas ride in the request's `tools` field, so they were
+  // invisible to every budget check despite being ~65% of a bare request.
+  describe("tool schema token accounting", () => {
+    it("folds the cached schema bucket into estimateMessageTokens", () => {
+      const msgs = [{ role: "user", content: "hi" }];
+      setToolSchemaTokens(12345);
+      try {
+        const withSchema = estimateMessageTokens(msgs);
+        expect(withSchema.toolSchemaTokens).toBe(12345);
+        expect(withSchema.totalTokens).toBe(
+          withSchema.systemTokens + withSchema.historyTokens + withSchema.toolResultTokens + 12345
+        );
+        // Opt-out path used by computeMaxTokens (it adds tools separately).
+        const without = estimateMessageTokens(msgs, false);
+        expect(without.toolSchemaTokens).toBe(0);
+        expect(without.totalTokens).toBeLessThan(withSchema.totalTokens);
+        expect(getToolSchemaTokens()).toBe(12345);
+      } finally {
+        setToolSchemaTokens(0);
+      }
+    });
+
+    it("accepts invalid input as 0 and estimates a tool-def array", () => {
+      setToolSchemaTokens(Number.NaN);
+      expect(getToolSchemaTokens()).toBe(0);
+      setToolSchemaTokens(-5);
+      expect(getToolSchemaTokens()).toBe(0);
+      const defs = [{ type: "function", function: { name: "x", description: "abcdefgh", parameters: {} } }];
+      expect(estimateToolDefsTokens(defs)).toBeGreaterThan(0);
+      expect(estimateToolDefsTokens(null)).toBe(0);
+    });
+  });
+
+  // Phase 2: compression must be reversible — the dropped text is archived and
+  // a `ca_*` pointer is left behind instead of a silent deletion.
+  describe("reversible compression", () => {
+    it("archives the truncated middle of a long tool result and leaves a pointer", async () => {
+      const { setContextArchiveEnabled, readArchived } = await import("../core/context-archive.ts");
+      const { default: sessionDb } = await import("../session-db.ts");
+      setContextArchiveEnabled(true);
+      const big = "L" + "o".repeat(9000); // 9001 chars ≫ TOOL_RESULT_KEEP_CHARS
+      const msgs: any[] = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "u0" },
+        { role: "tool", tool_call_id: "t_long", content: big },
+        { role: "assistant", content: "a0" },
+        { role: "user", content: "u1" },
+        { role: "assistant", content: "a1" },
+        { role: "user", content: "u2" },
+        { role: "assistant", content: "a2" },
+        { role: "user", content: "recent question" },
+        { role: "assistant", content: "tail" },
+      ];
+      try {
+        const result = compressContext(msgs, 50);
+        expect(result.compressed).toBe(true);
+
+        const tool = msgs.find(m => m.role === "tool" && m.tool_call_id === "t_long");
+        expect(tool.content.length).toBeLessThan(big.length);
+        const match = tool.content.match(/ca_[0-9a-f]{10}/);
+        expect(match).toBeTruthy();
+
+        // The archived copy is byte-identical to the original text.
+        const row = readArchived(match![0]);
+        expect(row?.content).toBe(big);
+        sessionDb.deleteContext(match![0]);
+      } finally {
+        setContextArchiveEnabled(true);
+      }
+    });
+
+    it("says the text is unrecoverable when archiving is disabled", async () => {
+      const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+      setContextArchiveEnabled(false);
+      const msgs: any[] = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "u0" },
+        { role: "tool", tool_call_id: "t_short", content: "Q".repeat(9000) },
+        { role: "assistant", content: "a0" },
+        { role: "user", content: "u1" },
+        { role: "assistant", content: "a1" },
+        { role: "user", content: "u2" },
+        { role: "assistant", content: "a2" },
+        { role: "user", content: "recent" },
+        { role: "assistant", content: "tail" },
+      ];
+      try {
+        compressContext(msgs, 50);
+        const tool = msgs.find(m => m.role === "tool" && m.tool_call_id === "t_short");
+        expect(tool.content).toContain("不可恢复");
+        expect(tool.content).not.toContain("ca_");
+      } finally {
+        setContextArchiveEnabled(true);
+      }
     });
   });
 });

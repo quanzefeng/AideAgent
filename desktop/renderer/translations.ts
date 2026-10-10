@@ -487,6 +487,7 @@ const translations = {
     "tool.label.search_generic": "搜索",
     "tool.label.mcp": "MCP 工具",
     "tool.label.generic": "工具调用",
+    "tool.label.recall": "取回归档",
 
     // ── File Upload ──
     "file.remove": "移除",
@@ -572,6 +573,11 @@ const translations = {
     "chat.welcome_title": "AideAgent",
     "chat.task_progress": "当前任务进度",
     "chat.context_usage": "上下文使用量",
+    "ctx.sys": "系统提示 {n}",
+    "ctx.hist": "历史 {n}",
+    "ctx.tool_result": "工具结果 {n}",
+    "ctx.tool_schema": "工具定义 {n}",
+    "ctx.soft_warn": "已超过 {pct}% 软阈值，将优先卸载无关上下文",
 
     // ── Runtime Selector ──
     "runtime.choose": "选择一个 Agent 开始",
@@ -1168,6 +1174,7 @@ const translations = {
     "tool.label.search_generic": "Search",
     "tool.label.mcp": "MCP tool",
     "tool.label.generic": "Tool call",
+    "tool.label.recall": "Recall archive",
 
     // ── File Upload ──
     "file.remove": "Remove",
@@ -1253,6 +1260,11 @@ const translations = {
     "chat.welcome_title": "AideAgent",
     "chat.task_progress": "Task Progress",
     "chat.context_usage": "Context Usage",
+    "ctx.sys": "system {n}",
+    "ctx.hist": "history {n}",
+    "ctx.tool_result": "tool results {n}",
+    "ctx.tool_schema": "tool schemas {n}",
+    "ctx.soft_warn": "past {pct}% soft threshold — unrelated context will be offloaded first",
 
     // ── Runtime Selector ──
     "runtime.choose": "Choose an Agent to start",
