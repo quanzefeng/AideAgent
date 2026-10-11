@@ -74,4 +74,40 @@ describe("context archive (reversible compression)", () => {
       expect(readArchived("ca_doesnotexist")).toBe(null);
     });
   });
+
+  describe("session scoping (audit fix C2)", () => {
+    it("denies reads/searches/lists of another session's rows", () => {
+      setContextArchiveEnabled(true);
+      const id = track(archiveDropped({
+        content: "SESAMARKER77B1 " + "s".repeat(600),
+        kind: "tool_result", source: "test", role: "tool", sessionId: "ses_A",
+      })!);
+      expect(id).toBeTruthy();
+      // owning session can read…
+      const own = readArchived(id!, "ses_A");
+      expect(own).toBeTruthy();
+      expect(own.content).toContain("SESAMARKER77B1");
+      // …a different session cannot (this is the sub-agent leak path)…
+      expect(readArchived(id!, "ses_B")).toBe(null);
+      // …and an unscoped read still works (no session context in play)
+      expect(readArchived(id!)).toBeTruthy();
+      // search scopes the same way
+      expect(searchArchived("SESAMARKER77B1", 5, "ses_B").some((h: any) => h.id === id)).toBe(false);
+      expect(searchArchived("SESAMARKER77B1", 5, "ses_A").some((h: any) => h.id === id)).toBe(true);
+      // list scopes the same way
+      expect(listArchived(50, "ses_B").some((l: any) => l.id === id)).toBe(false);
+      expect(listArchived(50, "ses_A").some((l: any) => l.id === id)).toBe(true);
+    });
+
+    it("keeps legacy rows (session_id NULL) readable from any session", () => {
+      setContextArchiveEnabled(true);
+      const id = track(archiveDropped({
+        content: "LEGACYROW2E44 " + "l".repeat(600),
+        kind: "message", source: "test", role: "user", sessionId: null,
+      })!);
+      expect(id).toBeTruthy();
+      expect(readArchived(id!, "ses_A")).toBeTruthy();
+      expect(searchArchived("LEGACYROW2E44", 5, "ses_B").some((h: any) => h.id === id)).toBe(true);
+    });
+  });
 });

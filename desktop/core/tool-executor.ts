@@ -34,6 +34,9 @@ function persistSessionState() {
   } catch { /* persistence is best-effort; never block tool execution */ }
 }
 
+/** Memory body cap (audit fix P2): injected summaries stay small; full text via read_memory. */
+const MEMORY_CONTENT_MAX_CHARS = 2000;
+
 // Re-export for use by other modules
 export { runShell, isDangerous, requestPermission };
 
@@ -175,7 +178,7 @@ function isSafeUrl(u: string): boolean {
 }
 
 // Lazy imports for circular dependency avoidance
-let _runSubAgent: ((description: string, prompt: string, subAgentId?: string | null) => Promise<{ text: string, aborted?: boolean }>) | null = null;
+let _runSubAgent: ((description: string, prompt: string, subAgentId?: string | null) => Promise<{ text: string, aborted?: boolean, structured?: import("./sub-agent.ts").SubAgentStructured | null }>) | null = null;
 async function getRunSubAgent() {
   if (!_runSubAgent) {
     const mod = await import("./sub-agent.ts");
@@ -706,7 +709,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           // are anything else. Use a list of known built-ins for now.
           const KNOWN_BUILTINS = new Set([
             "bash", "file_read", "file_write", "file_edit", "grep", "glob", "lsp",
-            "web_search", "web_fetch", "write_memory", "skill", "invoke_skill", "create_skill",
+            "web_search", "web_fetch", "write_memory", "read_memory", "skill", "invoke_skill", "create_skill",
             "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite", "AskUserQuestion", "Agent",
             "kb_search", "kb_write", "kb_get_note",
             "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
@@ -963,20 +966,37 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
       try {
         const { type, content, name, description, filename } = args;
         if (!type || !content) return { error: "type and content required" };
+        // Cap the body (audit fix P2): a single memory must not balloon —
+        // injected summaries stay small and the full text is expanded via
+        // read_memory on demand.
+        const rawBody = String(content);
+        const body = rawBody.length > MEMORY_CONTENT_MAX_CHARS
+          ? rawBody.slice(0, MEMORY_CONTENT_MAX_CHARS) + `\n…(超出 ${MEMORY_CONTENT_MAX_CHARS} 字已截断)`
+          : rawBody;
         if (memory.checkDuplicate(type, content)) return { note: "Similar memory already exists — nothing new added" };
 
         const memName = name || (type + "_" + Date.now().toString(36));
         const memDesc = description || "Memory of type " + type;
 
         if (filename) {
-          const result = memory.updateMemory(filename, content, memName, memDesc, type);
+          const result = memory.updateMemory(filename, body, memName, memDesc, type);
           if (result.error) return result;
           return { saved: true, type, name: memName, filename: result.filename || filename, updated: true };
         }
 
-        const result = memory.createMemory(memName, memDesc, type, content);
+        const result = memory.createMemory(memName, memDesc, type, body);
         if (result.error) return result;
         return { saved: true, type, name: result.name, filename: result.filename };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case "read_memory": {
+      // Audit fix P2: expansion path for truncated memory summaries.
+      try {
+        const filename = typeof args.filename === "string" ? args.filename.trim() : "";
+        if (!filename) return { error: "filename required" };
+        const mem = memory.readMemory(filename);
+        if (!mem) return { error: `Memory not found: ${filename}. Use list_memories to see available files.` };
+        return { filename: mem.filename, name: mem.name, description: mem.description, type: mem.type, body: mem.body };
       } catch (e: any) { return { error: e.message }; }
     }
     case "invoke_skill": {
@@ -1111,7 +1131,11 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
         const result = await runSubAgent(args.description, args.prompt, subAgentId);
         const output = result.text || "(no result)";
         sendToRenderer("subagent:done", { id: subAgentId, description: args.description, output });
-        return { output, aborted: result.aborted || false };
+        // Audit fix C4: pass text/structured through alongside the legacy
+        // `output` field — agent-loop's summarizeSubAgentResult reads them to
+        // replace large structured replies with a summary + archive pointer.
+        // Dropping them here silently disabled that path in production.
+        return { output, text: result.text || "", structured: result.structured ?? null, aborted: result.aborted || false };
       } catch (e: any) {
         sendToRenderer("subagent:done", { id: subAgentId, description: args.description, error: e.message });
         return { error: e.message };
@@ -1188,15 +1212,18 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
     }
     case "context_recall": {
       // Phase 2: recover text that compression/continuation moved out of the
-      // live context into session_db.context_archive. Reads are session-scoped
-      // so one session can never surface another session's history.
+      // live context into session_db.context_archive. Reads are scoped to the
+      // current session (audit fix C2 — the previous code claimed this in a
+      // comment but read/search had no session filter, so any session — or a
+      // sub-agent inside it — could surface another session's history).
+      // Legacy rows with session_id IS NULL remain readable from any session.
       try {
         const { readArchived, searchArchived, listArchived } = await import("./context-archive.ts");
         const id = typeof args.id === "string" ? args.id.trim() : "";
         const query = typeof args.query === "string" ? args.query.trim() : "";
         const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 20);
         if (id) {
-          const item = readArchived(id.startsWith("ca_") ? id : `ca_${id}`);
+          const item = readArchived(id.startsWith("ca_") ? id : `ca_${id}`, getSessionId());
           if (!item) return { error: `Archived context not found: ${id}. Call context_recall() with no arguments to list recent ids.` };
           return {
             id: item.id, kind: item.kind, source: item.source,
@@ -1205,7 +1232,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           };
         }
         if (query) {
-          const results = searchArchived(query, limit);
+          const results = searchArchived(query, limit, getSessionId());
           return results.length
             ? { query, count: results.length, results }
             : { query, results: [], note: "Nothing matched. Call context_recall() with no arguments to browse recent ids, or re-read the file from disk." };

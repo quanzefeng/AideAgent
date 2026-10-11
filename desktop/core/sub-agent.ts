@@ -7,7 +7,8 @@ interface ApiConfig {
   apiFormat?: string;
 }
 
-import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer, parseContextWindowFromError, setContextWindow } from "./state.ts";
+import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer, parseContextWindowFromError, setContextWindow, getSessionId } from "./state.ts";
+import { archiveDropped, pointerSuffix } from "./context-archive.ts";
 import { getAllToolDefs, computeMaxTokens, isContextOverflowText } from "./format-adapters.ts";
 import { runTool } from "./tool-executor.ts";
 
@@ -23,7 +24,59 @@ interface SubAgentMessage {
   tool_call_id?: string;
 }
 
-export async function runSubAgent(description: string, prompt: string, subAgentId: string | null = null): Promise<{ text: string, aborted?: boolean }> {
+// ── Soft-structured return (audit fix C4, P1) ────────────────
+// The system prompt asks sub-agents to end research-style replies with fixed
+// `## 结论 / ## 关键证据 / ## 未解决问题 / ## 建议的下一步` sections. We
+// parse them best-effort: parseStructured returns null for plain-text replies,
+// and the parent loop then substitutes a short summary for the raw dump when
+// the text is large (see summarizeSubAgentResult in agent-loop.ts). Soft, not
+// hard: a sub-agent that ignores the format degrades to raw text, never fails.
+export interface SubAgentStructured {
+  conclusion: string;
+  evidence: string;
+  openIssues: string;
+  nextStep: string;
+}
+
+export function parseStructured(text: string): SubAgentStructured | null {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const HEADER_LABELS = ["结论", "关键证据", "未解决问题", "建议的下一步"];
+  // A section header is a whole line `## <label>` (exact label, trimmed).
+  // Line-based + code-fence aware: `## ` lines INSIDE a ```fence``` (python
+  // comments, shell comments, config files) never terminate a section, and an
+  // empty section (header immediately followed by the next header) yields ""
+  // so the conclusion guard below still fires. (The old single-regex version
+  // mis-parsed both cases.)
+  const headerOf = (l: string): string | null => {
+    const m = l.match(/^##\s*(.+?)\s*$/);
+    if (!m || !HEADER_LABELS.includes(m[1].trim())) return null;
+    return m[1].trim();
+  };
+  const grab = (label: string): string => {
+    const start = lines.findIndex(l => headerOf(l) === label);
+    if (start === -1) return "";
+    const out: string[] = [];
+    let inFence = false;
+    for (let i = start + 1; i < lines.length; i++) {
+      const l = lines[i];
+      if (/^\s*```/.test(l)) { inFence = !inFence; out.push(l); continue; }
+      if (!inFence && headerOf(l)) break; // next canonical section header
+      out.push(l);
+    }
+    return out.join("\n").trim();
+  };
+  const conclusion = grab("结论");
+  if (!conclusion) return null; // no conclusion block → not a structured reply
+  return {
+    conclusion,
+    evidence: grab("关键证据"),
+    openIssues: grab("未解决问题"),
+    nextStep: grab("建议的下一步"),
+  };
+}
+
+export async function runSubAgent(description: string, prompt: string, subAgentId: string | null = null): Promise<{ text: string, aborted?: boolean, structured?: SubAgentStructured | null }> {
   const cfg: ApiConfig = getLastApiConfig() as any;
   if (!cfg.apiKey || !cfg.apiUrl) return { text: "(子代理不可用：请先在主对话中发送一条消息激活 API)" };
 
@@ -36,9 +89,15 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
   const subTools = allToolDefs.filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
 
   const sysContent = `你是 AideAgent 的子代理，拥有完整工具集。
-可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, context_recall（取回被压缩移出上下文的原文）, TaskCreate, TaskUpdate, TaskList, TodoWrite, AskUserQuestion。
+可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, context_recall（取回被压缩移出上下文的原文）, TaskList, AskUserQuestion。
 你的任务是: ${prompt}
-完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。`;
+完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。
+重要：如果任务适合结构化汇报（调研/审计/搜索类），请在最终回复末尾附上以下小节（没有内容就写"无"）：
+## 结论
+## 关键证据
+## 未解决问题
+## 建议的下一步
+不适合（如纯文本翻译/写作）就直接返回文本，不要硬套格式。`;
   const msgs: SubAgentMessage[] = [
     { role: "system", content: sysContent },
     { role: "user", content: prompt },
@@ -215,18 +274,29 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
         }
         let result: any;
         try { result = await runTool(tc as any); } catch (e) { result = { error: (e as any).message }; }
-        const resultStr = JSON.stringify(result).slice(0, 16000);
-        msgs.push({ role: "tool", tool_call_id: tc.id, content: resultStr });
+        const fullStr = JSON.stringify(result);
+        // REVERSIBLE (audit fix H2): the 16K tool-result cap used to be a
+        // silent irreversible cut (a code-audit sub-agent's result easily
+        // exceeds it). Archive the full text first and leave a pointer so the
+        // parent can context_recall the lost tail.
+        if (fullStr.length > 16000) {
+          const id = archiveDropped({ content: fullStr, kind: "tool_result", source: "sub_agent", role: "tool", sessionId: getSessionId() });
+          msgs.push({ role: "tool", tool_call_id: tc.id, content: fullStr.slice(0, 16000) + `\n...(已截断: ${fullStr.length - 16000} chars 被移出上下文, ${pointerSuffix([id])})...` });
+        } else {
+          msgs.push({ role: "tool", tool_call_id: tc.id, content: fullStr });
+        }
       }
     }
   } catch (err) {
     const e = err as any;
-    if (e.name === "AbortError") return { text: allText || "(aborted)", aborted: true };
-    return { text: allText || `(子代理错误: ${e.message})` };
+    // Structured parse on the partial text too: a sub-agent that produced the
+    // full structured block before being aborted still deserves summarization.
+    if (e.name === "AbortError") return { text: allText || "(aborted)", aborted: true, structured: parseStructured(allText) };
+    return { text: allText || `(子代理错误: ${e.message})`, structured: parseStructured(allText) };
   } finally {
     _subAgentCtrls.delete(id);
   }
 
   sendToRenderer("subagent:progress", { id, description, turn: -1, content: "", tcsCount: 0, done: true });
-  return { text: allText || "(no result)" };
+  return { text: allText || "(no result)", structured: parseStructured(allText) };
 }

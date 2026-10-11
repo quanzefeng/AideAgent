@@ -201,9 +201,18 @@ function enforceTypeCaps(llmPicked: MemoryEntry[], allCandidates: MemoryEntry[],
   return picked.slice(0, totalLimit);
 }
 
+// §6 检索规则 (audit fix P2): prefer a structured summary in-context; expand
+// on demand. Bodies longer than this are injected truncated with a pointer to
+// the read_memory tool, so a few long memories can't eat the working memory.
+const MEMORY_INJECT_MAX_CHARS = 800;
+
 function renderMemories(memories: MemoryEntry[]): string {
   return memories.map(m => {
     const ageNote = memory.memoryFreshnessNote(m.mtimeMs);
-    return `\n### [${m.type}] ${m.name}${ageNote}\n${m.body}`;
+    let body = m.body;
+    if (body.length > MEMORY_INJECT_MAX_CHARS) {
+      body = body.slice(0, MEMORY_INJECT_MAX_CHARS) + `\n…(全文 ${m.body.length} 字，需要细节时用 read_memory(filename="${m.filename}"))`;
+    }
+    return `\n### [${m.type}] ${m.name}${ageNote}\n${body}`;
   }).join("\n");
 }

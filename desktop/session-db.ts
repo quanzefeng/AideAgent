@@ -678,13 +678,21 @@ editMessage(messageId: string, newContent: string) {
     }
   }
 
-  /** @param {string} id */
-  readContext(id: string) {
+  /**
+   * @param {string} id
+   * @param {string|null} [sessionId] — when given, only rows of that session
+   *   (or legacy rows with session_id IS NULL) are visible. Audit fix C2:
+   *   before this, any session could read any other session's archived text.
+   */
+  readContext(id: string, sessionId?: string | null) {
     if (!id) return null;
     try {
-      return (this.#ensureOpen().prepare(
-        "SELECT id, session_id, kind, source, role, content, orig_chars, created_at FROM context_archive WHERE id = ?"
-      ).get(id) || null) as any;
+      const db = this.#ensureOpen();
+      const sql = sessionId
+        ? "SELECT id, session_id, kind, source, role, content, orig_chars, created_at FROM context_archive WHERE id = ? AND (session_id = ? OR session_id IS NULL)"
+        : "SELECT id, session_id, kind, source, role, content, orig_chars, created_at FROM context_archive WHERE id = ?";
+      const row = sessionId ? db.prepare(sql).get(id, sessionId) : db.prepare(sql).get(id);
+      return (row || null) as any;
     } catch { return null; }
   }
 
@@ -692,25 +700,28 @@ editMessage(messageId: string, newContent: string) {
    * Full-text search over archived content. Used by `context_recall(query)`.
    * @param {string} query
    * @param {number} [limit]
+   * @param {string|null} [sessionId] — same scoping rule as readContext.
    */
-  searchContext(query: string, limit = 5): Array<{ id: string, kind: string, source: string, orig_chars: number, created_at: string, snippet: string }> {
+  searchContext(query: string, limit = 5, sessionId?: string | null): Array<{ id: string, kind: string, source: string, orig_chars: number, created_at: string, snippet: string }> {
     if (!query?.trim()) return [];
     const out: any[] = [];
     try {
+      const scoped = sessionId ? " AND (a.session_id = ? OR a.session_id IS NULL)" : "";
       const rows = this.#ensureOpen().prepare(
         `SELECT a.id, a.kind, a.source, a.orig_chars, a.created_at,
                 snippet(context_archive_fts, 1, '<mark>', '</mark>', '…', 60) AS snippet
          FROM context_archive_fts JOIN context_archive a ON a.id = context_archive_fts.archive_id
-         WHERE context_archive_fts MATCH ? ORDER BY rank LIMIT ?`
-      ).all(query, limit) as any[];
+         WHERE context_archive_fts MATCH ?${scoped} ORDER BY rank LIMIT ?`
+      ).all(...(sessionId ? [query, sessionId, limit] : [query, limit]));
       out.push(...rows);
     } catch { /* MATCH syntax errors fall through to LIKE */ }
     if (out.length === 0) {
       try {
+        const scoped = sessionId ? " AND (session_id = ? OR session_id IS NULL)" : "";
         const rows = this.#ensureOpen().prepare(
           `SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 120) AS snippet
-           FROM context_archive WHERE content LIKE ? ORDER BY created_at DESC LIMIT ?`
-        ).all("%" + query + "%", limit) as any[];
+           FROM context_archive WHERE content LIKE ?${scoped} ORDER BY created_at DESC LIMIT ?`
+        ).all(...(sessionId ? ["%" + query + "%", sessionId, limit] : ["%" + query + "%", limit]));
         out.push(...rows);
       } catch { /* ignored */ }
     }
@@ -726,7 +737,7 @@ editMessage(messageId: string, newContent: string) {
   listContextArchive(limit = 20, sessionId: string | null = null): Array<{ id: string, kind: string, source: string, orig_chars: number, created_at: string, preview: string }> {
     try {
       const sql = sessionId
-        ? "SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 200) AS preview FROM context_archive WHERE session_id = ? ORDER BY created_at DESC LIMIT ?"
+        ? "SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 200) AS preview FROM context_archive WHERE (session_id = ? OR session_id IS NULL) ORDER BY created_at DESC LIMIT ?"
         : "SELECT id, kind, source, orig_chars, created_at, substr(content, 1, 200) AS preview FROM context_archive ORDER BY created_at DESC LIMIT ?";
       const args: any[] = sessionId ? [sessionId, limit] : [limit];
       return this.#ensureOpen().prepare(sql).all(...args) as any[];

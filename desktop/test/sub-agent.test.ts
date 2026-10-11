@@ -8,12 +8,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const stateMock = {
   SUB_AGENT_TOOL_NAMES: new Set([
     "bash", "file_read", "file_write", "file_edit", "grep",
-    "write_memory", "AskUserQuestion", "TodoWrite",
+    "write_memory", "AskUserQuestion",
     "kb_search", "kb_get_note", "kb_write",
   ]),
   SUB_AGENT_MAX_TURNS: 12,
   _subAgentCtrls: new Map(),
   getLastApiConfig: vi.fn(),
+  getSessionId: vi.fn(() => null),
   sendToRenderer: vi.fn(),
   parseContextWindowFromError: vi.fn(() => null),
   setContextWindow: vi.fn(),
@@ -230,6 +231,65 @@ describe("sub-agent.ts", () => {
     expect(body.messages.find((m: any) => m.role === "tool").content).toContain("FILE_CONTENTS_42");
   });
 
+  it("archives an oversized tool result before the 16K cut (audit fix H2)", async () => {
+    stateMock.getLastApiConfig.mockReturnValue({
+      apiKey: "sk-test", apiUrl: "https://api.example.com/v1/chat/completions",
+      model: "deepseek-chat", apiFormat: "openai",
+    });
+    const { setContextArchiveEnabled, readArchived } = await import("../core/context-archive.ts");
+    const { default: sessionDb } = await import("../session-db.ts");
+    setContextArchiveEnabled(true);
+
+    runToolMock.mockResolvedValueOnce({ huge: "H2_MARKER_4d9e " + "x".repeat(20000) });
+
+    const toolCallArgs = JSON.stringify({ path: "/tmp/big.txt" });
+    mockFetchNext([
+      sseResponse([
+        `data: ${JSON.stringify({
+          choices: [{
+            delta: { tool_calls: [{ index: 0, id: "call_h2", function: { name: "file_read", arguments: "" } }] },
+            finish_reason: null,
+          }],
+        })}\n\n`,
+        `data: ${JSON.stringify({
+          choices: [{
+            delta: { tool_calls: [{ index: 0, function: { arguments: toolCallArgs } }] },
+            finish_reason: "tool_calls",
+          }],
+        })}\n\n`,
+        openaiDone(),
+      ]),
+      sseResponse([
+        openaiSseChunk({ content: "done" }),
+        openaiDone(),
+      ]),
+    ]);
+
+    let cleanupId: string | null = null;
+    try {
+      const { runSubAgent } = await import("../core/sub-agent.ts");
+      const result = await runSubAgent("read", "read /tmp/big.txt");
+      expect(result.text).toBe("done");
+
+      // The 16K-cut tool message fed back to the LLM keeps head + ca_* pointer.
+      const body = JSON.parse(fetchCalls[1].init.body);
+      const toolMsg = body.messages.find((m: any) => m.role === "tool");
+      const m = toolMsg.content.match(/ca_[0-9a-f]{10}/);
+      expect(m, "16K-cut tool result must carry a ca_* pointer").toBeTruthy();
+      cleanupId = m[0];
+      // The archived copy is the full original (>16K), retrievable verbatim.
+      const row = readArchived(m[0]);
+      expect(row?.content).toContain("H2_MARKER_4d9e");
+      expect(row!.content.length).toBeGreaterThan(16000);
+      expect(toolMsg.content.length).toBeLessThanOrEqual(16100);
+    } finally {
+      // Hygiene: even on assertion failure, never leak a NULL-session archive
+      // row into the user's real DB (NULL rows are readable from any session).
+      if (cleanupId) sessionDb.deleteContext(cleanupId);
+      setContextArchiveEnabled(true); // back to module default
+    }
+  });
+
   it("rejects tool not in SUB_AGENT_TOOL_NAMES (returns error, does not run)", async () => {
     stateMock.getLastApiConfig.mockReturnValue({
       apiKey: "sk-test", apiUrl: "https://api.example.com/v1/chat/completions",
@@ -254,6 +314,38 @@ describe("sub-agent.ts", () => {
 
     const { runSubAgent } = await import("../core/sub-agent.ts");
     const result = await runSubAgent("test", "do bad thing");
+
+    expect(runToolMock).not.toHaveBeenCalled();
+    const lastCall = fetchCalls[1];
+    const body = JSON.parse(lastCall.init.body);
+    const toolMsg = body.messages.find((m: any) => m.role === "tool");
+    expect(toolMsg.content).toContain("not available to sub-agent");
+    expect(result.text).toBe("ok");
+  });
+
+  it("rejects structured-state write tools (TaskUpdate) — audit fix C3", async () => {
+    stateMock.getLastApiConfig.mockReturnValue({
+      apiKey: "sk-test", apiUrl: "https://api.example.com/v1/chat/completions",
+      model: "deepseek-chat", apiFormat: "openai",
+    });
+    mockFetchNext([
+      sseResponse([
+        `data: ${JSON.stringify({
+          choices: [{
+            delta: { tool_calls: [{ index: 0, id: "call_tu", function: { name: "TaskUpdate", arguments: "{}" } }] },
+            finish_reason: "tool_calls",
+          }],
+        })}\n\n`,
+        openaiDone(),
+      ]),
+      sseResponse([
+        openaiSseChunk({ content: "ok" }),
+        openaiDone(),
+      ]),
+    ]);
+
+    const { runSubAgent } = await import("../core/sub-agent.ts");
+    const result = await runSubAgent("test", "update task state");
 
     expect(runToolMock).not.toHaveBeenCalled();
     const lastCall = fetchCalls[1];
@@ -304,7 +396,7 @@ describe("sub-agent.ts", () => {
       return sseResponse([
         `data: ${JSON.stringify({
           choices: [{
-            delta: { tool_calls: [{ index: 0, id: "call_loop", function: { name: "TodoWrite", arguments: "{}" } }] },
+            delta: { tool_calls: [{ index: 0, id: "call_loop", function: { name: "file_read", arguments: "{}" } }] },
             finish_reason: "tool_calls",
           }],
         })}\n\n`,
@@ -371,11 +463,13 @@ describe("sub-agent.ts", () => {
     expect(stateMock._subAgentCtrls.size).toBe(0); // cleaned up
   });
 
-  it("truncates tool result to 16000 chars", async () => {
+  it("truncates tool result to 16000 chars (with reversible marker, H2)", async () => {
     stateMock.getLastApiConfig.mockReturnValue({
       apiKey: "sk-test", apiUrl: "https://api.example.com/v1/chat/completions",
       model: "deepseek-chat", apiFormat: "openai",
     });
+    const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+    setContextArchiveEnabled(false); // no DB writes in this test
     const hugeResult = { content: "X".repeat(50000) };
     runToolMock.mockResolvedValueOnce(hugeResult);
 
@@ -401,7 +495,12 @@ describe("sub-agent.ts", () => {
     const lastCall = fetchCalls[1];
     const body = JSON.parse(lastCall.init.body);
     const toolMsg = body.messages.find((m: any) => m.role === "tool");
-    expect(toolMsg.content.length).toBeLessThanOrEqual(16000);
+    // Head of the original is preserved verbatim; only the marker is appended.
+    expect(toolMsg.content.slice(0, 16000)).toBe(JSON.stringify(hugeResult).slice(0, 16000));
+    expect(toolMsg.content.length).toBeGreaterThanOrEqual(16000);
+    expect(toolMsg.content.length).toBeLessThanOrEqual(16100);
+    // Archive disabled → the honest fallback, never a fabricated pointer.
+    expect(toolMsg.content).toContain("不可恢复");
   });
 
   it("drops reasoning_content field for Anthropic (DeepSeek-specific)", async () => {
@@ -445,5 +544,72 @@ describe("sub-agent.ts", () => {
       "subagent:progress",
       expect.objectContaining({ id: "my_custom_id" })
     );
+  });
+});
+
+describe("structured return (audit fix C4)", () => {
+  it("parses the fixed structured sections from a research-style reply", async () => {
+    const { parseStructured } = await import("../core/sub-agent.ts");
+    const parsed = parseStructured(
+      "先分析了一堆文件，结论如下：\n## 结论\n发现 3 个 bug\n## 关键证据\n- a.ts:10 空指针\n- b.ts:20 死循环\n## 未解决问题\n无\n## 建议的下一步\n跑测试验证"
+    );
+    expect(parsed).toEqual({
+      conclusion: "发现 3 个 bug",
+      evidence: "- a.ts:10 空指针\n- b.ts:20 死循环",
+      openIssues: "无",
+      nextStep: "跑测试验证",
+    });
+  });
+
+  it("returns null for a plain-text reply (soft, not hard)", async () => {
+    const { parseStructured } = await import("../core/sub-agent.ts");
+    expect(parseStructured("这是一段普通翻译文本，没有任何结构化小节。")).toBe(null);
+    expect(parseStructured("")).toBe(null);
+    expect(parseStructured(null as any)).toBe(null);
+  });
+
+  it("returns null when the conclusion section is empty (header followed by next header)", async () => {
+    const { parseStructured } = await import("../core/sub-agent.ts");
+    // Regression (review finding): the old regex let \s* swallow the newline
+    // and captured the NEXT header as the conclusion.
+    const parsed = parseStructured("## 结论\n\n## 关键证据\nsome evidence");
+    expect(parsed).toBe(null);
+  });
+
+  it("keeps code blocks intact when they contain ##-style lines (fence-aware)", async () => {
+    const { parseStructured } = await import("../core/sub-agent.ts");
+    // Regression (review finding): '## comment in code' inside a ```fence```
+    // used to terminate the evidence section early.
+    const parsed = parseStructured(
+      "## 结论\nfound bug\n## 关键证据\n```python\n## comment in code\nx = 1\n```\n## 未解决问题\nnone\n## 建议的下一步\nrun tests"
+    );
+    expect(parsed).not.toBe(null);
+    expect(parsed!.evidence).toBe("```python\n## comment in code\nx = 1\n```");
+    expect(parsed!.openIssues).toBe("none");
+    expect(parsed!.nextStep).toBe("run tests");
+  });
+
+  it("surfaces the structured block through runSubAgent end-to-end", async () => {
+    stateMock.getLastApiConfig.mockReturnValue({
+      apiKey: "sk-test", apiUrl: "https://api.example.com/v1/chat/completions",
+      model: "deepseek-chat", apiFormat: "openai",
+    });
+    mockFetchNext([
+      sseResponse([
+        openaiSseChunk({ content: "调研完成。" }),
+        openaiSseChunk({ content: "\n## 结论\n用 pnpm\n## 关键证据\npackage-lock 是 pnpm 生成" }),
+        openaiSseChunk({ content: "\n## 未解决问题\n无\n## 建议的下一步\n跑 install" }),
+        openaiDone(),
+      ]),
+    ]);
+
+    const { runSubAgent } = await import("../core/sub-agent.ts");
+    const result = await runSubAgent("research", "调研包管理器");
+    expect(result.structured).toEqual({
+      conclusion: "用 pnpm",
+      evidence: "package-lock 是 pnpm 生成",
+      openIssues: "无",
+      nextStep: "跑 install",
+    });
   });
 });

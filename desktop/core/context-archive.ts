@@ -62,11 +62,15 @@ export function pointerSuffix(ids: Array<string | null>): string {
   return `原文已归档 ${shown.map(i => `#${i}`).join(" ")}${more}，用 context_recall(id=...) 取回`;
 }
 
-export function readArchived(id: string) {
-  try { return sessionDb.readContext(id); } catch { return null; }
+// Reads can be session-scoped (audit fix C2): pass the current session id to
+// prevent one session — or a sub-agent running inside it — from pulling
+// another session's archived history. Legacy rows written before session
+// attribution (session_id IS NULL) stay readable from any session.
+export function readArchived(id: string, sessionId?: string | null) {
+  try { return sessionDb.readContext(id, sessionId); } catch { return null; }
 }
-export function searchArchived(query: string, limit = 5) {
-  try { return sessionDb.searchContext(query, limit); } catch { return []; }
+export function searchArchived(query: string, limit = 5, sessionId?: string | null) {
+  try { return sessionDb.searchContext(query, limit, sessionId); } catch { return []; }
 }
 export function listArchived(limit = 20, sessionId: string | null = null) {
   try { return sessionDb.listContextArchive(limit, sessionId); } catch { return []; }

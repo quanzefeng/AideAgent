@@ -285,4 +285,161 @@ describe("Token Budget", () => {
       }
     });
   });
+
+  // Audit fix C1 (hysteresis): the default compressContext budget is the
+  // TARGET line (CONTEXT_TARGET_PCT=0.55), NOT the 70% trigger. A session
+  // between target and trigger must be compressed down to the target; the old
+  // budget=trigger design left zero headroom and re-compressed every few
+  // turns. These tests fail on the old code and pass on the fix.
+  describe("hysteresis target (C1)", () => {
+    it("compresses without an explicit budget when usage sits between target and trigger", async () => {
+      const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+      const { CONTEXT_WINDOW, CONTEXT_TARGET_PCT } = await import("../core/state.ts");
+      setContextArchiveEnabled(false);
+      // 60 messages × ~2500 tokens ≈ 150K ≈ 57% of the 256K window: above the
+      // 55% target, below the 70% trigger.
+      const msgs: any[] = [{ role: "system", content: "sys" }];
+      for (let i = 0; i < 60; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` + "z".repeat(9950) });
+      const before = estimateMessageTokens(msgs).totalTokens;
+      expect(before).toBeGreaterThan(Math.floor(CONTEXT_WINDOW * CONTEXT_TARGET_PCT));
+      expect(before).toBeLessThan(Math.floor(CONTEXT_WINDOW * 0.70));
+
+      const result = compressContext(msgs);
+      expect(result.compressed).toBe(true);
+
+      const after = estimateMessageTokens(msgs).totalTokens;
+      expect(after).toBeLessThanOrEqual(Math.floor(CONTEXT_WINDOW * CONTEXT_TARGET_PCT) + 1000);
+    });
+
+    it("leaves usage alone below the target line", async () => {
+      const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+      const { CONTEXT_WINDOW, CONTEXT_TARGET_PCT } = await import("../core/state.ts");
+      setContextArchiveEnabled(false);
+      // 60 messages × ~2000 tokens ≈ 120K ≈ 46%: below the 55% target.
+      const msgs: any[] = [{ role: "system", content: "sys" }];
+      for (let i = 0; i < 60; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` + "z".repeat(7950) });
+      const before = estimateMessageTokens(msgs).totalTokens;
+      expect(before).toBeLessThan(Math.floor(CONTEXT_WINDOW * CONTEXT_TARGET_PCT));
+
+      const result = compressContext(msgs);
+      expect(result.compressed).toBe(false);
+      expect(estimateMessageTokens(msgs).totalTokens).toBe(before);
+    });
+
+    it("several turns pass after a compression before the next one (no thrash)", async () => {
+      const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+      const { CONTEXT_WINDOW, CONTEXT_TARGET_PCT } = await import("../core/state.ts");
+      setContextArchiveEnabled(false);
+      // 60 messages ≈ 150K (> 55% target): compress once, down to ~55K.
+      const msgs: any[] = [{ role: "system", content: "sys" }];
+      for (let i = 0; i < 60; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` + "z".repeat(9950) });
+      const first = compressContext(msgs);
+      expect(first.compressed).toBe(true);
+      const base = estimateMessageTokens(msgs).totalTokens;
+      expect(base).toBeLessThan(Math.floor(CONTEXT_WINDOW * CONTEXT_TARGET_PCT));
+
+      // Simulate turns: each adds ~5K tokens. Target headroom is ~90K, so the
+      // first ~12 turns must NOT re-compress. The old budget=trigger design
+      // (70%) re-compressed on the very next turn — this test fails there.
+      let quietTurns = 0;
+      for (let t = 0; t < 12; t++) {
+        msgs.push({ role: "user", content: `turn${t}u` + "z".repeat(9950) });
+        msgs.push({ role: "assistant", content: `turn${t}a` + "z".repeat(9950) });
+        const r = compressContext(msgs);
+        if (r.compressed) break;
+        quietTurns++;
+      }
+      expect(quietTurns).toBeGreaterThanOrEqual(8);
+    });
+  });
+
+  // Spec §3 step 4: the compression marker must carry a digest of what was
+  // pruned so the model can decide whether to expand pointers (audit fix P2).
+  describe("compression marker digest (P2)", () => {
+    it("keeps a per-message digest (user head / assistant tail) and skips injected context blocks", async () => {
+      const { setContextArchiveEnabled } = await import("../core/context-archive.ts");
+      setContextArchiveEnabled(false); // digest is collected regardless of archiving
+      const msgs: any[] = [
+        { role: "system", content: "sys" },
+      ];
+      // 10 anchor messages push the interesting ones into the PRUNABLE middle
+      // (the first 10 non-system messages are preserved, so a fact placed at
+      // index 1 would never reach the digest).
+      for (let i = 0; i < 10; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `anchor${i}` });
+      msgs.push({ role: "user", content: "请修复 login 模块的 validateToken" });
+      msgs.push({ role: "assistant", content: "我先读文件再决定方案，结论稍后给出" });
+      // Injected context block — must NOT appear in the digest (rebuilt live):
+      msgs.push({ role: "user", content: "## 当前任务状态\n- 🔄 修复 login" });
+      // Content-less assistant turn (tool-call only) — stringifies to '""' and
+      // must NOT produce a garbage digest line:
+      msgs.push({ role: "assistant", content: null });
+      for (let i = 0; i < 30; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `d${i}` + "z".repeat(9000) });
+      msgs.push({ role: "user", content: "最近的问题" });
+      msgs.push({ role: "assistant", content: "正在处理" });
+
+      const result = compressContext(msgs, 50);
+      expect(result.compressed).toBe(true);
+      const sys = msgs[0].content as string;
+      expect(sys).toContain("被裁剪消息摘要");
+      // user head: the pruned request text appears at the start of its digest line
+      expect(sys).toMatch(/- 用户: 请修复 login 模块的 validateToken/);
+      // assistant tail: conclusion-ish words survive
+      expect(sys).toMatch(/- 助手: .*结论稍后给出/);
+      // injected context block skipped
+      expect(sys).not.toContain("当前任务状态");
+      // content-less assistant turn skipped (no '""' garbage line)
+      expect(sys).not.toContain('助手: ""');
+    });
+  });
+
+  // Spec §9: long-task information retention — a key fact from an early turn
+  // must stay reachable across repeated compressions (either in the anchor
+  // zone of the live context, or in the full-text-searchable archive).
+  describe("long-task retention (P2)", () => {
+    it("keeps an early-turn fact reachable after 3 compression rounds", async () => {
+      const { setContextArchiveEnabled, searchArchived } = await import("../core/context-archive.ts");
+      const { default: sessionDb } = await import("../session-db.ts");
+      setContextArchiveEnabled(true);
+
+      // Snapshot the archive before, delete exactly what this test adds after.
+      const before = new Set((sessionDb.listContextArchive(1000, null) as any[]).map((r: any) => r.id));
+      const addedIds: string[] = [];
+      try {
+        const msgs: any[] = [{ role: "system", content: "sys" }];
+        // 10 anchor messages first: the fact pair below sits in the PRUNABLE
+        // middle, so it must survive via the archive, not the anchor zone.
+        for (let i = 0; i < 10; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `anchor${i}` });
+        msgs.push({ role: "user", content: "请修复 login 模块" });
+        // NOTE: padded past ARCHIVE_MIN_CHARS (500) — fragments shorter than
+        // the threshold are intentionally not archived (pointer cost > value);
+        // they survive only via the compression-marker digest instead.
+        msgs.push({ role: "assistant", content: "好的，关键约束：密码必须用 bcrypt，不要用 md5。" + "z".repeat(700) });
+        for (let i = 0; i < 26; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `t${i}` + "z".repeat(9000) });
+        for (let r = 0; r < 3; r++) {
+          // Explicit budget so EVERY round prunes (default 55% target would
+          // skip rounds once the context is small again).
+          const res = compressContext(msgs, 30_000);
+          expect(res.compressed).toBe(true);
+          for (let i = 0; i < 10; i++) msgs.push({ role: i % 2 === 0 ? "user" : "assistant", content: `g${r}${i}` + "z".repeat(9000) });
+        }
+        const allText = msgs.map(m => (typeof m.content === "string" ? m.content : "")).join("\n");
+        const inContext = allText.includes("bcrypt");
+        const hits = searchArchived("bcrypt", 5);
+        const archived = hits.some((h: any) => (h.snippet || "").includes("bcrypt") || String(h.id).length > 0);
+        // archived fallback: verify the actual archived row content carries the fact
+        let archivedVerified = false;
+        for (const h of hits) {
+          const row = sessionDb.readContext(h.id);
+          if (row && row.content.includes("bcrypt")) { archivedVerified = true; break; }
+        }
+        expect(inContext || archivedVerified, "早期轮次的关键事实必须仍在上下文或可检索归档中").toBe(true);
+      } finally {
+        for (const r of sessionDb.listContextArchive(1000, null) as any[]) {
+          if (!before.has(r.id)) addedIds.push(r.id);
+        }
+        for (const id of addedIds) sessionDb.deleteContext(id);
+        setContextArchiveEnabled(true);
+      }
+    });
+  });
 });

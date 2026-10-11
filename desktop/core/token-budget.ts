@@ -1,10 +1,19 @@
 // ── Token Budget & Context Compression ──────────────────────
 
-import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, CONTEXT_WARN_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer } from "./state.ts";
+import { CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, CONTEXT_WARN_PCT, TOOL_RESULT_KEEP_CHARS, sendToRenderer, CONTEXT_TARGET_PCT, getSessionId } from "./state.ts";
 import { archiveDropped, pointerSuffix } from "./context-archive.ts";
 
 const TOKEN_BUDGET_WARN = 50000;
 const TOKEN_BUDGET_HARD = 80000;
+
+// ── Compression-marker digest (spec §3 step 4) ───────────────
+// When messages are pruned, the marker keeps a short per-message digest so
+// the model knows WHAT was pruned without expanding pointers: user msgs keep
+// their head (the request), assistant msgs their tail (the conclusion).
+// Heuristic, no LLM call. Injected context blocks (## 当前任务状态 / 相关记忆
+// / Todo) are rebuilt live every turn and are skipped.
+const DIGEST_MAX_ITEMS = 10;
+const DIGEST_CHARS = 60;
 
 export interface Message {
   role: string;
@@ -156,7 +165,11 @@ function findProtectedRanges(msgs: Message[]): Array<[number, number]> {
  * @returns {{ estimatedTokens: number, compressed: boolean, removedMessages: number }}
  */
 export function compressContext(msgs: Message[], budget?: number): { estimatedTokens: number, compressed: boolean, removedMessages: number } {
-  if (!budget) budget = Math.floor(CONTEXT_WINDOW * CONTEXT_COMPRESS_PCT);
+  // Default target is the hysteresis line (CONTEXT_TARGET_PCT=0.55), NOT the
+  // 70% trigger: compressing only when already at the trigger means the very
+  // next turn's output re-crosses it and re-compresses (thrash). Compressing
+  // down to 55% leaves several turns of headroom before the 70% line is hit.
+  if (!budget) budget = Math.floor(CONTEXT_WINDOW * CONTEXT_TARGET_PCT);
   const before = estimateMessageTokens(msgs);
   if (before.totalTokens <= budget) return { estimatedTokens: before.totalTokens, compressed: false, removedMessages: 0 };
 
@@ -176,7 +189,7 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
       const origLen = m.content.length;
       const keepHead = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.6);
       const keepTail = Math.floor(TOOL_RESULT_KEEP_CHARS * 0.3);
-      const archiveId = archiveDropped({ content: m.content, kind: "tool_result", source: "compressContext", role: "tool" });
+      const archiveId = archiveDropped({ content: m.content, kind: "tool_result", source: "compressContext", role: "tool", sessionId: getSessionId() });
       removedIds.push(archiveId);
       m.content = m.content.slice(0, keepHead) +
         `\n\n...(中段已截断: ${origLen - keepHead - keepTail} chars 被移出上下文, ${pointerSuffix([archiveId])}, 保留头尾)...\n\n` +
@@ -219,11 +232,21 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
   }
   // REVERSIBLE: archive every middle message that is about to be pruned
   // (must happen before the splice destroys them).
+  const digestLines: string[] = [];
   for (let i = middleStart; i < middleEnd; i++) {
     if (protectedInMiddle.has(i)) continue;
     const dm = msgs[i];
     const text = typeof dm.content === "string" ? dm.content : JSON.stringify(dm.content || "");
-    removedIds.push(archiveDropped({ content: text, kind: "message", source: "compressContext", role: dm.role }));
+    removedIds.push(archiveDropped({ content: text, kind: "message", source: "compressContext", role: dm.role, sessionId: getSessionId() }));
+    if (digestLines.length < DIGEST_MAX_ITEMS) {
+      const t = text.replace(/[\r\n\t]+/g, " ").trim();
+      // Skip injected context blocks (rebuilt live each turn) and noise:
+      // content-less assistant turns stringify as '""'/null.
+      if (t && t !== '""' && t !== "null" && !/^##\s/.test(t)) {
+        if (dm.role === "user") digestLines.push(`- 用户: ${t.slice(0, DIGEST_CHARS)}`);
+        else if (dm.role === "assistant") digestLines.push(`- 助手: ${t.slice(-DIGEST_CHARS)}`);
+      }
+    }
   }
   removedMessages = msgs.length - prefix.length - suffix.length - rescued.length;
   msgs.splice(0, msgs.length, ...prefix, ...rescued, ...suffix);
@@ -237,7 +260,8 @@ export function compressContext(msgs: Message[], budget?: number): { estimatedTo
     // so both formats stay valid. Exactly one marker: a repeat compression
     // REPLACES the previous one (its ids are superseded by the new set).
     const idsNote = removedIds.length ? `；归档 ${removedIds.filter(Boolean).length} 段：${pointerSuffix(removedIds)}` : "";
-    const marker = `\n\n[系统] ⚠️ 上下文已自动压缩：${removedMessages} 条早期消息被裁剪（保留任务锚点、最近一次用户请求与所有工具调用对）${idsNote}。需要时调用 context_recall 取回，或重新读取相关文件。`;
+    const digestNote = digestLines.length ? `\n被裁剪消息摘要：\n${digestLines.join("\n")}` : "";
+    const marker = `\n\n[系统] ⚠️ 上下文已自动压缩：${removedMessages} 条早期消息被裁剪（保留任务锚点、最近一次用户请求与所有工具调用对）${idsNote}${digestNote}。需要时调用 context_recall 取回，或重新读取相关文件。`;
     const firstSystem = msgs.findIndex(m => m.role === "system");
     if (firstSystem !== -1 && typeof msgs[firstSystem].content === "string") {
       const existing = msgs[firstSystem].content as string;
@@ -267,9 +291,11 @@ export function sendContextUsage(msgs: Message[]) {
     windowSize: CONTEXT_WINDOW,
     usagePct: Math.round((usage.totalTokens / CONTEXT_WINDOW) * 100),
     // Tier thresholds: soft-offload at warn (CONTEXT_WARN_PCT), compress at
-    // CONTEXT_COMPRESS_PCT, renderer colors at 80/90.
+    // CONTEXT_COMPRESS_PCT, hysteresis target at CONTEXT_TARGET_PCT (the
+    // level compression brings usage down to), renderer colors at 80/90.
     warnThresholdPct: Math.round(CONTEXT_WARN_PCT * 100),
     compressThresholdPct: Math.round(CONTEXT_COMPRESS_PCT * 100),
+    targetThresholdPct: Math.round(CONTEXT_TARGET_PCT * 100),
   });
 }
 

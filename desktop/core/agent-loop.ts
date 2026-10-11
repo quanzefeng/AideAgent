@@ -70,18 +70,29 @@ export function buildTurnHistory(opts: {
   const out: LoopMessage[] = [...opts.priorTurns];
   out.push({ role: "user", content: userContent });
   for (const tc of opts.tools || []) {
-    const argsStr = tc.args ? JSON.stringify(tc.args).slice(0, 500) : "";
-    const resultStr = tc.result != null
-      ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result)).slice(0, 2000)
+    const rawArgs = tc.args ? JSON.stringify(tc.args) : "";
+    const rawResult = tc.result != null
+      ? (typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result))
+      : "";
+    // REVERSIBLE (audit fix H1): the DB save truncates tool args (500 chars)
+    // and results (2000 chars) — archive the full original first so the cut
+    // is recoverable via context_recall, same convention as compressContext /
+    // MAX_OUTPUT. Previously this was a silent, unrecoverable truncation that
+    // ran on EVERY saveSession.
+    const argsNote = rawArgs.length > 500
+      ? `\n...(已截断: ${rawArgs.length - 500} chars 被移出上下文, ${pointerSuffix([archiveDropped({ content: rawArgs, kind: "tool_args", source: "saveSession", role: "tool", sessionId: getSessionId() })])})...`
+      : "";
+    const resultNote = rawResult.length > 2000
+      ? `\n...(已截断: ${rawResult.length - 2000} chars 被移出上下文, ${pointerSuffix([archiveDropped({ content: rawResult, kind: "tool_result", source: "saveSession", role: "tool", sessionId: getSessionId() })])})...`
       : "";
     out.push({
       role: "tool",
       tool_call_id: tc.id,
-      content: resultStr,
+      content: rawResult.slice(0, 2000) + resultNote,
       tool_calls: [{
         id: tc.id,
         type: "function",
-        function: { name: tc.name, arguments: argsStr },
+        function: { name: tc.name, arguments: rawArgs.slice(0, 500) + argsNote },
       }],
     });
   }
@@ -89,6 +100,38 @@ export function buildTurnHistory(opts: {
   if (opts.assistantReasoning) asst.reasoning_content = opts.assistantReasoning;
   out.push(asst);
   return out;
+}
+
+// ── Soft-structured sub-agent results (audit fix C4, P1) ─────
+// runSubAgent returns { text, structured } when the sub-agent replied with
+// the fixed `## 结论…` sections (see sub-agent.ts parseStructured). For large
+// results the main context keeps the short structured summary + an archive
+// pointer instead of the raw dump (spec §5.1: 接收子智能体返回的结构化结果，
+// 不接收原始大段内容). Small results pass through verbatim — the detail is
+// cheap. Returns the tool-result string fed back to the model.
+export const STRUCTURED_RAW_KEEP_CHARS = 2000;
+export function summarizeSubAgentResult(result: any): string {
+  const structured = result?.structured;
+  const text = result?.text;
+  if (structured && typeof text === "string" && text.length > STRUCTURED_RAW_KEEP_CHARS) {
+    const id = archiveDropped({
+      content: JSON.stringify(result),
+      kind: "tool_result", source: "sub_agent_raw", role: "tool", sessionId: getSessionId(),
+    });
+    let summary = [
+      `## 子代理结论`,
+      structured.conclusion || "(无)",
+      `## 关键证据`,
+      structured.evidence || "(无)",
+      `## 未解决问题`,
+      structured.openIssues || "(无)",
+      `## 建议的下一步`,
+      structured.nextStep || "(无)",
+    ].join("\n");
+    if (id) summary += `\n\n> ${pointerSuffix([id])}。`;
+    return summary;
+  }
+  return JSON.stringify(result);
 }
 
 /**
@@ -241,10 +284,12 @@ const VISION_BRIDGE_SCRIPT = VISION_BRIDGE_CANDIDATES.find(p => existsSync(p)) ?
  *   instead of leaking the in-flight request and writing a memory
  *   derived from a half-finished session.
  */
-async function autoReview(msgs: LoopMessage[], apiKey: string, apiUrl: string, model: string, apiFormat: string, signal?: AbortSignal): Promise<void> {
+async function autoReview(msgs: LoopMessage[], apiKey: string, apiUrl: string, model: string, apiFormat: string, signal?: AbortSignal, timeoutMs = 20000): Promise<void> {
   try {
-    // Take last 8 exchanges (16 messages) for review
-    const recent = msgs.slice(-16).filter(m => m.role === "user" || m.role === "assistant");
+    // Take the last 40 user/assistant messages (~20 exchanges) — the old
+    // window of 8 exchanges missed long-range decisions made earlier in a
+    // task (audit fix P2).
+    const recent = msgs.filter(m => m.role === "user" || m.role === "assistant").slice(-40);
     if (recent.length < 4) return;
 
     const convText = recent.map(m => {
@@ -290,7 +335,7 @@ KNOWLEDGE: <内容>
       delete body.temperature;
     }
 
-    const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
+    const composed = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
     const res = await fetch(endpoint, {
       method: "POST", headers,
       body: JSON.stringify(body),
@@ -1006,7 +1051,9 @@ export async function agentLoop(
             : { error: settled.reason?.message || "Sub-agent failed" };
           let aArgs;
           try { aArgs = JSON.parse(tc.function.arguments); } catch { aArgs = { raw: tc.function.arguments }; }
-          let rStr = JSON.stringify(result);
+          // C4: structured sub-agent results replace the raw dump in-context
+          // (summarizeSubAgentResult archives the full text + leaves a pointer).
+          let rStr = summarizeSubAgentResult(result);
           if (rStr.length > MAX_OUTPUT) {
             const id = archiveDropped({ content: rStr, kind: "tool_result", source: "MAX_OUTPUT", role: "tool", sessionId });
             rStr = rStr.slice(0, MAX_OUTPUT) + `\n...(truncated, ${pointerSuffix([id])})`;
@@ -1358,8 +1405,15 @@ ${convText}
   }
 
   hookManager.fire("SessionEnd", { sessionId: finalSessionId, aborted: false }).catch(() => {});
-  // P2: forward the abort signal so autoReview can be cancelled by Stop.
-  autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal).catch(() => {});
+  // P2 forward the abort signal so autoReview can be cancelled by Stop.
+  // Fire-and-forget on purpose: ipc-handlers sends stream:done only after
+  // agentLoop returns, so awaiting a memory-extraction LLM call (≤8s) would
+  // delay every answer's completion toast. The write happens within seconds
+  // of the turn either way; failures are logged, never swallowed — except a
+  // user-initiated Stop, whose abort is the expected outcome, not an error.
+  autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal, 8000).catch((e: any) => {
+    if (e?.name !== "AbortError") console.error("[autoReview] failed:", e?.message || e);
+  });
 
   // Phase 2 trigger: detect repeated-task patterns from the last 30 sessions.
   // If a phrase appears in 3+ sessions and isn't covered by an existing skill,

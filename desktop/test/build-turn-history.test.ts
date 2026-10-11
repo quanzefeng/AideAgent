@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { buildTurnHistory } from "../core/agent-loop.ts";
+import { setContextArchiveEnabled, readArchived } from "../core/context-archive.ts";
+import sessionDb from "../session-db.ts";
+
+// buildTurnHistory now archives oversized tool args/results before the DB
+// truncation (audit fix H1). Keep every test that is not explicitly checking
+// the archive away from the user's real DB.
+beforeEach(() => setContextArchiveEnabled(false));
 
 describe("buildTurnHistory", () => {
   it("keeps prior turns including their tool rows (saveSession is DELETE+re-insert)", () => {
@@ -66,7 +73,8 @@ describe("buildTurnHistory", () => {
     expect(asst.reasoning_content).toBe("thinking…");
   });
 
-  it("truncates oversized tool args/result", () => {
+  it("truncates oversized tool args/result and marks the cut (irrecoverable when archive is off)", () => {
+    setContextArchiveEnabled(false);
     const out = buildTurnHistory({
       priorTurns: [],
       prompt: "q",
@@ -74,8 +82,42 @@ describe("buildTurnHistory", () => {
       assistantContent: "a",
     });
     const tool = out[1];
-    expect(tool.tool_calls![0].function.arguments.length).toBeLessThanOrEqual(500);
-    expect(tool.content.length).toBeLessThanOrEqual(2000);
+    // Head of the original is preserved verbatim…
+    expect(tool.content.slice(0, 2000)).toBe("y".repeat(5000).slice(0, 2000));
+    // …the truncation marker is appended (head 2000 + ≤100 chars of note)…
+    expect(tool.content.length).toBeGreaterThan(2000);
+    expect(tool.content.length).toBeLessThanOrEqual(2100);
+    expect(tool.tool_calls![0].function.arguments.length).toBeLessThanOrEqual(600);
+    // archive disabled → the honest "不可恢复" fallback, never a fake pointer
+    expect(tool.content).toContain("不可恢复");
+  });
+
+  it("archives the full oversized tool result before the DB truncation (reversible)", () => {
+    setContextArchiveEnabled(true);
+    let cleanupId: string | null = null;
+    try {
+      const full = "H1_MARKER_5c81 原始工具输出 " + "z".repeat(5000);
+      const out = buildTurnHistory({
+        priorTurns: [],
+        prompt: "q",
+        tools: [{ id: "t1", name: "bash", args: {}, result: full }],
+        assistantContent: "a",
+      });
+      const tool = out[1];
+      const m = (tool.content as string).match(/ca_[0-9a-f]{10}/);
+      expect(m, "truncated content must carry a ca_* pointer").toBeTruthy();
+      cleanupId = m![0];
+      const row = readArchived(cleanupId);
+      expect(row).toBeTruthy();
+      expect(row.content).toBe(full); // byte-identical original, recoverable
+      expect(row.kind).toBe("tool_result");
+      expect(row.source).toBe("saveSession");
+    } finally {
+      // Hygiene: even on assertion failure, never leak a NULL-session archive
+      // row into the user's real DB (NULL rows are readable from any session).
+      if (cleanupId) sessionDb.deleteContext(cleanupId);
+      setContextArchiveEnabled(false); // restore the beforeEach invariant
+    }
   });
 
   it("does not mutate priorTurns", () => {

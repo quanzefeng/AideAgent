@@ -66,6 +66,16 @@ describe("Memory Selection (P3方案3b/3c)", () => {
       expect(out).toContain("[project] sel_test_p1");
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    it("truncates long memory bodies on injection and points at read_memory (audit fix P2)", async () => {
+      listMemoriesSpy.mockReturnValueOnce([
+        { filename: "sel_cap_u.md", name: "sel_cap_u", type: "user", body: "y".repeat(2000), description: "u", mtimeMs: Date.now() },
+      ]);
+      const out = await selectRelevantMemories("query", "k", "http://127.0.0.1:1", "m", "openai");
+      expect(out).toContain("[user] sel_cap_u");
+      expect(out).toContain('read_memory(filename="sel_cap_u.md")');
+      expect(out).not.toContain("y".repeat(1990)); // the tail is NOT injected
+    });
   });
 
   describe("3(b) Type hard constraint — enforceTypeCaps / slow path", () => {

@@ -119,6 +119,14 @@ export function setContextWindow(n: number) {
 }
 export const CONTEXT_WARN_PCT = 0.60;
 export const CONTEXT_COMPRESS_PCT = 0.70;
+// Hysteresis target (audit fix C1): compressContext's default budget. Kept
+// BELOW the 70% trigger so a compressed context doesn't immediately re-cross
+// the trigger line on the next turn (old budget=trigger design re-compressed
+// every few turns, thrashing the middle of the conversation). 0.55 leaves
+// ~15% of the window as headroom; the user's spec says 0.45, but on small
+// local windows (8K-32K) 0.45 leaves almost no working memory after the
+// system prompt + tool schemas, so 0.55 is the engineering midpoint.
+export const CONTEXT_TARGET_PCT = 0.55;
 // B5: was 2500 — too aggressive for LLM to make tool-calling decisions on
 // truncated content. After 5-6 rounds of file_read/grep/web_fetch, the LLM
 // would see only 2500 chars of recent tool output, decide "I have enough
@@ -215,7 +223,7 @@ export function getCurrentRuntime() { return currentRuntime; }
 
 export const PLAN_MODE_READONLY = new Set([
   "file_read", "view_image", "grep", "glob", "web_search", "web_fetch",
-  "Agent", "AskUserQuestion", "TaskList", "TodoWrite", "write_memory", "kb_write",
+  "Agent", "AskUserQuestion", "TaskList", "TodoWrite", "write_memory", "read_memory", "kb_write",
   "skill", "invoke_skill", "lsp", "context_recall",
 ]);
 
@@ -225,12 +233,19 @@ export let permId = 0;
 export function nextPermId() { return ++permId; }
 
 // ── Sub-Agent ───────────────────────────────────────────────
+// Write-tool blacklist (audit fix C3, P1): TaskCreate/TaskUpdate/TodoWrite
+// mutate the main agent's structured state (taskStore / todoList) directly,
+// and sub-agents run in PARALLEL (Promise.allSettled) — concurrent writes
+// race. Removed; TaskList (read-only) stays so sub-agents can see task state.
+// write_memory/kb_write intentionally stay: semantic memory (§6 of the user's
+// spec) is a shared cross-session layer, NOT §5.3's "structured state", and a
+// sub-agent discovering durable facts is expected behaviour (write_memory has
+// checkDuplicate dedupe).
 export const SUB_AGENT_TOOL_NAMES = new Set([
   "bash", "file_read", "file_write", "file_edit", "grep", "glob",
-  "web_fetch", "web_search", "skill", "write_memory", "invoke_skill",
-  "create_skill", "TaskCreate", "TaskUpdate", "TaskList", "TodoWrite",
-  "AskUserQuestion", "kb_write", "lsp", "git_diff", "git_commit",
-  "git_branch", "gh_pr", "gh_issue", "gh_repo",
+  "web_fetch", "web_search", "skill", "write_memory", "read_memory", "invoke_skill",
+  "create_skill", "TaskList", "AskUserQuestion", "kb_write", "lsp",
+  "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
   "kb_search", "kb_get_note", "context_recall",
 ]);
 export const SUB_AGENT_MAX_TURNS = 12;

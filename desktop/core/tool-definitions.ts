@@ -238,9 +238,23 @@ export const TOOL_DEFS = [
           type: { type: "string", enum: ["user", "feedback", "project", "reference"], description: "Memory type" },
           name: { type: "string", description: "Short descriptive name (e.g. 'user_role', 'feedback_tests_must_hit_db')" },
           description: { type: "string", description: "One-line summary used for relevance search" },
-          content: { type: "string", description: "Markdown content. For 'feedback' type: start with the rule, then **Why:** and **How to apply:**." },
+          content: { type: "string", description: "Markdown content. For 'feedback' type: start with the rule, then **Why:** and **How to apply:**. Max 2000 characters — longer bodies are truncated (expand the full text later with read_memory)." },
           filename: { type: "string", description: "If updating existing memory, provide the filename" },
         }, required: ["type", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_memory",
+      description: "Read a memory file's FULL markdown body by filename. USE for: expanding a memory whose injected summary was truncated in the 相关记忆 block, or checking the exact wording of a stored rule before following it. list_memories returns only name/description — this returns the body.",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "The memory filename (e.g. 'user_xxx.md' — take it from list_memories output or the 相关记忆 block)." },
+        },
+        required: ["filename"],
       },
     },
   },
