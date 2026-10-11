@@ -8,29 +8,19 @@ export function applyChatFont(/** @type {string} */ fontValue: any) {
 }
 
 export function loadChatFont() {
-  return localStorage.getItem(FONT_KEY) || "'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif";
+  return localStorage.getItem(FONT_KEY) || "'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif";
 }
 
-// ── Font weights (P3方案B v3: clamp to YaHei reality) ─────
-// P3方案C: Microsoft YaHei only ships THREE actual weights:
-//   - 300 (Light) — only on Windows 11+; older Windows falls back to 400
-//   - 400 (Regular) — universal
-//   - 700 (Bold) — universal
-// Any value in between (500/600) or above (800/900) gets fallback-clamped
-// to the nearest available weight by the browser. With `font-synthesis:
-// none` (style.css), that fallback is HONEST — no synthesized fake bold.
-//
-// We deliberately default semibold and bold to the SAME value (700)
-// because YaHei has no distinct "semibold" or "extra bold" — there's
-// only one bold weight. Showing different defaults would be misleading.
-// normal=400 (Regular) and medium=400 are also the same because YaHei
-// has no distinct Light weight on most Windows installs; the only
-// reason to have separate keys is so users can change ONE without
-// touching the other.
+// ── Font weights (P3方案B v4: Noto Sans SC is now the default) ──
+// Default chat font is Noto Sans SC (variable, real 100-900 weights), so
+// semibold=600 is a REAL SemiBold face, not a clamp. Microsoft YaHei (the
+// fallback / user-selectable alternative) only ships 300/400/700: for it,
+// CSS weight matching maps 600 → 700, so YaHei users see no change. With
+// `font-synthesis: none` (style.css), nothing is ever fake-bolded.
 const FW_DEFAULTS = Object.freeze({
   normal:   400,
   medium:   400,
-  semibold: 700,
+  semibold: 600,
   bold:     700,
 });
 

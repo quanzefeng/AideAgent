@@ -81,19 +81,19 @@ test("font: select shows default font with 2 options on first load", async () =>
 
   await expect(window.locator("#font-select")).toBeVisible();
   const optionCount = await window.locator("#font-select option").count();
-  expect(optionCount).toBe(2);
+  expect(optionCount).toBe(3);
 
-  // Default value is the first option (YaHei)
+  // Default value is the first option (Noto Sans SC)
   const defaultValue = await window
     .locator("#font-select")
     .evaluate((el) => (el as any).options[(el as any).selectedIndex].value);
-  expect(defaultValue).toContain("Microsoft YaHei");
+  expect(defaultValue).toContain("Noto Sans SC");
 
   // --chat-font CSS var is set to the default on documentElement
   const cssVar = await window.evaluate(() =>
     document.documentElement.style.getPropertyValue("--chat-font")
   );
-  expect(cssVar).toContain("Microsoft YaHei");
+  expect(cssVar).toContain("Noto Sans SC");
 
   await closeApp(app);
 });
@@ -102,10 +102,10 @@ test("font: changing font updates localStorage and --chat-font CSS var", async (
   const { app, window } = await launchApp();
   await openSettingsTab(window, "font");
 
-  // Pick the second option (Serif)
+  // Pick the third option (Serif)
   const serifValue = await window
     .locator("#font-select option")
-    .nth(1)
+    .nth(2)
     .getAttribute("value");
   expect(serifValue).toContain("Noto Serif");
   await window.locator("#font-select").selectOption(serifValue);
@@ -133,7 +133,7 @@ test("font: choice persists across reload", async () => {
   // Change to serif
   const serifValue = await window
     .locator("#font-select option")
-    .nth(1)
+    .nth(2)
     .getAttribute("value");
   await window.locator("#font-select").selectOption(serifValue);
   await window.waitForTimeout(200);
