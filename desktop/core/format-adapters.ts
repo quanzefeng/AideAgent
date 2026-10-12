@@ -90,6 +90,60 @@ export function computeMaxTokens(msgs: any[], toolDefs?: unknown): number {
   return Math.max(MAX_TOKENS_FLOOR, Math.min(MAX_TOKENS_CAP, available));
 }
 
+// ── Gateway reasoning_effort alias fallback ──────────────────────────────
+// Some OpenAI-compatible gateways (e.g. sensenova) strictly validate
+// reasoning_effort against their own whitelist (low/medium/high/xhigh/none)
+// and 400 on values they don't recognize (e.g. "max") instead of ignoring
+// them. On such a 400 we parse the allowed list from the error message,
+// pick the closest allowed value, cache the remap per apiUrl+effort, and
+// retry once. The cache makes subsequent turns skip the failed round-trip.
+const REASONING_EFFORT_ALIASES: Record<string, string[]> = {
+  low: ["low"],
+  medium: ["medium", "low"],
+  high: ["high", "xhigh"],
+  max: ["max", "xhigh", "high"],
+};
+const REASONING_EFFORT_RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 5 };
+const _effortRemapCache = new Map<string, string>();
+
+/** Cached gateway alias for this apiUrl+effort, if a remap was learned earlier. */
+export function cachedEffortAlias(apiUrl: string, effort: string): string | undefined {
+  return _effortRemapCache.get(`${apiUrl}|${effort}`);
+}
+
+/**
+ * Parse "should be one of: ..." from a gateway 400 and pick the closest
+ * allowed value for our tier (max→xhigh→high, high→xhigh fallback, etc.).
+ * Returns the aliased value (cached per apiUrl+effort) or null if the error
+ * doesn't carry a usable whitelist.
+ */
+export function resolveEffortAlias(errText: string, effort: string, apiUrl: string): string | null {
+  const m = errText.match(/should be one of:\s*([a-zA-Z0-9_,\s]+)/);
+  if (!m) return null;
+  const allowed = new Set(m[1].split(",").map(s => s.trim().toLowerCase()).filter(Boolean));
+  if (!allowed.size) return null;
+  const myRank = REASONING_EFFORT_RANK[effort] ?? 2;
+  // Preferred aliases first (semantically closest), then strongest allowed
+  // value ranked at or below our tier as a last resort.
+  for (const alias of REASONING_EFFORT_ALIASES[effort] || [effort]) {
+    if (allowed.has(alias)) {
+      _effortRemapCache.set(`${apiUrl}|${effort}`, alias);
+      return alias;
+    }
+  }
+  let best: string | null = null;
+  for (const a of allowed) {
+    const r = REASONING_EFFORT_RANK[a];
+    if (r === undefined || r > myRank) continue;
+    if (!best || r > (REASONING_EFFORT_RANK[best] ?? 0)) best = a;
+  }
+  if (best) {
+    _effortRemapCache.set(`${apiUrl}|${effort}`, best);
+    return best;
+  }
+  return null;
+}
+
 export async function fetchWithRetry(doFetch: () => Promise<Response>, buildErrorMsg: (res: Response, errText: string) => string, classify?: (errText: string, errorMsg: string) => Error | null, source = "api"): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -369,8 +423,19 @@ export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, mo
   // e.g. DeepSeek medium→high, Qwen high/max→xhigh). "none" omits the key
   // entirely so the provider default applies (some providers reject unknown
   // params, others reject "none" — omitting is safest).
-  if (reasoningEffort && reasoningEffort !== "none") body.reasoning_effort = reasoningEffort;
-  console.log("[openaiCall] reasoning_effort =", reasoningEffort, "(omitted from body:", reasoningEffort === "none", ")");
+  // Gateways that 400 on unknown values (e.g. sensenova: no "max") are
+  // handled below via alias fallback + one retry; if we already learned a
+  // remap for this apiUrl, send the alias directly (skips the 400 round).
+  if (reasoningEffort && reasoningEffort !== "none") {
+    const alias = cachedEffortAlias(apiUrl, reasoningEffort);
+    if (alias && alias !== reasoningEffort) {
+      console.log(`[openaiCall] using cached gateway remap ${reasoningEffort} → ${alias}`);
+      body.reasoning_effort = alias;
+    } else {
+      body.reasoning_effort = reasoningEffort;
+    }
+  }
+  console.log("[openaiCall] reasoning_effort =", body.reasoning_effort ?? "(omitted)");
   const buildRes = () => fetchWithRetry(
     () => fetch(apiUrl, {
       method: "POST",
@@ -464,7 +529,23 @@ export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, mo
     buf += dec.decode();
     if (buf.trim()) processLine(buf);
   };
-  let res = await buildRes();
+  let res: Response;
+  try {
+    res = await buildRes();
+  } catch (e: any) {
+    // Gateway 400 on reasoning_effort (strict whitelist, e.g. sensenova
+    // rejects "max"): parse the allowed list, remap, retry once.
+    const msg = String(e?.message || "");
+    const rejected = body.reasoning_effort && /reasoning[_ ]?effort/i.test(msg) && /should be one of/i.test(msg);
+    const alias = rejected ? resolveEffortAlias(msg, body.reasoning_effort, apiUrl) : null;
+    if (alias && alias !== body.reasoning_effort) {
+      console.warn(`[openaiCall] gateway rejected reasoning_effort=${body.reasoning_effort}; retrying with ${alias} (${apiUrl})`);
+      body.reasoning_effort = alias;
+      res = await buildRes();
+    } else {
+      throw e;
+    }
+  }
   for (let attempt = 0; ; attempt++) {
     try {
       buf = "";

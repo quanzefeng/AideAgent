@@ -213,3 +213,75 @@ describe("reasoning effort → request body", () => {
     expect(capturedBody.thinking.budget_tokens).toBeLessThanOrEqual(Math.floor(capturedBody.max_tokens / 2));
   });
 });
+
+// ── gateway reasoning_effort whitelist fallback ──
+describe("gateway effort alias fallback", () => {
+  it("resolveEffortAlias: sensenova whitelist remaps max → xhigh", async () => {
+    const { resolveEffortAlias } = await import("../core/format-adapters.ts");
+    const err = 'API 400 (Bad Request)\\nResponse: {"error":{"message":"field ReasoningEffort invalid, should be one of: low, medium, high, xhigh, none","type":"invalid_request_error","param":"reasoning_effort","code":"3"}}';
+    expect(resolveEffortAlias(err, "max", "https://alias-unit.test/v1")).toBe("xhigh");
+  });
+
+  it("resolveEffortAlias: falls back to strongest allowed tier at or below ours", async () => {
+    const { resolveEffortAlias } = await import("../core/format-adapters.ts");
+    const err = "should be one of: low, medium, none";
+    expect(resolveEffortAlias(err, "high", "https://alias-unit2.test/v1")).toBe("medium");
+    expect(resolveEffortAlias(err, "max", "https://alias-unit3.test/v1")).toBe("medium");
+  });
+
+  it("resolveEffortAlias: returns null when the error carries no whitelist", async () => {
+    const { resolveEffortAlias } = await import("../core/format-adapters.ts");
+    expect(resolveEffortAlias("API 500 Internal Server Error", "max", "https://alias-unit4.test/v1")).toBeNull();
+  });
+
+  it("openaiCall: 400 on max → retries with xhigh, then caches the alias", async () => {
+    const url = "https://alias-remap.test/v1/chat/completions";
+    const openaiSSE =
+      'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      'data: [DONE]\n\n';
+    const reject400 = () => new Response(
+      JSON.stringify({
+        error: {
+          message: "field ReasoningEffort invalid, should be one of: low, medium, high, xhigh, none",
+          type: "invalid_request_error",
+          param: "reasoning_effort",
+          code: "3",
+        },
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+    const bodies: any[] = [];
+    const fetchMock = vi.fn(async (_url: any, init: any) => {
+      const b = JSON.parse(init.body);
+      bodies.push(b);
+      // 400 only when the gateway-unfriendly value "max" is actually sent;
+      // the remapped "xhigh" (and everything else) succeeds.
+      if (b.reasoning_effort === "max") return reject400();
+      return new Response(openaiSSE, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { openaiCall } = await import("../core/format-adapters.ts");
+    const r = await openaiCall(
+      [{ role: "user", content: "hi" }],
+      url, "sk-test", "test-model",
+      new AbortController().signal, "max", false, false, true,
+    );
+    // first attempt sent max → 400; retry sent xhigh → 200
+    expect(bodies.length).toBe(2);
+    expect(bodies[0].reasoning_effort).toBe("max");
+    expect(bodies[1].reasoning_effort).toBe("xhigh");
+    expect(r.content).toBe("ok");
+
+    // second call on the same gateway: alias is cached → straight to xhigh, no 400
+    bodies.length = 0;
+    await openaiCall(
+      [{ role: "user", content: "hi again" }],
+      url, "sk-test", "test-model",
+      new AbortController().signal, "max", false, false, true,
+    );
+    expect(bodies.length).toBe(1);
+    expect(bodies[0].reasoning_effort).toBe("xhigh");
+  });
+});
