@@ -220,6 +220,15 @@ brew install opencode</pre>
                 <input type="text" id="settings-url" class="form-input" placeholder="https://api.deepseek.com/chat/completions" />
               </div>
               <div class="form-row">
+                <label class="form-label" data-i18n="api.format">API 协议</label>
+                <select id="settings-format" class="form-select">
+                  <option value="openai" data-i18n="api.format_openai">OpenAI Chat Completions</option>
+                  <option value="anthropic" data-i18n="api.format_anthropic">Anthropic Messages</option>
+                  <option value="responses" data-i18n="api.format_responses">OpenAI Responses</option>
+                </select>
+                <p class="hint" style="margin:4px 0 0;font-size:12px;opacity:0.7;" data-i18n="api.format_hint">选择接口协议；选供应商时会自动匹配，通常无需手动修改</p>
+              </div>
+              <div class="form-row">
                 <label class="form-label" data-i18n="api.model">Model</label>
                 <div class="form-row-inline-group">
                   <select id="settings-model" class="form-select" style="flex:1;"></select>

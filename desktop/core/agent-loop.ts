@@ -2,7 +2,7 @@
 
 import sessionDb from "../session-db.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { openaiCall, anthropicCall, getAllToolDefs } from "./format-adapters.ts";
+import { openaiCall, anthropicCall, getAllToolDefs, toChatCompletionsUrl } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation, setToolSchemaTokens, estimateToolDefsTokens } from "./token-budget.ts";
@@ -324,7 +324,7 @@ KNOWLEDGE: <内容>
     };
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
-      : apiUrl;
+      : toChatCompletionsUrl(apiUrl);
     const headers: Record<string, string> = apiFormat === "anthropic"
       ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
@@ -1308,7 +1308,7 @@ ${convText}
       };
       const endpoint = apiFormat === "anthropic"
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
-        : apiUrl;
+        : toChatCompletionsUrl(apiUrl);
       const headers: Record<string, string> = apiFormat === "anthropic"
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
         : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };

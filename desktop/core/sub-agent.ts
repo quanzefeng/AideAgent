@@ -143,7 +143,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
       }
       const endpoint = isAnthropic
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
-        : apiUrl;
+        : apiUrl.replace(/\/responses$/, "/chat/completions");
       const headers: Record<string, string> = isAnthropic
         ? { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
         : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };

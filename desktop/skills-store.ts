@@ -239,7 +239,9 @@ Rules:
   const userPrompt = `Translate these skill names to concise Chinese:\n\n${list}`;
 
   let url = apiConfig.apiUrl.trim().replace(/\/+$/, "");
-  if (!url.includes("/chat/completions")) {
+  if (/\/responses$/.test(url)) {
+    url = url.replace(/\/responses$/, "/chat/completions");
+  } else if (!url.includes("/chat/completions")) {
     if (!url.endsWith("/v1")) url += "/v1";
     url += "/chat/completions";
   }
@@ -779,7 +781,9 @@ export async function generateSkill(prompt: string, apiKey: string, apiUrl: stri
   if (!apiKey || !apiUrl) return { error: "API not configured" };
 
   let url = apiUrl.trim().replace(/\/+$/, "");
-  if (!url.includes("/chat/completions")) {
+  if (/\/responses$/.test(url)) {
+    url = url.replace(/\/responses$/, "/chat/completions");
+  } else if (!url.includes("/chat/completions")) {
     if (!url.endsWith("/v1")) url += "/v1";
     url += "/chat/completions";
   }
@@ -1039,7 +1043,7 @@ export async function autoGenerateSkillFromConversation(args: {
       : { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
     const endpoint = apiFormat === "anthropic"
       ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
-      : apiUrl;
+      : apiUrl.replace(/\/responses$/, "/chat/completions");
     if (apiFormat === "anthropic") {
       body.system = "你是一个技能提炼助手。从对话中提炼可复用的技能步骤。";
       body.model = model || "claude-sonnet-4-20250514";

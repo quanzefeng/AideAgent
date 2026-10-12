@@ -190,6 +190,7 @@ const settingsCloseBtn = $("#settings-close-btn");
 const settingsTabs = $("#settings-tabs");
 const settingsProvider = $("#settings-provider");
 const settingsUrl = $("#settings-url");
+const settingsFormat = $("#settings-format");
 const settingsModel = $("#settings-model");
 const settingsModelInput = $("#settings-model-input");
 const settingsKey = $("#settings-key");
@@ -1119,12 +1120,20 @@ function loadApiConfig() {
   const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
   const prefix = provider ? `AideAgent_${provider}_` : "AideAgent_";
   const apiKey = _apiKeyCache[provider] || "";
+  // api_format is stored per-provider (same prefix scheme as url/model).
+  // Migration: the legacy global key AideAgent_api_format predates the
+  // per-provider split — fall back to it (and re-save under the new key).
+  let apiFormat = localStorage.getItem(`${prefix}api_format`);
+  if (!apiFormat) {
+    apiFormat = localStorage.getItem(STORAGE_KEYS.API_FORMAT) || "openai";
+    localStorage.setItem(`${prefix}api_format`, apiFormat);
+  }
   return {
     provider,
     apiUrl: localStorage.getItem(`${prefix}api_url`) || "",
     model: localStorage.getItem(`${prefix}model`) || "",
     apiKey,
-    apiFormat: localStorage.getItem(STORAGE_KEYS.API_FORMAT) || "openai",
+    apiFormat,
     contextWindow: localStorage.getItem(`${prefix}context_window`) || "",
   };
 }
@@ -1134,7 +1143,12 @@ async function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat, context
   if (apiUrl) localStorage.setItem(`${prefix}api_url`, apiUrl);
   localStorage.setItem(STORAGE_KEYS.PROVIDER, provider);
   if (model) localStorage.setItem(`${prefix}model`, model);
-  if (apiFormat) localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
+  if (apiFormat) {
+    localStorage.setItem(`${prefix}api_format`, apiFormat);
+    // Keep the legacy global key in sync — session-info / skills-panel still
+    // read it directly, and it doubles as the migration fallback above.
+    localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
+  }
   // Empty string = clear the manual override (auto-detection takes over).
   if (contextWindow) localStorage.setItem(`${prefix}context_window`, contextWindow);
   else localStorage.removeItem(`${prefix}context_window`);
@@ -1221,6 +1235,7 @@ function fillSettingsForm() {
     if (settingsProvider) settingsProvider.value = cfg.provider;
     const preset = PROVIDER_PRESETS[cfg.provider];
     if (settingsUrl) settingsUrl.value = cfg.apiUrl || (preset?.url ?? "");
+    if (settingsFormat) settingsFormat.value = cfg.apiFormat || preset?.format || "openai";
     if (settingsModel || settingsModelInput) {
       const selectedModel = cfg.model || preset?.model || "";
       populateModelDropdown(preset, selectedModel);
@@ -1282,6 +1297,11 @@ function onProviderChange() {
   const prefix = key ? `AideAgent_${key}_` : "AideAgent_";
   const savedUrl = localStorage.getItem(`${prefix}api_url`) || "";
   const savedModel = localStorage.getItem(`${prefix}model`) || "";
+  // Protocol: saved per-provider value wins; otherwise preselect the
+  // preset's format (user can still override before saving).
+  if (settingsFormat) {
+    settingsFormat.value = localStorage.getItem(`${prefix}api_format`) || preset?.format || "openai";
+  }
   if (preset && key) {
     settingsUrl.value = savedUrl || preset.url;
     populateModelDropdown(preset, savedModel || preset.model);
@@ -1325,6 +1345,20 @@ function normalizeApiUrl(url) {
   return url + "/chat/completions";
 }
 
+/** Normalize to a .../v1/responses URL for the OpenAI Responses protocol. */
+function normalizeResponsesUrl(url) {
+  url = url.trim().replace(/\/+$/, "");
+  if (!url) return "";
+  if (/\/responses$/.test(url)) return url;
+  if (/\/v\d+$/.test(url)) return url + "/responses";
+  if (/\/chat\/completions$/.test(url)) return url.replace(/\/chat\/completions$/, "/responses");
+  try {
+    const u = new URL(url);
+    if (u.pathname === "/" || u.pathname === "") return url + "/v1/responses";
+  } catch {}
+  return url + "/v1/responses";
+}
+
 async function saveSettingsForm() {
   const provider = settingsProvider?.value || "";
   const rawUrl = (settingsUrl?.value || "").trim();
@@ -1332,7 +1366,9 @@ async function saveSettingsForm() {
   const apiKey = (settingsKey?.value || "").trim();
   const contextWindow = (settingsContextWindow?.value || "").trim();
   const preset = PROVIDER_PRESETS[provider];
-  const apiFormat = preset?.format || "openai";
+  // Protocol comes from the dropdown; the preset only seeds the default
+  // (set on provider change / form fill) — the user can override it.
+  const apiFormat = settingsFormat?.value || preset?.format || "openai";
 
   if (!rawUrl) {
     if (settingsStatus) {
@@ -1351,7 +1387,9 @@ async function saveSettingsForm() {
     return;
   }
 
-  const apiUrl = apiFormat === "anthropic" ? rawUrl.replace(/\/+$/, "") : normalizeApiUrl(rawUrl);
+  const apiUrl = apiFormat === "anthropic" ? rawUrl.replace(/\/+$/, "")
+    : apiFormat === "responses" ? normalizeResponsesUrl(rawUrl)
+    : normalizeApiUrl(rawUrl);
 
   // Show the normalized URL to user
   if (apiUrl !== rawUrl) {
@@ -1394,12 +1432,15 @@ async function fetchModels() {
   const settingsStatus = document.getElementById("settings-status");
   const rawUrl = (document.getElementById("settings-url")?.value || "").trim();
   const apiKey = (document.getElementById("settings-key")?.value || "").trim();
+  const apiFormat = settingsFormat?.value || "openai";
 
   // Derive base URL for models endpoint
   let baseUrl = rawUrl
     .replace(/\/chat\/completions$/, "")
     .replace(/\/v1\/chat\/completions$/, "")
     .replace(/\/v1\/messages$/, "")
+    .replace(/\/v1\/responses$/, "")
+    .replace(/\/responses$/, "")
     .replace(/\/v1$/, "")
     .replace(/\/+$/, "");
 
@@ -1421,7 +1462,7 @@ async function fetchModels() {
   try {
     const bridge = window.aideagent;
     if (bridge?.fetchModels) {
-      const result = await bridge.fetchModels(baseUrl, apiKey);
+      const result = await bridge.fetchModels(baseUrl, apiKey, apiFormat);
       models = result?.models || [];
       errors = result?.errors || [];
     } else {

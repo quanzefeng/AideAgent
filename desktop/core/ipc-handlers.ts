@@ -65,9 +65,10 @@ export function registerIpcHandlers() {
   // Runs in MAIN process: renderer fetch is subject to CORS preflight, and
   // many providers (e.g. sensenova) answer OPTIONS with 404, so the browser
   // blocks the request as "Failed to fetch". Node fetch ignores CORS.
-  ipcMain.handle("api:fetch-models", async (_event, args: { baseUrl?: string; apiKey?: string }) => {
+  ipcMain.handle("api:fetch-models", async (_event, args: { baseUrl?: string; apiKey?: string; apiFormat?: string }) => {
     const rawBase = String(args?.baseUrl || "").trim();
     const apiKey = String(args?.apiKey || "").trim();
+    const apiFormat = String(args?.apiFormat || "openai");
     let baseUrl: string;
     try {
       const u = new URL(rawBase);
@@ -84,7 +85,14 @@ export function registerIpcHandlers() {
       const shortUrl = url.replace(baseUrl, "") || url;
       try {
         const headers: Record<string, string> = {};
-        if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+        // Anthropic Messages uses x-api-key + a version header instead of
+        // Bearer; responses/openai both use Bearer on /v1/models.
+        if (apiFormat === "anthropic") {
+          if (apiKey) headers["x-api-key"] = apiKey;
+          headers["anthropic-version"] = "2023-06-01";
+        } else if (apiKey) {
+          headers["Authorization"] = `Bearer ${apiKey}`;
+        }
         const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
         if (!res.ok) {
           let detail = [res.status, res.statusText].filter(Boolean).join(" ");

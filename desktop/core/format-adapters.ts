@@ -403,6 +403,18 @@ export function toAnthropicMessages(msgs: ApiMessage[]): { messages: Array<{ rol
 }
 
 /**
+ * Map a possibly-responses-formatted URL (.../v1/responses) onto the
+ * chat-completions endpoint used by auxiliary (non-main-loop) calls —
+ * auto-review, compaction, memory selection, skill generation, etc.
+ * Providers that expose the Responses API almost always keep the
+ * chat/completions endpoint alongside it. Other URL shapes pass through
+ * unchanged.
+ */
+export function toChatCompletionsUrl(apiUrl: string): string {
+  return apiUrl.replace(/\/responses$/, "/chat/completions");
+}
+
+/**
  * @param {any[]} msgs
  * @param {string} apiUrl
  * @param {string} apiKey

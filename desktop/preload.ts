@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   submitQuery: (prompt: any, apiKey: any, apiUrl: any, model: any, apiFormat: any, files: any, enabledSkills: any, reasoningEffort: any, agentName: any, kbEnabled: any, planMode: any, webSearchEnabled: any, runtime: any, opencodeModelId: any, contextWindowOverride: any) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId, contextWindowOverride }),
   detectOpencode: () => ipcRenderer.invoke("agent:detect-opencode"),
   listOpencodeModels: () => ipcRenderer.invoke("opencode:list-models"),
-  fetchModels: (baseUrl: any, apiKey: any) => ipcRenderer.invoke("api:fetch-models", { baseUrl, apiKey }),
+  fetchModels: (baseUrl: any, apiKey: any, apiFormat: any) => ipcRenderer.invoke("api:fetch-models", { baseUrl, apiKey, apiFormat }),
   openExternal: (url: any) => ipcRenderer.invoke("shell:open-external", url),
   setPlanMode: (enabled: any) => ipcRenderer.invoke("plan-mode:set", enabled),
   getPlanMode: () => ipcRenderer.invoke("plan-mode:get"),

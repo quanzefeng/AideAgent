@@ -76,11 +76,11 @@ export function isLocalUrl(apiUrl: string | undefined): boolean {
 }
 
 function serverRoot(apiUrl: string): string {
-  return apiUrl.replace(/\/+$/, "").replace(/\/v1\/chat\/completions$/i, "").replace(/\/v1$/i, "");
+  return apiUrl.replace(/\/+$/, "").replace(/\/v1\/chat\/completions$/i, "").replace(/\/v1\/responses$/i, "").replace(/\/v1$/i, "");
 }
 
 function openAiRoot(apiUrl: string): string {
-  return apiUrl.replace(/\/+$/, "").replace(/\/chat\/completions$/i, "");
+  return apiUrl.replace(/\/+$/, "").replace(/\/chat\/completions$/i, "").replace(/\/responses$/i, "");
 }
 
 // ── Probe cache ─────────────────────────────────────────────
