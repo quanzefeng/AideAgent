@@ -5,6 +5,7 @@ import {
   wrapBareLatexRuns,
   splitBareLatexSegments,
   normFormula,
+  preprocessMath,
 } from "../renderer/modules/helpers.ts";
 
 describe("repairTex", () => {
@@ -220,5 +221,73 @@ describe("wrapBareLatexRuns markdown structure", () => {
     expect(out).toContain('class="kp"');
     expect(out).toContain("\n\n");
     expect(out.split("\n").length).toBe(input.split("\n").length);
+  });
+});
+
+describe("preprocessMath — env body regression", () => {
+  // Bug (2026-10-12): the \begin{env} rule destructured (match, env, body)
+  // but the regex had only ONE capture group, so `body` silently received
+  // the match OFFSET — \begin{cases}0,&x<0\\ 1,&x\ge 0\end{cases} rendered
+  // as \begin{cases}5627\end{cases} in a 6k-char FTC proof.
+  it("keeps \\begin{cases} body intact instead of the match offset", () => {
+    const prefix = "x".repeat(200); // non-trivial offset inside the message
+    const text = `设\n\n${prefix}\n\n$$f(x)=\\begin{cases}0,&x<0\\\\ 1,&x\\ge 0\\end{cases}$$\n\n则 $F(x)$。`;
+    const { mathStore } = preprocessMath(text);
+    const cases = mathStore.find(x => x.tex.includes("\\begin{cases}"));
+    expect(cases).toBeTruthy();
+    expect(cases!.tex).toContain("0,&x<0");
+    expect(cases!.tex).toContain("1,&x\\ge 0");
+    // The old bug injected the numeric offset as the whole body
+    expect(cases!.tex).not.toMatch(/\\begin\{cases\}\d+\\end\{cases\}/);
+    expect(cases!.mode).toBe("d");
+  });
+
+  it("wraps ALL bare envs, not just the first (global rule)", () => {
+    const text = "行一\n\\begin{aligned}a&=b\\end{aligned}\n行二\n\\begin{cases}x\\end{cases}";
+    const { mathStore } = preprocessMath(text);
+    const envs = mathStore.filter(m => m.tex.includes("\\begin"));
+    expect(envs.length).toBe(2);
+  });
+
+  it("does not re-wrap envs already inside $$..$$ spans (no nested .kp)", () => {
+    const text = "$$\\begin{cases}a\\\\b\\end{cases}$$\n\n正文\n\n\\begin{aligned}c&=d\\end{aligned}";
+    const { src, mathStore } = preprocessMath(text);
+    // No live span should survive extraction; tokens only
+    expect(src).not.toContain('<span class="kp"');
+    // Exactly two math items, each a clean env (no span markup inside tex)
+    const envs = mathStore.filter(m => m.tex.includes("\\begin"));
+    expect(envs.length).toBe(2);
+    for (const e of envs) expect(e.tex).not.toContain('<span class="kp"');
+  });
+
+  it("preserves the full two-row cases body through the pipeline", () => {
+    // Exact fragment from the FTC-proof message (id 7294)
+    const text = '2. **$f$ 有跳跃间断时 $F$ 不可导**。设\n$$f(x)=\\begin{cases}0,&x<0\\\\ 1,&x\\ge 0\\end{cases}$$\n则 $F(x)=\\int_0^x f$ 在 $x=0$ 处连续但不可导：右导数 $=1$，左导数 $=0$。';
+    const { mathStore } = preprocessMath(text);
+    const texs = mathStore.map(m => m.tex);
+    expect(texs.some(t => t.includes("f(x)=\\begin{cases}0,&x<0\\\\ 1,&x\\ge 0\\end{cases}"))).toBe(true);
+  });
+});
+
+describe("preprocessMath — inline $...$ heuristics", () => {
+  it("math-izes operator-led fragments ($=1$, $=0$)", () => {
+    const { mathStore } = preprocessMath("右导数 $=1$，左导数 $=0$。");
+    const texs = mathStore.map(m => m.tex);
+    expect(texs).toContain("=1");
+    expect(texs).toContain("=0");
+  });
+
+  it("math-izes short numeric fragments ($1$, $0$, $0,1$) — paired $ is never currency", () => {
+    const { mathStore } = preprocessMath("恒为 $1$ 与恒为 $0$，取 $0,1$ 两值。");
+    const texs = mathStore.map(m => m.tex);
+    expect(texs).toContain("1");
+    expect(texs).toContain("0");
+    expect(texs).toContain("0,1");
+  });
+
+  it("keeps primes ($G'$) as math", () => {
+    const { mathStore } = preprocessMath("若存在 $G'=f$，则 $G'$ 在 $x$ 处");
+    const texs = mathStore.map(m => m.tex);
+    expect(texs.some(t => t.includes("G'"))).toBe(true);
   });
 });

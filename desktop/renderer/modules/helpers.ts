@@ -115,7 +115,15 @@ export function looksLikeBareLatex(s: any): boolean {
 }
 
 const CJK_SPLIT = /([㐀-䶿一-鿿豈-﫿　-〿＀-￯]+)/;
-const COMPLETE_ENV_RE = /\\begin\{([^}]+)\}[\s\S]*?\\end\{\1\}/;
+// Group 1 = env name, group 2 = body (the \1 backref still anchors to the
+// name). The body group is load-bearing: the renderMarkdown env rule
+// destructures (match, env, body) — with only ONE group, `body` silently
+// received the match OFFSET and a formula like
+// $$f(x)=\begin{cases}0,&x<0\\ 1,&x\ge 0\end{cases}$$
+// rendered as \begin{cases}5627\end{cases} where 5627 was the character
+// offset of \begin in the message (FTC-proof chat, 2026-10-12).
+const COMPLETE_ENV_RE = /\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}/;
+const COMPLETE_ENV_RE_G = /\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}/g;
 
 /** Strip latex markers / unicode exponents so repeated model copies compare equal. */
 export function normFormula(s: any): string {
@@ -276,7 +284,7 @@ function wrapBareOutsideKp(text: string): string {
   // Outer sentinel (\uE000/\uE001) is distinct from splitBareLatexSegments's
   // inner mask (\uE002/\uE003) so neither restore clobbers the other's envs.
   const envs: string[] = [];
-  const masked = text.replace(COMPLETE_ENV_RE, (m) => {
+  const masked = text.replace(COMPLETE_ENV_RE_G, (m) => {
     envs.push(m);
     return `\uE000E${envs.length - 1}\uE001`;
   });
@@ -337,6 +345,27 @@ function wrapBareOutsideKp(text: string): string {
 }
 
 /**
+ * Apply `fn` to the parts of `src` OUTSIDE existing `.kp` spans, leaving
+ * the spans themselves untouched. Guards against re-processing (and
+ * nesting inside) math placeholders that earlier rules already produced.
+ * @param {string} src
+ * @param {(seg: string) => string} fn
+ * @returns {string}
+ */
+function mapOutsideKp(src: string, fn: (seg: string) => string): string {
+  const kpRe = /<span class="kp"[^>]*>[\s\S]*?<\/span>/g;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = kpRe.exec(src))) {
+    out += fn(src.slice(last, m.index));
+    out += m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(src.slice(last));
+}
+
+/**
  * Wrap bare (delimiter-less) LaTeX runs in `.kp` placeholders.
  * Skips existing `.kp` spans (display math already extracted). Dedupes
  * consecutive near-duplicate model formula copies before wrapping.
@@ -345,27 +374,20 @@ function wrapBareOutsideKp(text: string): string {
  */
 export function wrapBareLatexRuns(text: any): string {
   if (!text) return text;
-  const src = String(text);
-  const kpRe = /<span class="kp"[^>]*>[\s\S]*?<\/span>/g;
-  let out = "";
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = kpRe.exec(src))) {
-    out += wrapBareOutsideKp(src.slice(last, m.index));
-    out += m[0];
-    last = m.index + m[0].length;
-  }
-  out += wrapBareOutsideKp(src.slice(last));
-  return out;
+  return mapOutsideKp(String(text), wrapBareOutsideKp);
 }
 
 /**
- * Render markdown to sanitized HTML, with $$...$$ and \[...\] converted to
- * KaTeX placeholders for later rendering in renderLatexInElement.
+ * Preprocess raw markdown for math rendering (pure string→string, no DOM):
+ * protect code, convert $$..$$ / \[..\] / \(..\) / \begin..\end / $..$ /
+ * bare LaTeX into `.kp` placeholder spans, lift those spans into inert
+ * @@AIDEMATHn@@ tokens (marked's HTML-block rules would otherwise swallow
+ * following headings/tables), and restore code fences. The caller re-injects
+ * the spans from `mathStore` after marked + before sanitize.
  * @param {string} text - raw markdown
- * @returns {string} sanitized HTML
+ * @returns {{ src: string, mathStore: Array<{ mode: string, tex: string }> }}
  */
-export function renderMarkdown(text: any) {
+export function preprocessMath(text: any): { src: string, mathStore: Array<{ mode: string, tex: string }> } {
   // Protect fenced/inline code from math rules only; restore before marked
   // so marked still turns fences into <pre><code>.
   const codeFences: string[] = [];
@@ -386,10 +408,15 @@ export function renderMarkdown(text: any) {
   src = src.replace(/(?<!\\)\\\[([\s\S]+?)(?<!\\)\\\]/g, '<span class="kp" data-m="d">$1</span>');
   // 3. \(...\) → inline math
   src = src.replace(/(?<!\\)\\\(([\s\S]+?)(?<!\\)\\\)/g, '<span class="kp" data-m="i">$1</span>');
-  // 4. \begin{env}...\end{env} → display math (atomic; must run before bare wrap)
-  src = src.replace(COMPLETE_ENV_RE, (_m: any, env: any, body: any) => {
-    return `<span class="kp" data-m="d">\\begin{${env}}${body}\\end{${env}}</span>`;
-  });
+  // 4. \begin{env}...\end{env} outside existing .kp spans → display math.
+  // Must skip spans from rules 1-3: re-matching an env already inside a
+  // $$..$$ span used to rewrite the span's inner text (and, before the
+  // body-capture-group fix, replace it with the match offset number —
+  // rendering \begin{cases}… as \begin{cases}5627\end{cases}).
+  // Global: one message may contain several bare envs.
+  src = mapOutsideKp(src, (seg) =>
+    seg.replace(COMPLETE_ENV_RE_G, (_m: any, env: any, body: any) =>
+      `<span class="kp" data-m="d">\\begin{${env}}${body}\\end{${env}}</span>`));
   // 5. Dangling \[ (streaming)
   src = src.replace(/(?<!\\)\\\[([^\n]*)/g, '<span class="kp" data-m="d">$1</span>');
   // 6. Dangling \( (streaming)
@@ -397,13 +424,19 @@ export function renderMarkdown(text: any) {
   // 7. $...$ → inline math. Single-letter / short ids ($C$, $BC$, $x$) count as math.
   src = src.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (m: any, inner: any) => {
     const t = inner.trim();
-    if (/^\d+[.,]?\d*%?$/.test(t)) return m; // currency / plain number
     if (/[\\{}_^]/.test(t)) return `<span class="kp" data-m="i">${t}</span>`;
-    if (/^[A-Za-z]{1,8}$/.test(t)) return `<span class="kp" data-m="i">${t}</span>`;
+    if (/^[A-Za-z][A-Za-z0-9']{0,7}$/.test(t)) return `<span class="kp" data-m="i">${t}</span>`;
     if (/^[A-Za-z]{1,6}(?:\s*,\s*[A-Za-z]{1,6}){1,8}$/.test(t)) {
       return `<span class="kp" data-m="i">${t}</span>`;
     }
     if (/[a-zA-Z]/.test(t) && /[=+\-*/^()\[\]<>]/.test(t)) {
+      return `<span class="kp" data-m="i">${t}</span>`;
+    }
+    // Paired $...$ around pure numbers / operator-led fragments is math,
+    // never currency — chat currency is written with a single $ ("$100").
+    // Without this, "$=1$", "$0,1$", "$1$" from math-heavy prose rendered
+    // with literal dollar signs (FTC proof chat, 2026-10-12).
+    if (t.length <= 16 && /^[\d\s.,+\-*/<>=≤≥≠()]+$/.test(t) && /[\d=<>≤≥]/.test(t)) {
       return `<span class="kp" data-m="i">${t}</span>`;
     }
     return m;
@@ -429,7 +462,17 @@ export function renderMarkdown(text: any) {
   // Restore code samples so marked/sanitize see the real content
   src = src.replace(/@@AIDEICODE(\d+)@@/g, (_m: any, i: any) => inlineCodes[+i] ?? "");
   src = src.replace(/@@AIDECODE(\d+)@@/g, (_m: any, i: any) => codeFences[+i] ?? "");
+  return { src, mathStore };
+}
 
+/**
+ * Render markdown to sanitized HTML, with $$...$$ and \[...\] converted to
+ * KaTeX placeholders for later rendering in renderLatexInElement.
+ * @param {string} text - raw markdown
+ * @returns {string} sanitized HTML
+ */
+export function renderMarkdown(text: any) {
+  const { src, mathStore } = preprocessMath(text);
   let html = marked.parse(src);
   html = html.replace(/@@AIDEMATH(\d+)@@/g, (_m: any, i: any) => {
     const item = mathStore[+i];
@@ -507,6 +550,13 @@ function wrapBareLatexTextNodes(root: any) {
   }
 }
 
+// Rendered-KaTeX HTML cache keyed by mode+tex. Streaming re-renders the
+// whole message every ~50ms; formulas completed in earlier batches are
+// stable, so their KaTeX HTML is reused instead of re-parsed by KaTeX.
+// Insertion-ordered Map gives cheap LRU-ish eviction at the cap.
+const _katexHtmlCache = new Map<string, string>();
+const KATEX_CACHE_CAP = 500;
+
 /**
  * Walk the given container and render any `.kp` (KaTeX placeholder) spans.
  * Also picks up bare LaTeX left in text nodes (no `.kp` yet).
@@ -530,6 +580,13 @@ export function renderLatexInElement(el: any) {
       displayMode = true;
     }
     const tex = repairTex(raw);
+    const cacheKey = (displayMode ? "d" : "i") + "\0" + tex;
+    const hit = _katexHtmlCache.get(cacheKey);
+    if (hit !== undefined) {
+      span.innerHTML = hit;
+      span.classList.add("katex-host");
+      return;
+    }
     try {
       // throwOnError:false — render as much as possible; bad tokens get
       // .katex-error styling instead of dumping the whole formula raw.
@@ -540,6 +597,11 @@ export function renderLatexInElement(el: any) {
         errorColor: "#b91c1c",
       });
       span.classList.add("katex-host");
+      if (_katexHtmlCache.size >= KATEX_CACHE_CAP) {
+        const oldest = _katexHtmlCache.keys().next().value;
+        if (oldest !== undefined) _katexHtmlCache.delete(oldest);
+      }
+      _katexHtmlCache.set(cacheKey, span.innerHTML);
     } catch (_e) {
       const esc = escapeHtml(tex);
       span.outerHTML = displayMode
