@@ -15,7 +15,7 @@ import { initMemoryPanel } from './modules/memory-panel.ts';
 import { initPromptsPanel } from './modules/prompts-settings.ts';
 import { openPromptsImportModal } from './modules/prompts-modal.ts';
 import { loadAgentName, loadUserName, applyAgentName, applyUserName, initAgentNameUI, initUserAvatarUI, loadUserAvatarSrc } from './modules/agent-name.ts';
-import { sanitize, escapeHtml, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, autoFollowScroll, pinScrollBottom, setStatus, loadReasoningEnabled, saveReasoningEnabled } from './modules/helpers.ts';
+import { sanitize, escapeHtml, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, autoFollowScroll, pinScrollBottom, setStatus, loadReasoningEffort, saveReasoningEffort } from './modules/helpers.ts';
 import { loadEnabledSkills, loadAndRenderSkills } from './modules/skills-panel.ts';
 import { switchSettingsTab, initSettingsTabs } from './modules/settings-tabs.ts';
 import { createFilePreviews } from './modules/file-previews.ts';
@@ -47,7 +47,7 @@ const STORAGE_KEYS = {
   MODEL: "AideAgent_model",
   API_KEY: "AideAgent_api_key",
   API_FORMAT: "AideAgent_api_format",
-  REASONING_ENABLED: "AideAgent_reasoning_enabled",
+  REASONING_EFFORT: "AideAgent_reasoning_effort",
 };
 
 // Provider presets store i18n KEYS in `name` rather than translated strings,
@@ -117,7 +117,9 @@ const stopBtn = $("#stop-btn");
 const statusText = $("#status-text");
 const infoModelName = $("#info-model-name");
 const taskIndicator = $("#task-indicator");
-const reasoningCheckbox = $("#reasoning-checkbox");
+const effortPill = $("#reasoning-toggle");
+const effortPillLabel = $("#effort-pill-label");
+const effortMenu = $("#effort-menu");
 const planModeCheckbox = $("#plan-mode-checkbox");
 // OpenCode uses a 3-mode dropdown (default / build / plan) instead of a
 // single plan-mode toggle. The active mode is stored in `ocMode`.
@@ -636,13 +638,58 @@ function updateInfoBar() {
   infoModelName.textContent = model ? `${label} · ${model}` : label;
 }
 
-/* ── Reasoning toggle event ──────────────────────── */
-if (reasoningCheckbox) {
-  reasoningCheckbox.checked = loadReasoningEnabled();
-  reasoningCheckbox.addEventListener("change", () => {
-    saveReasoningEnabled(reasoningCheckbox.checked);
+/* ── Reasoning effort picker (pill + upward menu) ──── */
+function renderEffortPill() {
+  if (!effortPillLabel || !effortPill) return;
+  const level = loadReasoningEffort();
+  effortPillLabel.textContent = `${t("chat.reasoning")}：${t("chat.effort_" + level)}`;
+  // All four tiers (low/medium/high/max) are active — there is no "off" tier.
+  effortPill.classList.add("effort-active");
+  effortMenu?.querySelectorAll(".effort-menu-item").forEach(item => {
+    item.setAttribute("aria-selected", item.getAttribute("data-effort") === level ? "true" : "false");
   });
-  // Plan mode toggle
+}
+
+function closeEffortMenu() {
+  effortMenu?.classList.add("hidden");
+  effortPill?.setAttribute("aria-expanded", "false");
+}
+
+function initEffortPicker() {
+  if (!effortPill || !effortMenu) return;
+  renderEffortPill();
+
+  effortPill.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = effortMenu.classList.toggle("hidden");
+    effortPill.setAttribute("aria-expanded", open ? "false" : "true");
+  });
+
+  effortMenu.querySelectorAll(".effort-menu-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      saveReasoningEffort(item.getAttribute("data-effort") || "medium");
+      renderEffortPill();
+      closeEffortMenu();
+    });
+  });
+
+  // Outside-click + Escape dismiss (same contract as the input-menu popover).
+  document.addEventListener("click", (e) => {
+    if (!effortMenu.classList.contains("hidden") && !effortAnchorContains(e.target)) closeEffortMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeEffortMenu();
+  });
+
+  function effortAnchorContains(target: any) {
+    return effortPill?.contains(target) || effortMenu.contains(target);
+  }
+}
+initEffortPicker();
+
+/* ── Plan mode toggle ──────────────────────────── */
+if (planModeCheckbox) {
   planModeCheckbox.addEventListener("change", () => {
     window.aideagent.setPlanMode(planModeCheckbox.checked);
   });
@@ -1529,7 +1576,7 @@ async function submitQuery() {
   // Submit
   try {
     const enabledSkills = loadEnabledSkills();
-    const reasoning = loadReasoningEnabled();
+    const reasoningEffort = loadReasoningEffort();
     const agentName = loadAgentName();
     const kbEnabled = document.getElementById("kb-toggle")?.checked || false;
     const webSearchEnabled = document.getElementById("web-search-toggle")?.checked ?? true;
@@ -1538,7 +1585,7 @@ async function submitQuery() {
     // picker choice (or null = opencode default) so the main process can
     // pass it to ACP `session/new`.
     const opencodeModelId = getCurrentRuntime() === "opencode" ? ocModelId : null;
-    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoning, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime(), opencodeModelId, cfg.contextWindow || "");
+    await window.aideagent.submitQuery(text, cfg.apiKey, cfg.apiUrl, cfg.model, cfg.apiFormat, apiFiles, enabledSkills, reasoningEffort, agentName, kbEnabled, activePlanModeEnabled(), webSearchEnabled, getCurrentRuntime(), opencodeModelId, cfg.contextWindow || "");
   } catch (err) {
     console.error("Query error:", err);
   }
@@ -3274,6 +3321,7 @@ initUpdateToast();
       setLang(langSelect.value);
       applyLang();
       // Re-render dynamic elements
+      renderEffortPill();
       applyAgentName(loadAgentName());
       applyUserName(loadUserName());
       refreshSessionList();

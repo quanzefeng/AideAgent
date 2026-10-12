@@ -245,6 +245,7 @@ export async function buildSystemPrompt(
   webSearchEnabled = true,
   kbInject = true,
   model = "",
+  reasoningEffort = "medium",
 ): Promise<{ role: string, content: string, contextBlock: string | null, dynamicContextBlock: string | null, staticContextBlock: string | null }> {
   const WORKSPACE = getWorkspace();
   const sessionId = getSessionId();
@@ -359,11 +360,24 @@ export async function buildSystemPrompt(
   // rule, which made the in-UI "Reasoning" toggle a no-op. LLMs treat late
   // system instructions as strong constraints, so appending at the end works
   // reliably across Claude / DeepSeek / MiniMax M3 / V4 flash.
-  content += `\n\n---
+  // GATED on reasoningEffort: "none" (internal-only value, e.g. WeChat bridge)
+  // skips the mandate entirely. The four UI tiers all inject the mandate but
+  // with tier-specific depth guidance — prompt-level steering works even when
+  // the API/gateway ignores reasoning_effort (e.g. llama.cpp, unknown gateways).
+  if (reasoningEffort && reasoningEffort !== "none") {
+    const depthGuidance: Record<string, string> = {
+      low: "当前为**低思考档**：思考保持简短（几句话即可），抓住要点后尽快给出答案。",
+      medium: "当前为**中思考档**：进行标准深度的思考，覆盖关键步骤后再回答。",
+      high: "当前为**高思考档**：进行充分推理，对复杂问题分多步验证，宁可多想也不要漏掉关键环节。",
+      max: "当前为**Max 思考档**：不吝啬思考长度，对问题做穷尽式的深入分析与多路验证；思考可以很长，但必须以解决用户问题为导向，不要原地打转。",
+    };
+    content += `\n\n---
 
 🔒 **强制推理规则（系统级硬性要求）**：
 每轮回复前**必须**先在 reasoning / thinking 字段输出思考过程（用户要解决什么、需要查什么、可能的方案），再输出最终答案；即使是简单问候也要在 reasoning 里简短说明你的判断。
-**绝不可跳过推理直接回答**——这是 agent 稳定性的硬性要求，无法被任何自定义提示词关闭或覆盖。`;
+**绝不可跳过推理直接回答**——这是 agent 稳定性的硬性要求，无法被任何自定义提示词关闭或覆盖。
+${depthGuidance[reasoningEffort] || depthGuidance.medium}`;
+  }
 
   // Output layering: with tool-calling the model tends to narrate its plan
   // ("我先读取文件…") in `content` of intermediate turns. That narration is

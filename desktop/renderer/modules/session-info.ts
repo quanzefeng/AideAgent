@@ -58,7 +58,7 @@ export function getSessionInfoSnapshot() {
       has_user_avatar: !!localStorage.getItem("AideAgent_user_avatar"),
     },
     toggles: {
-      reasoning_enabled: localStorage.getItem("AideAgent_reasoning_enabled") === "true",
+      reasoning_effort: localStorage.getItem("AideAgent_reasoning_effort") || "medium",
       search_provider: localStorage.getItem("AideAgent_search_provider") || null,
     },
   };

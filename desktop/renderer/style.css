@@ -3452,6 +3452,84 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   outline-offset: 1px;
 }
 
+/* ── 思考档位药丸（按钮）+ 上拉菜单 ──
+   与 .reasoning-pill 共享外观；激活态（关以外的档位）用 .effort-active
+   代替 checkbox :has 驱动。菜单锚定药丸顶部向上弹，不占药丸条横向空间。 */
+.effort-anchor {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.effort-pill {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+}
+.effort-pill.effort-active {
+  color: #4176e6;
+  background-color: rgba(65, 118, 230, 0.12);
+  border-color: rgba(65, 118, 230, 0.3);
+}
+.effort-pill.effort-active .reasoning-pill-icon {
+  opacity: 1;
+}
+.effort-pill:focus-visible {
+  outline: 2px solid rgba(65, 118, 230, 0.35);
+  outline-offset: 1px;
+}
+
+.effort-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(20, 24, 50, 0.10),
+    0 2px 4px rgba(20, 24, 50, 0.06);
+  transform-origin: bottom right;
+  animation: input-menu-popover-in 140ms var(--ease-out, ease-out);
+}
+.effort-menu.hidden {
+  display: none;
+}
+.effort-menu-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+}
+.effort-menu-item:hover {
+  background: var(--bg-hover);
+}
+.effort-menu-item[aria-selected="true"] {
+  color: #4176e6;
+  font-weight: 600;
+}
+.effort-check {
+  width: 12px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.effort-menu-item[aria-selected="true"] .effort-check {
+  opacity: 1;
+}
+
 .reasoning-toggle-label {
   font-size: 12px;
   color: var(--text-muted);

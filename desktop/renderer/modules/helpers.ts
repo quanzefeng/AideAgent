@@ -659,16 +659,41 @@ export function setStatus(text: any) {
   if (el) el.textContent = text;
 }
 
+/** Reasoning effort levels, ordered weakest → strongest (Codex-style; no "off" tier). */
+export const REASONING_EFFORTS = ["low", "medium", "high", "max"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 /**
- * @returns {boolean} whether the reasoning/thinking section is enabled (default true)
+ * @returns {string} reasoning effort level: "low" | "medium" | "high" | "max" (default "medium").
+ * Migrates the removed "none" tier → "low" and the legacy boolean key
+ * AideAgent_reasoning_enabled (true→high, false→low).
  */
-export function loadReasoningEnabled() {
-  return localStorage.getItem("AideAgent_reasoning_enabled") !== "false";
+export function loadReasoningEffort(): ReasoningEffort {
+  const stored = localStorage.getItem("AideAgent_reasoning_effort");
+  // The "关/none" tier was removed from the UI — the gentlest remaining tier
+  // preserves the "user wanted minimal thinking" intent.
+  if (stored === "none") {
+    saveReasoningEffort("low");
+    return "low";
+  }
+  if (stored && (REASONING_EFFORTS as readonly string[]).includes(stored)) return stored as ReasoningEffort;
+  // Legacy boolean migration: old default was ON (deep reasoning always on),
+  // so true→high preserves the previous "always thinking hard" experience;
+  // false→low is the gentlest tier now that "off" is gone.
+  const legacy = localStorage.getItem("AideAgent_reasoning_enabled");
+  if (legacy !== null) {
+    const migrated = legacy === "false" ? "low" : "high";
+    saveReasoningEffort(migrated);
+    localStorage.removeItem("AideAgent_reasoning_enabled");
+    return migrated;
+  }
+  return "medium";
 }
 
 /**
- * @param {boolean} enabled
+ * @param {string} effort one of REASONING_EFFORTS; invalid values fall back to "medium"
  */
-export function saveReasoningEnabled(enabled: any) {
-  localStorage.setItem("AideAgent_reasoning_enabled", String(enabled));
+export function saveReasoningEffort(effort: string) {
+  const v = (REASONING_EFFORTS as readonly string[]).includes(effort) ? effort : "medium";
+  localStorage.setItem("AideAgent_reasoning_effort", v);
 }

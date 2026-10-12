@@ -209,7 +209,7 @@ function readSkillsSummary() {
  *     api:      { provider, model, apiUrl, apiFormat },  // (renderer, if aide)
  *     appearance: { lang, theme_preset, theme_accent, font, font_weights },
  *     identity:   { agent_name, user_name, has_user_avatar },
- *     toggles:    { reasoning_enabled, search_provider },
+ *     toggles:    { reasoning_effort, search_provider },
  *     workspace:  { current: "/abs/path" } | null,
  *     kb:         { vaultPath, provider, ... } | null,
  *     mcp:        { serverCount, serverNames, builtins } | null,

@@ -133,6 +133,14 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
         max_tokens: computeMaxTokens(cleanMsgs, subTools),
         stream: true,
       };
+      // Sub-agents always run at medium effort (user effort picker applies to
+      // the main agent only). Research consensus (Claude Code / Codex): keep
+      // subagent reasoning cheap — they do focused single-shot work.
+      if (isAnthropic) {
+        body.thinking = { type: "enabled", budget_tokens: 8192 };
+      } else {
+        body.reasoning_effort = "medium";
+      }
       const endpoint = isAnthropic
         ? apiUrl.replace(/\/+$/, "").replace(/\/v1\/messages$/, "").replace(/\/v1$/, "") + "/v1/messages"
         : apiUrl;

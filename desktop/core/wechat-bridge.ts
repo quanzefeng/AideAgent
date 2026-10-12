@@ -181,7 +181,7 @@ async function generateWxReply(prompt: string): Promise<string> {
   // Lazy import to avoid circular dependency
   const { agentLoop, resetPromptCache } = await import("./agent-loop.ts");
   try {
-    const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], false, "", undefined, false, true, true, "aide", undefined);
+    const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], "none", "", undefined, false, true, true, "aide", undefined);
     return result.text || "";
   } catch (err: any) {
     console.error("[wechat] agentLoop error:", err.message);

@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld("aideagent", {
   version: process.versions.electron,
   respondPermission: (id: any, allow: any) => ipcRenderer.invoke("permission:respond", { id, allow }),
   onPermissionRequest: (cb: any) => ipcRenderer.on("permission:request", (_event, d) => cb(d)),
-  submitQuery: (prompt: any, apiKey: any, apiUrl: any, model: any, apiFormat: any, files: any, enabledSkills: any, reasoning: any, agentName: any, kbEnabled: any, planMode: any, webSearchEnabled: any, runtime: any, opencodeModelId: any, contextWindowOverride: any) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId, contextWindowOverride }),
+  submitQuery: (prompt: any, apiKey: any, apiUrl: any, model: any, apiFormat: any, files: any, enabledSkills: any, reasoningEffort: any, agentName: any, kbEnabled: any, planMode: any, webSearchEnabled: any, runtime: any, opencodeModelId: any, contextWindowOverride: any) => ipcRenderer.invoke("query:submit", { prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, planMode, webSearchEnabled, runtime, opencodeModelId, contextWindowOverride }),
   detectOpencode: () => ipcRenderer.invoke("agent:detect-opencode"),
   listOpencodeModels: () => ipcRenderer.invoke("opencode:list-models"),
   fetchModels: (baseUrl: any, apiKey: any) => ipcRenderer.invoke("api:fetch-models", { baseUrl, apiKey }),

@@ -144,7 +144,7 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoning = true, agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null, contextWindowOverride }) => {
+  ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoningEffort = "medium", agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null, contextWindowOverride }) => {
     setPlanMode(!!pm);
     setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
     console.log("[query:submit] runtime =", runtime, "opencodeModelId =", opencodeModelId, "planMode =", getPlanMode(), "pm =", pm);
@@ -154,7 +154,7 @@ export function registerIpcHandlers() {
     // sync path sets an immediate best guess; the server probe refines async.
     updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride });
     sendToRenderer("stream:start", {});
-    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoning, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
+    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
     catch (err: any) {
       const raw = String(err?.message || err || "");
       // Surface connection drops as an actionable message instead of the

@@ -984,11 +984,18 @@ brew install opencode</pre>
                 <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <span class="reasoning-toggle-label" data-i18n="chat.web_search">联网搜索</span>
               </label>
-              <label id="reasoning-toggle" class="reasoning-toggle reasoning-pill" data-i18n-title="chat.reasoning_hint" title="深度推理">
-                <input type="checkbox" id="reasoning-checkbox" class="reasoning-pill-input" checked />
-                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                <span class="reasoning-toggle-label" data-i18n="chat.reasoning">深度推理</span>
-              </label>
+              <div class="effort-anchor">
+                <button type="button" id="reasoning-toggle" class="reasoning-toggle reasoning-pill effort-pill" data-i18n-title="chat.reasoning_hint" title="思考档位" aria-haspopup="menu" aria-expanded="false">
+                  <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span class="reasoning-toggle-label" id="effort-pill-label">思考：中</span>
+                </button>
+                <div id="effort-menu" class="effort-menu hidden" role="menu" aria-label="思考档位">
+                  <button type="button" class="effort-menu-item" data-effort="low" role="menuitem"><span class="effort-check" aria-hidden="true">✓</span><span data-i18n="chat.effort_low">低</span></button>
+                  <button type="button" class="effort-menu-item" data-effort="medium" role="menuitem"><span class="effort-check" aria-hidden="true">✓</span><span data-i18n="chat.effort_medium">中</span></button>
+                  <button type="button" class="effort-menu-item" data-effort="high" role="menuitem"><span class="effort-check" aria-hidden="true">✓</span><span data-i18n="chat.effort_high">高</span></button>
+                  <button type="button" class="effort-menu-item" data-effort="max" role="menuitem"><span class="effort-check" aria-hidden="true">✓</span><span data-i18n="chat.effort_max">Max</span></button>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -396,7 +396,7 @@ export async function agentLoop(
   apiFormat = "openai",
   files: any[] = [],
   enabledSkills?: string[],
-  reasoning = true,
+  reasoningEffort = "medium",
   agentName?: string,
   kbEnabled = false,
   isPlanMode = false,
@@ -620,7 +620,7 @@ export async function agentLoop(
 
   if (isFirstTurn) {
     // ── First turn: build full system prompt, cache everything ──
-    const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, true, model);
+    const sysPrompt = await buildSystemPrompt(enabledSkills, agentName, prompt, kbEnabled, isPlanMode, webSearchEnabled, true, model, reasoningEffort);
     sysContent = sysPrompt.content;
     contextBlockBase = sysPrompt.contextBlock || "";
 
@@ -852,7 +852,7 @@ export async function agentLoop(
         : AbortSignal.timeout(LLM_CALL_TIMEOUT);
       try {
         const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-        const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoning, kbEnabled, webSearchEnabled, silent);
+        const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoningEffort, kbEnabled, webSearchEnabled, silent);
         content = result.content;
         reasoningContent = /** @type {any} */ (result).reasoningContent || "";
         allText += result.content;
@@ -941,7 +941,7 @@ export async function agentLoop(
               ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
               : AbortSignal.timeout(LLM_CALL_TIMEOUT);
             const retryCallFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
-            const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, retrySignal, reasoning, kbEnabled, webSearchEnabled, silent);
+            const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, retrySignal, reasoningEffort, kbEnabled, webSearchEnabled, silent);
             content = retryResult.content;
             reasoningContent = retryResult.reasoningContent || "";
             tcs = retryResult.tcs;

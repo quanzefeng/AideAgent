@@ -459,8 +459,12 @@ const translations = {
     "chat.plan_hint": "计划模式：只读分析，不修改文件",
     "chat.kb_toggle": "知识库",
     "chat.kb_hint": "知识库 RAG 检索",
-    "chat.reasoning": "深度推理",
-    "chat.reasoning_hint": "深度推理",
+    "chat.reasoning": "思考",
+    "chat.reasoning_hint": "思考档位：低/中/高/Max。映射到 API 的 reasoning_effort，并同时调节提示词中的思考深度要求",
+    "chat.effort_low": "低",
+    "chat.effort_medium": "中",
+    "chat.effort_high": "高",
+    "chat.effort_max": "Max",
     "chat.web_search": "联网搜索",
 
     // ── Status ──
@@ -1147,8 +1151,12 @@ const translations = {
     "chat.plan_hint": "Plan mode: read-only analysis, no file modifications",
     "chat.kb_toggle": "KB",
     "chat.kb_hint": "Knowledge Base RAG Search",
-    "chat.reasoning": "Reasoning",
-    "chat.reasoning_hint": "Deep Reasoning",
+    "chat.reasoning": "Thinking",
+    "chat.reasoning_hint": "Thinking effort: low/medium/high/max. Maps to the API reasoning_effort and also adjusts prompt-level thinking depth",
+    "chat.effort_low": "Low",
+    "chat.effort_medium": "Medium",
+    "chat.effort_high": "High",
+    "chat.effort_max": "Max",
     "chat.web_search": "Web Search",
 
     // ── Status ──

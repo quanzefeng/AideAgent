@@ -138,14 +138,14 @@ describe("getSessionInfo — renderer snapshot", () => {
       api: { provider: "deepseek", model: "deepseek-chat", apiUrl: "https://api.deepseek.com/v1", apiFormat: "openai" },
       appearance: { lang: "en", theme_preset: "midnight", theme_accent: "#ff0000", font: "Inter", font_weights: null },
       identity: { agent_name: "MyAgent", user_name: "alice", has_user_avatar: true },
-      toggles: { reasoning_enabled: true, search_provider: "tavily" },
+      toggles: { reasoning_effort: "high", search_provider: "tavily" },
     });
     const r = mod.getSessionInfo();
     expect(r.runtime).toBe("opencode");
     expect(r.api.model).toBe("deepseek-chat");
     expect(r.appearance.lang).toBe("en");
     expect(r.identity.agent_name).toBe("MyAgent");
-    expect(r.toggles.reasoning_enabled).toBe(true);
+    expect(r.toggles.reasoning_effort).toBe("high");
   });
 
   it("returns null for renderer fields when no snapshot pushed", () => {

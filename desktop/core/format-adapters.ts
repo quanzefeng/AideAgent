@@ -354,17 +354,23 @@ export function toAnthropicMessages(msgs: ApiMessage[]): { messages: Array<{ rol
  * @param {string} apiKey
  * @param {string} model
  * @param {AbortSignal} signal
- * @param {boolean} [reasoning]
+ * @param {string} [reasoningEffort] "none" | "low" | "medium" | "high" | "max" ("none" is internal-only, e.g. WeChat bridge)
  * @param {boolean} [kbEnabled]
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
+export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoningEffort = "medium", kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
   msgs = normalizeToolPairing(msgs);
   const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
   console.log("[openaiCall] tools sent to LLM:", toolDefs.map(t => t.function.name).join(", "));
   const body: Record<string, any> = { model: model || "deepseek-chat", messages: msgs, tools: toolDefs, stream: true, max_tokens: computeMaxTokens(msgs, toolDefs) };
-  if (reasoning) body.reasoning_effort = "high";
+  // Effort levels map 1:1 onto the OpenAI-compatible reasoning_effort values
+  // (low/medium/high/max are all accepted or remapped by major providers —
+  // e.g. DeepSeek medium→high, Qwen high/max→xhigh). "none" omits the key
+  // entirely so the provider default applies (some providers reject unknown
+  // params, others reject "none" — omitting is safest).
+  if (reasoningEffort && reasoningEffort !== "none") body.reasoning_effort = reasoningEffort;
+  console.log("[openaiCall] reasoning_effort =", reasoningEffort, "(omitted from body:", reasoningEffort === "none", ")");
   const buildRes = () => fetchWithRetry(
     () => fetch(apiUrl, {
       method: "POST",
@@ -494,12 +500,12 @@ export async function openaiCall(msgs: any[], apiUrl: string, apiKey: string, mo
  * @param {string} apiKey
  * @param {string} model
  * @param {AbortSignal} signal
- * @param {boolean} [reasoning]
+ * @param {string} [reasoningEffort] "none" | "low" | "medium" | "high" | "max" (mapped to thinking.budget_tokens; "none" internal-only)
  * @param {boolean} [kbEnabled]
  * @param {boolean} [webSearchEnabled]
  * @returns {Promise<{content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{id: string, type: string, function: {name: string, arguments: string}}>, usage: object | null}>}
  */
-export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoning = true, kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
+export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoningEffort = "medium", kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
   const { messages, system } = toAnthropicMessages(normalizeToolPairing(msgs));
   // ── Cache the first message (first history entry) → caches system + entire history prefix ──
   // After reordering, messages[0] is the first history item — stable across turns.
@@ -525,16 +531,26 @@ export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string,
     ? [...toolDefs.slice(0, -1), { ...toolDefs[toolDefs.length - 1], cache_control: { type: "ephemeral", ttl: 3600 } }]
     : toolDefs;
 
+  const maxTokens = computeMaxTokens(msgs, cachedTools);
   const body: Record<string, any> = {
     model: model || "claude-sonnet-4-20250514",
-    max_tokens: computeMaxTokens(msgs, cachedTools),
+    max_tokens: maxTokens,
     system: systemBlock,
     messages,
     tools: cachedTools,
     stream: true,
   };
-  if (reasoning) {
-    body.thinking = { type: "enabled", budget_tokens: 4096 };
+  // Anthropic has no reasoning_effort — depth is controlled by the extended
+  // thinking token budget. Map our active levels onto budgets, then clamp:
+  // the API requires budget_tokens >= 1024 and max_tokens > budget_tokens.
+  // "max" reserves 25% of max_tokens for the answer (budget = 75%);
+  // low/medium/high keep at least half of max_tokens for the answer.
+  if (reasoningEffort && reasoningEffort !== "none") {
+    const budgets: Record<string, number> = { low: 4096, medium: 8192, high: 16384 };
+    const cap = reasoningEffort === "max" ? Math.floor(maxTokens * 0.75) : Math.floor(maxTokens / 2);
+    const target = reasoningEffort === "max" ? cap : (budgets[reasoningEffort] ?? 8192);
+    const budget = Math.min(target, Math.max(1024, cap));
+    body.thinking = { type: "enabled", budget_tokens: budget };
   }
   const buildRes = () => fetchWithRetry(
     () => fetch(endpoint, {
