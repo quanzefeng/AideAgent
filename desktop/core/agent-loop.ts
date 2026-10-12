@@ -2,7 +2,7 @@
 
 import sessionDb from "../session-db.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { openaiCall, anthropicCall, getAllToolDefs, toChatCompletionsUrl } from "./format-adapters.ts";
+import { openaiCall, anthropicCall, responsesCall, getAllToolDefs, toChatCompletionsUrl } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
 import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation, setToolSchemaTokens, estimateToolDefsTokens } from "./token-budget.ts";
@@ -851,7 +851,7 @@ export async function agentLoop(
         ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
         : AbortSignal.timeout(LLM_CALL_TIMEOUT);
       try {
-        const callFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
+        const callFn = apiFormat === "anthropic" ? anthropicCall : apiFormat === "responses" ? responsesCall : openaiCall;
         const result = await callFn(msgs, apiUrl, apiKey, model, callSignal, reasoningEffort, kbEnabled, webSearchEnabled, silent);
         content = result.content;
         reasoningContent = /** @type {any} */ (result).reasoningContent || "";
@@ -940,7 +940,7 @@ export async function agentLoop(
             const retrySignal = signal
               ? AbortSignal.any([signal, AbortSignal.timeout(LLM_CALL_TIMEOUT)])
               : AbortSignal.timeout(LLM_CALL_TIMEOUT);
-            const retryCallFn = apiFormat === "anthropic" ? anthropicCall : openaiCall;
+            const retryCallFn = apiFormat === "anthropic" ? anthropicCall : apiFormat === "responses" ? responsesCall : openaiCall;
             const retryResult = await retryCallFn(msgs, apiUrl, apiKey, model, retrySignal, reasoningEffort, kbEnabled, webSearchEnabled, silent);
             content = retryResult.content;
             reasoningContent = retryResult.reasoningContent || "";

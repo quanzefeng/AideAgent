@@ -765,3 +765,213 @@ export async function anthropicCall(msgs: any[], apiUrl: string, apiKey: string,
   }
   return { content, reasoningContent, finishReason, tcs, usage };
 }
+
+// ── OpenAI Responses API ───────────────────────────────────
+// The /v1/responses endpoint (OpenAI o-series / GPT-5, and providers that
+// mirror it) uses a different request shape than chat/completions: a flat
+// `input` item list (function calls / outputs are first-class items, not
+// roles), flattened tool schemas, `max_output_tokens`, and a `reasoning`
+// object. Auxiliary calls (auto-review, compaction, …) deliberately stay on
+// chat/completions via toChatCompletionsUrl() — only the main agent loop
+// and its streaming tool protocol go through responsesCall.
+
+/**
+ * Flatten the chat/completions tool schema cache into the Responses API's
+ * flat function-tool shape.
+ */
+export function toResponsesTools(kbEnabled = true, webSearchEnabled = true): Array<{ type: string, name: string, description: string, parameters: object }> {
+  return getAllToolDefs(kbEnabled, webSearchEnabled).map(t => ({
+    type: "function",
+    name: t.function.name,
+    description: t.function.description,
+    parameters: t.function.parameters,
+  }));
+}
+
+/**
+ * Convert the internal message list into Responses `instructions` +
+ * `input` items. System messages merge into `instructions`; assistant
+ * tool_calls become `function_call` items; tool results become
+ * `function_call_output` items (they have no role — they follow the call).
+ */
+export function toResponsesInput(msgs: any[]): { instructions: string | null, input: any[] } {
+  const input: any[] = [];
+  let instructions: string | null = null;
+  for (const m of msgs) {
+    if (m.role === "system") {
+      instructions = instructions ? instructions + "\n\n" + (m.content ?? "") : (m.content ?? "");
+      continue;
+    }
+    if (m.role === "assistant") {
+      if (m.content) input.push({ role: "assistant", content: m.content });
+      for (const tc of m.tool_calls || []) {
+        input.push({
+          type: "function_call",
+          call_id: tc.id,
+          name: tc.function?.name || tc.name || "unknown",
+          arguments: tc.function?.arguments ?? tc.arguments ?? "{}",
+        });
+      }
+      continue;
+    }
+    if (m.role === "tool") {
+      input.push({
+        type: "function_call_output",
+        call_id: m.tool_call_id,
+        output: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""),
+      });
+      continue;
+    }
+    // user (default)
+    const content = typeof m.content === "string" ? m.content
+      : Array.isArray(m.content) ? m.content.map((c: any) => {
+          if (c.type === "image_url") return { type: "input_image", image_url: c.image_url?.url ?? c.image_url };
+          return { type: "input_text", text: typeof c.text === "string" ? c.text : JSON.stringify(c) };
+        })
+      : String(m.content ?? "");
+    input.push({ role: "user", content });
+  }
+  return { instructions, input };
+}
+
+/**
+ * OpenAI Responses API call. Same return contract as openaiCall /
+ * anthropicCall so agent-loop's callFn dispatch is a straight swap.
+ * `reasoning.effort` accepts low/medium/high — "max" maps to "high"
+ * (the Responses API has no max tier on current models); "none" omits
+ * the reasoning object entirely.
+ */
+export async function responsesCall(msgs: any[], apiUrl: string, apiKey: string, model: string, signal: AbortSignal, reasoningEffort = "medium", kbEnabled = true, webSearchEnabled = true, silent = false): Promise<{ content: string, reasoningContent: string, finishReason: string | null, tcs: Array<{ id: string, type: string, function: { name: string, arguments: string } }>, usage: object | null }> {
+  msgs = normalizeToolPairing(msgs);
+  const toolDefs = getAllToolDefs(kbEnabled, webSearchEnabled);
+  const tools = toolDefs.map(t => ({ type: "function", name: t.function.name, description: t.function.description, parameters: t.function.parameters }));
+  console.log("[responsesCall] tools sent to LLM:", tools.map(t => t.name).join(", "));
+  const { instructions, input } = toResponsesInput(msgs);
+  const base = apiUrl.replace(/\/+$/, "");
+  const endpoint = base.endsWith("/responses") ? base
+    : base.endsWith("/v1") ? base + "/responses"
+    : base + "/v1/responses";
+  const body: Record<string, any> = {
+    model: model || "gpt-5",
+    input,
+    tools,
+    stream: true,
+    max_output_tokens: computeMaxTokens(msgs, toolDefs),
+  };
+  if (instructions) body.instructions = instructions;
+  if (reasoningEffort && reasoningEffort !== "none") {
+    body.reasoning = {
+      effort: reasoningEffort === "max" ? "high" : reasoningEffort,
+      summary: "auto",
+    };
+  }
+  console.log("[responsesCall] reasoning.effort =", body.reasoning?.effort ?? "(omitted)");
+  const buildRes = () => fetchWithRetry(
+    () => fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    (res, errText) => `API ${res.status} (${res.statusText})\nURL: ${endpoint}\nModel: ${model || "gpt-5"}\n${errText ? "Response: " + errText : ""}`,
+    (errText, errorMsg) => {
+      if (isContextOverflowText(errText)) {
+        const detectedCtx = parseContextWindowFromError(errText);
+        if (detectedCtx) {
+          setContextWindow(detectedCtx);
+          const retryError = new ContextSizeError(errorMsg);
+          retryError.detectedContextWindow = detectedCtx;
+          return retryError;
+        }
+      }
+      return null;
+    },
+    "responsesCall",
+  );
+  let buf = "", content = "", reasoningContent = "";
+  // Keyed by output-item id (e.g. "fc_abc") — function_call items stream in
+  // via output_item.added (name) + function_call_arguments.delta, and
+  // output_item.done carries the authoritative final state.
+  const tcAccum: Record<string, { call_id: string, name: string, arguments: string }> = {};
+  let usage: any = null;
+  let terminal = false;
+  let terminalStatus = "";
+  const debugReasoning = process.env.DEBUG_REASONING === "1";
+  if (debugReasoning) console.log(`[reasoning-debug] responsesCall model=${model} endpoint=${endpoint}`);
+  const processLine = (line: string): void => {
+    const t = line.trim();
+    if (!t || !t.startsWith("data:")) return;
+    const d = t.slice(5).trim();
+    if (!d) return;
+    try {
+      const j = JSON.parse(d);
+      const type = j.type || "";
+      if (type === "response.output_text.delta") {
+        content += j.delta || "";
+        if (!silent && j.delta) sendToRenderer("stream:chunk", { text: j.delta, done: false });
+      } else if (type === "response.reasoning_text.delta" || type === "response.reasoning_summary_text.delta") {
+        reasoningContent += j.delta || "";
+        if (!silent && j.delta) sendToRenderer("stream:reasoning", { text: j.delta });
+      } else if (type === "response.output_item.added" && j.item?.type === "function_call") {
+        tcAccum[j.item.id] = { call_id: j.item.call_id || "", name: j.item.name || "", arguments: "" };
+      } else if (type === "response.function_call_arguments.delta") {
+        const tc = tcAccum[j.item_id];
+        if (tc) tc.arguments += j.delta || "";
+      } else if (type === "response.output_item.done" && j.item?.type === "function_call") {
+        const tc = tcAccum[j.item.id];
+        if (tc) {
+          if (j.item.call_id) tc.call_id = j.item.call_id;
+          if (j.item.name) tc.name = j.item.name;
+          // Prefer the authoritative full argument string over the
+          // accumulated deltas (guards against dropped delta events).
+          if (j.item.arguments) tc.arguments = j.item.arguments;
+        }
+      } else if (type === "response.completed" || type === "response.incomplete" || type === "response.failed") {
+        terminal = true;
+        terminalStatus = j.response?.status || type;
+        if (j.response?.usage) usage = j.response.usage;
+      }
+    } catch { /* ignored */ }
+  };
+  const readBody = async (res: Response): Promise<void> => {
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) processLine(line);
+    }
+    // SSE flush: a final line without a trailing "\n" would otherwise stay
+    // in `buf` and never be processed.
+    buf += dec.decode();
+    if (buf.trim()) processLine(buf);
+  };
+  let res = await buildRes();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      buf = "";
+      await readBody(res);
+      break;
+    } catch (e: any) {
+      // Terminal event already received — everything that matters arrived.
+      if (terminal) break;
+      if (attempt >= 1 || !isStreamDropError(e)) throw e;
+      console.warn(`[responsesCall] stream dropped mid-read (${e.message}); retrying once (attempt ${attempt + 1}/1)`);
+      if (!silent) sendToRenderer("stream:reset", { contentChars: content.length, reasoningChars: reasoningContent.length });
+      content = ""; reasoningContent = ""; usage = null; terminal = false; terminalStatus = "";
+      for (const k of Object.keys(tcAccum)) delete tcAccum[k];
+      res = await buildRes();
+    }
+  }
+  const tcs = Object.values(tcAccum)
+    .filter(tc => tc.name)
+    .map(tc => ({ id: tc.call_id, type: "function", function: { name: tc.name, arguments: tc.arguments || "{}" } }));
+  const finishReason: string | null = tcs.length ? "tool_calls" : (terminalStatus === "failed" ? "error" : "stop");
+  if (debugReasoning) {
+    console.log(`[reasoning-debug] responsesCall end: reasoningContent.length=${reasoningContent.length} content.length=${content.length} tcs=${tcs.length}`);
+  }
+  return { content, reasoningContent, finishReason, tcs, usage };
+}
