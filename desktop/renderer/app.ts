@@ -3380,7 +3380,7 @@ initUpdateToast();
       if (kbSt && kbSt.textContent.match(/^(未配置|Not configured)$/)) kbSt.textContent = t("kb.unconfigured");
       // Re-render KB panel status ("Indexed X notes" doesn't auto-refresh on lang switch)
       const kbTab = document.querySelector('.settings-tab[data-tab="knowledge-base"]');
-      const kbPanel = document.getElementById("tab-knowledge-base");
+      const kbPanel = document.getElementById("panel-knowledge-base");
       if (kbTab?.classList.contains("active") && kbPanel && !kbPanel.classList.contains("hidden")) {
         loadKnowledgeBasePanel().catch(() => {});
       }

@@ -112,7 +112,6 @@
   --text-primary:  var(--text);
   --text-secondary: var(--text-light);
   --bg-dim:        rgba(0,0,0,0.08);
-  --danger-color:  #ef4444;
 }
 
 /* ========================================
@@ -521,6 +520,11 @@ html, body {
   word-break: break-word;
 }
 
+/* 面板标题（直接子级）与内容间距 */
+.settings-panel > .section-title + * {
+  margin-top: 16px;
+}
+
 .api-config-form {
   display: flex;
   flex-direction: column;
@@ -564,6 +568,13 @@ html, body {
   font-size: 12px;
   font-weight: var(--fw-semibold);
   color: var(--text-light);
+}
+
+/* 字段级提示（比面板级 .hint 更小更淡，紧贴控件下方） */
+.form-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .form-input, .form-select {
@@ -676,7 +687,8 @@ html[data-hud="on"] .form-input:focus::after {
   padding-top: 20px;
   border-top: 1px solid var(--border);
 }
-.agent-name-label {
+/* 组标题（区别于字段级 .form-label：更高、更深，用于面板内分组） */
+.settings-group-label {
   display: block;
   font-size: 13px;
   font-weight: var(--fw-semibold);
@@ -692,7 +704,6 @@ html[data-hud="on"] .form-input:focus::after {
 }
 .agent-name-settings .hint {
   margin-top: 6px;
-  font-size: 12px;
 }
 
 .user-avatar-settings {
@@ -713,13 +724,41 @@ html[data-hud="on"] .form-input:focus::after {
 }
 
 .font-settings {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
 }
 .font-settings .form-select {
   width: 100%;
-  margin-bottom: 6px;
+  margin-bottom: 14px;
+}
+.font-subtitle {
+  margin-top: 18px;
+  font-size: 13px;
+}
+.font-hint {
+  margin-top: 10px;
+}
+.font-weight-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.font-weight-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.font-weight-row .form-label { margin: 0; }
+.font-weight-row .form-input {
+  width: 100px;
+  text-align: center;
+}
+.font-weight-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  justify-content: flex-end;
 }
 
 /* ========================================
@@ -1297,8 +1336,8 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   opacity: 1;
 }
 .message .msg-delete-btn:hover {
-  color: var(--danger-color, #ef4444);
-  background: rgba(239,68,68,0.1);
+  color: var(--danger);
+  background: rgba(208,49,45,0.1);
 }
 
 /* Memory Editor */
@@ -1334,6 +1373,8 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 
 /* ── Small form inputs ─────────────────────────────────── */
 .form-input-sm { font-size: 12px; padding: 5px 10px; width: 160px; }
+.form-input-num { width: 80px; }
+.btn-block { width: 100%; margin-top: 8px; }
 .form-input-xs { font-size: 11px; padding: 3px 6px; width: 48px; text-align: center; }
 .form-select-sm { font-size: 12px; padding: 5px 8px; width: 120px; flex-shrink: 0; }
 .btn-xs { font-size: 11px; padding: 2px 10px; border-radius: 4px; }
@@ -2056,7 +2097,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   transition: border-color .15s, background .15s;
 }
 .skill-card-zh-input:focus {
-  border-color: var(--accent, #3b82f6);
+  border-color: var(--accent);
   background: rgba(255, 255, 255, 0.08);
 }
 .skill-card-zh-input:disabled { opacity: 0.6; cursor: wait; }
@@ -2811,7 +2852,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 /* 工具运行时：名称文字一闪一闪（与思考中指示符一致）。
    完成时 completeToolCall 移除 .running → :has() 不再命中 → 自动停止 */
 .tool-entry:has(.tool-entry-status.running) .tool-entry-name {
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
   animation: blink 1s step-end infinite;
 }
 .tool-entry-status {
@@ -2820,7 +2861,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   color: var(--text-muted);
 }
 .tool-entry-status.running {
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
 }
 .tool-entry-status.done {
   color: var(--success, #22c55e);
@@ -3551,6 +3592,27 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   gap: 12px;
   width: 100%;
 }
+.kb-toggle-row { padding: 4px 0; }
+.kb-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.kb-section-title {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.kb-inline-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.kb-hint-inline {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
 .toggle-switch-sm {
   position: relative;
@@ -3587,7 +3649,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 }
 
 .toggle-switch-sm input:checked + .toggle-slider {
-  background: #3b82f6;
+  background: var(--accent);
 }
 
 .toggle-switch-sm input:checked + .toggle-slider::after {
@@ -3965,7 +4027,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 }
 
 .skills-count {
-  font-size: 0.85rem;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -4037,7 +4099,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 }
 
 #panel-agent-skills .skill-card-desc {
-  font-size: 0.85rem;
+  font-size: 12px;
   color: var(--text-muted);
   margin-top: 6px;
   line-height: 1.4;
@@ -4136,16 +4198,30 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   gap: 4px;
 }
 
-.mcp-add-form .form-label {
-  font-size: 0.85rem;
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary, #aaa);
-}
-
 .mcp-add-form .form-input {
   padding: 8px 10px;
-  font-size: 0.85rem;
-  font-family: var(--font-mono, monospace);
+}
+
+.mcp-card {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.mcp-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.mcp-card-hint {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+.mcp-card-hint-lg {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-bottom: 8px;
 }
 
 .mcp-form-actions {
@@ -4221,20 +4297,9 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  font-size: 0.85rem;
+  font-size: 12px;
   color: var(--text-secondary, #aaa);
 }
-
-.settings-status {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 0.85rem;
-}
-
-.settings-status.hidden { display: none; }
-.settings-status--success { background: rgba(52, 199, 89, 0.12); color: #34c759; border: 1px solid rgba(52, 199, 89, 0.25); }
-.settings-status--error { background: rgba(208, 49, 45, 0.12); color: #d0312d; border: 1px solid rgba(208, 49, 45, 0.25); }
 
 /* ========================================
    系统提示词配置面板
@@ -4451,7 +4516,7 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
 .wechat-qr-container { margin: 12px 0; min-height: 280px; display: flex; align-items: center; justify-content: center; }
 .wechat-qr-status { font-size: 13px; color: var(--text-secondary); min-height: 20px; }
 .wechat-qr-status.success { color: #22c55e; }
-.wechat-qr-status.error { color: var(--danger-color, #ef4444); }
+.wechat-qr-status.error { color: var(--danger); }
 
 .wechat-badge {
   font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: var(--fw-medium);
@@ -5116,4 +5181,98 @@ html[data-hud="on"] .hljs-strong { font-weight: bold; }
   max-width: 90vw;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+
+/* ── 关于面板 ── */
+.about-header {
+  text-align: center;
+  padding: 24px 0 16px;
+}
+.about-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
+.about-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+.about-version {
+  font-size: 13px;
+  color: var(--text-light);
+  margin: 0;
+}
+.about-card {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.about-card:last-child { margin-bottom: 0; }
+.about-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.about-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.about-status {
+  font-size: 13px;
+  color: var(--text-light);
+  min-height: 20px;
+}
+.about-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+.about-progress-track {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+.about-progress-bar {
+  background: var(--accent);
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s;
+  border-radius: 4px;
+}
+.about-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.about-changelog {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.about-changelog-loading {
+  margin: 0;
+  color: var(--text-light);
+}
+.about-contact {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.about-contact p { margin: 0; }
+.about-link {
+  color: var(--primary);
+  text-decoration: none;
 }

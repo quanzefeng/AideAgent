@@ -144,7 +144,7 @@ brew install opencode</pre>
             <span data-i18n="settings.avatar">头像</span>
           </div>
           <div class="settings-tab" data-tab="skills">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
             <span data-i18n="settings.skills">技能</span>
           </div>
           <div class="settings-tab" data-tab="prompt">
@@ -160,7 +160,7 @@ brew install opencode</pre>
             <span data-i18n="settings.social">社交</span>
           </div>
           <div class="settings-tab" data-tab="memory">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
             <span data-i18n="settings.memory">记忆</span>
           </div>
           <div class="settings-tab" data-tab="prompts">
@@ -172,7 +172,7 @@ brew install opencode</pre>
             <span data-i18n="settings.kb">知识库</span>
           </div>
           <div class="settings-tab" data-tab="agent-skills">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
             <span data-i18n="settings.agent_skills">Agent 技能</span>
           </div>
           <div class="settings-tab" data-tab="appearance">
@@ -198,19 +198,20 @@ brew install opencode</pre>
 
           <!-- API 配置 Panel -->
           <div class="settings-panel active" id="panel-api">
+            <h3 class="section-title" data-i18n="settings.api">API 配置</h3>
             <div class="api-config-form">
               <div class="form-row">
                 <label class="form-label" data-i18n="api.provider">供应商</label>
                 <select id="settings-provider" class="form-select">
                   <option value="" data-i18n="api.custom">— 自定义 —</option>
                   <option value="deepseek" data-i18n="provider.deepseek">DeepSeek</option>
-                  <option value="glm" data-i18n="provider.glm">GLM (智谱)</option>
-                  <option value="qwen" data-i18n="provider.qwen">Qwen (通义千问)</option>
-                  <option value="llamacpp" data-i18n="provider.llamacpp">llama.cpp (本地)</option>
+                  <option value="glm" data-i18n="provider.glm">GLM（智谱）</option>
+                  <option value="qwen" data-i18n="provider.qwen">Qwen（通义千问）</option>
+                  <option value="llamacpp" data-i18n="provider.llamacpp">llama.cpp（本地）</option>
                   <option value="minimax" data-i18n="provider.minimax">MiniMax</option>
-                  <option value="claude" data-i18n="provider.claude">Claude (Anthropic)</option>
-                  <option value="opencode-go" data-i18n="provider.opencode_go">OpenCode Go (OpenAI)</option>
-                  <option value="opencode-go-ant" data-i18n="provider.opencode_go_ant">OpenCode Go (Anthropic)</option>
+                  <option value="claude" data-i18n="provider.claude">Claude（Anthropic）</option>
+                  <option value="opencode-go" data-i18n="provider.opencode_go">OpenCode Go（OpenAI）</option>
+                  <option value="opencode-go-ant" data-i18n="provider.opencode_go_ant">OpenCode Go（Anthropic）</option>
                   <option value="lmstudio" data-i18n="provider.lmstudio">LM Studio（本地）</option>
                   <option value="ollama" data-i18n="provider.ollama">Ollama（本地）</option>
                 </select>
@@ -226,7 +227,7 @@ brew install opencode</pre>
                   <option value="anthropic" data-i18n="api.format_anthropic">Anthropic Messages</option>
                   <option value="responses" data-i18n="api.format_responses">OpenAI Responses</option>
                 </select>
-                <p class="hint" style="margin:4px 0 0;font-size:12px;opacity:0.7;" data-i18n="api.format_hint">选择接口协议；选供应商时会自动匹配，通常无需手动修改</p>
+                <p class="form-hint" data-i18n="api.format_hint">选择接口协议；选供应商时会自动匹配，通常无需手动修改</p>
               </div>
               <div class="form-row">
                 <label class="form-label" data-i18n="api.model">Model</label>
@@ -246,7 +247,7 @@ brew install opencode</pre>
               <div class="form-row">
                 <label class="form-label" data-i18n="api.context_window">上下文窗口（可选）</label>
                 <input type="number" id="settings-context-window" class="form-input" min="4096" step="1024" data-i18n-placeholder="api.context_window_placeholder" placeholder="留空自动检测，如 65536" />
-                <p class="hint" style="margin:4px 0 0;font-size:12px;opacity:0.7;" data-i18n="api.context_window_hint">手动覆盖上下文窗口大小，优先级高于自动检测</p>
+                <p class="form-hint" data-i18n="api.context_window_hint">手动覆盖上下文窗口大小，优先级高于自动检测</p>
               </div>
               <div class="form-row" style="margin-top:12px;">
                 <label class="form-label" data-i18n="api.search_provider">联网搜索引擎</label>
@@ -260,12 +261,13 @@ brew install opencode</pre>
                 <input type="text" id="settings-tavily-key" class="form-input" placeholder="tvly-..." />
               </div>
               <div id="settings-status" class="settings-status hidden"></div>
-              <button id="settings-save-btn" class="btn primary" style="width:100%;margin-top:8px;" data-i18n="common.save">保存</button>
+              <button id="settings-save-btn" class="btn primary btn-block" data-i18n="common.save">保存</button>
             </div>
           </div>
 
           <!-- 头像 Panel -->
           <div class="settings-panel" id="panel-avatar">
+            <h3 class="section-title" data-i18n="settings.avatar">头像</h3>
             <div class="avatar-settings">
               <img id="settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="current avatar" />
               <div class="avatar-settings-actions">
@@ -273,12 +275,12 @@ brew install opencode</pre>
                 <input type="file" id="avatar-file-input" accept="image/*" hidden />
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button id="change-avatar-btn" class="btn" data-i18n="avatar.select">选择图片</button>
-                  <button id="reset-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);" data-i18n="avatar.reset">恢复默认</button>
+                  <button id="reset-avatar-btn" class="btn btn-danger-ghost" data-i18n="avatar.reset">恢复默认</button>
                 </div>
               </div>
             </div>
             <div class="agent-name-settings">
-              <label class="agent-name-label" data-i18n="avatar.agent_name">Agent 名称</label>
+              <label class="settings-group-label" data-i18n="avatar.agent_name">Agent 名称</label>
               <div class="agent-name-row">
                 <input type="text" id="agent-name-input" class="form-input" value="AideAgent" maxlength="30" />
                 <button id="save-agent-name-btn" class="btn primary" data-i18n="common.save">保存</button>
@@ -286,7 +288,7 @@ brew install opencode</pre>
               <p class="hint" data-i18n="avatar.name_hint">修改后在侧边栏、对话标签、页面标题等所有位置生效</p>
             </div>
             <div class="user-avatar-settings">
-              <label class="agent-name-label" data-i18n="avatar.user_section">我的头像和名称</label>
+              <label class="settings-group-label" data-i18n="avatar.user_section">我的头像和名称</label>
               <div class="user-avatar-row">
                 <img id="user-settings-preview" class="avatar avatar-settings-preview" src="avatar.jpg" alt="user avatar" />
                 <div class="user-avatar-actions">
@@ -294,12 +296,12 @@ brew install opencode</pre>
                   <input type="file" id="user-avatar-file-input" accept="image/*" hidden />
                   <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button id="change-user-avatar-btn" class="btn" data-i18n="avatar.select">选择图片</button>
-                    <button id="reset-user-avatar-btn" class="btn" style="color:var(--danger);border-color:rgba(208,49,45,0.3);" data-i18n="avatar.reset">恢复默认</button>
+                    <button id="reset-user-avatar-btn" class="btn btn-danger-ghost" data-i18n="avatar.reset">恢复默认</button>
                   </div>
                 </div>
               </div>
               <div class="user-name-row">
-                <label class="agent-name-label" style="margin-bottom:6px;" data-i18n="avatar.user_name">你的名称</label>
+                <label class="settings-group-label" style="margin-bottom:6px;" data-i18n="avatar.user_name">你的名称</label>
                 <div class="agent-name-row">
                   <input type="text" id="user-name-input" class="form-input" value="你" maxlength="30" />
                   <button id="save-user-name-btn" class="btn primary" data-i18n="common.save">保存</button>
@@ -359,20 +361,20 @@ brew install opencode</pre>
               </p>
 
               <!-- Quick Add SearXNG -->
-              <div class="mcp-quick-searxng" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
-                <div style="font-size:13px;font-weight:600;margin-bottom:6px;" data-i18n="mcp.quick_searxng">🔍 快速添加 SearXNG 搜索</div>
+              <div class="mcp-card mcp-quick-searxng">
+                <div class="mcp-card-title" data-i18n="mcp.quick_searxng">🔍 快速添加 SearXNG 搜索</div>
                 <div style="display:flex;gap:8px;">
                   <input type="text" id="mcp-searxng-url" class="form-input" data-i18n-placeholder="mcp.searxng_placeholder" placeholder="http://localhost:4000" style="flex:1;" />
                   <button id="mcp-searxng-add-btn" class="btn primary" style="white-space:nowrap;" data-i18n="mcp.add">添加</button>
                 </div>
-                <div style="font-size:11px;color:var(--text-light);margin-top:4px;" data-i18n="mcp.searxng_hint">输入你的 SearXNG 实例地址，自动配置 <code>npx mcp-searxng@latest</code></div>
+                <div class="mcp-card-hint" data-i18n="mcp.searxng_hint">输入你的 SearXNG 实例地址，自动配置 <code>npx mcp-searxng@latest</code></div>
               </div>
 
               <!-- Detect Local MCP Configs -->
-              <div class="mcp-detect" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
+              <div class="mcp-card mcp-detect">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                  <span style="font-size:13px;font-weight:600;" data-i18n="mcp.detect_local">📡 检测本地 MCP 配置</span>
-                  <button id="mcp-detect-btn" class="btn" style="font-size:12px;padding:4px 12px;" data-i18n="mcp.scan">扫描</button>
+                  <span class="mcp-card-title" style="margin-bottom:0;" data-i18n="mcp.detect_local">📡 检测本地 MCP 配置</span>
+                  <button id="mcp-detect-btn" class="btn btn-sm" data-i18n="mcp.scan">扫描</button>
                 </div>
                 <div id="mcp-detect-results" style="font-size:12px;color:var(--text-light);" data-i18n="mcp.detect_hint">扫描 Claude Code CLI、OpenCode 等本机已配置的 MCP 服务器，一键导入。</div>
               </div>
@@ -393,9 +395,9 @@ brew install opencode</pre>
               </div>
 
               <!-- Built-in servers -->
-              <div class="mcp-builtins" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:12px;">
-                <div style="font-size:13px;font-weight:600;margin-bottom:8px;" data-i18n="mcp.builtins_title">🔌 内置服务（一键开启）</div>
-                <div style="font-size:11px;color:var(--text-light);margin-bottom:8px;" data-i18n="mcp.builtins_hint">预置的 MCP 服务器，免配置开箱即用。开启后将在 AI 对话中自动可用。</div>
+              <div class="mcp-card mcp-builtins">
+                <div class="mcp-card-title" style="margin-bottom:8px;" data-i18n="mcp.builtins_title">🔌 内置服务（一键开启）</div>
+                <div class="mcp-card-hint-lg" data-i18n="mcp.builtins_hint">预置的 MCP 服务器，免配置开箱即用。开启后将在 AI 对话中自动可用。</div>
                 <div id="mcp-builtins-list" style="display:flex;flex-direction:column;gap:8px;">
                   <!-- Built-in servers rendered dynamically -->
                 </div>
@@ -450,7 +452,7 @@ brew install opencode</pre>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16.5 8h.01M8.5 8h.01M8.5 14h.01M12 14h.01M15.5 14h.01"/></svg>
                     <span data-i18n="social.qr_login">扫码登录</span>
                   </button>
-                  <button id="wechat-logout-btn" class="btn hidden" style="margin-top:8px;color:var(--danger-color);border-color:var(--danger-color);" data-i18n="social.logout">退出登录</button>
+                  <button id="wechat-logout-btn" class="btn btn-danger-ghost hidden" style="margin-top:8px;" data-i18n="social.logout">退出登录</button>
                 </div>
 
                 <div id="wechat-login-status" class="wechat-login-status hidden"></div>
@@ -467,7 +469,7 @@ brew install opencode</pre>
               </div>
               <div class="section-header-right">
                 <input type="text" id="memory-search-input" class="form-input form-input-sm" data-i18n-placeholder="memory.search_placeholder" placeholder="搜索记忆..." />
-                <button id="memory-new-btn" class="btn primary btn-sm" data-i18n="memory.new">＋ 新建</button>
+                <button id="memory-new-btn" class="btn primary btn-sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="memory.new">新建</span></button>
               </div>
             </div>
             <div id="memory-stats-bar" class="memory-stats-bar">
@@ -482,7 +484,7 @@ brew install opencode</pre>
               <div class="memory-editor-panel" id="memory-editor-panel">
                 <div class="memory-editor-empty">
                   <div class="empty-icon">📝</div>
-                  <p data-i18n="memory.empty_hint">选择一个记忆查看或编辑<br/>或点击「＋ 新建」创建新的记忆</p>
+                  <p data-i18n="memory.empty_hint">选择一个记忆查看或编辑<br/>或点击「新建」创建新的记忆</p>
                 </div>
                 <div class="memory-editor-fields">
                   <div class="field-row">
@@ -515,7 +517,7 @@ brew install opencode</pre>
               </div>
               <div class="section-header-right">
                 <input type="text" id="prompts-search-input" class="form-input form-input-sm" data-i18n-placeholder="prompts.search_placeholder" placeholder="搜索提示词..." />
-                <button id="prompts-new-btn" class="btn primary btn-sm" data-i18n="prompts.new">＋ 新建</button>
+                <button id="prompts-new-btn" class="btn primary btn-sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="prompts.new">新建</span></button>
               </div>
             </div>
             <div id="prompts-list" class="prompts-list-cards"></div>
@@ -558,64 +560,64 @@ brew install opencode</pre>
                 <input type="text" id="kb-test-query" class="form-input" data-i18n-placeholder="kb.test_placeholder" placeholder="输入关键词测试搜索..." />
                 <div id="kb-test-results" style="margin-top:8px;max-height:200px;overflow-y:auto;"></div>
               </div>
-              <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+              <div class="kb-section">
                 <div class="form-row">
                   <label class="form-label" data-i18n="kb.max_notes">最大注入笔记数</label>
-                  <input type="number" id="kb-max-notes" class="form-input" value="5" min="1" max="100" style="width:80px;" />
+                  <input type="number" id="kb-max-notes" class="form-input form-input-num" value="5" min="1" max="100" />
                 </div>
                 <div class="form-row">
                   <label class="form-label" data-i18n="kb.max_chars">单篇最大字数</label>
-                  <input type="number" id="kb-max-chars" class="form-input" value="1000" min="100" max="10000" style="width:80px;" />
+                  <input type="number" id="kb-max-chars" class="form-input form-input-num" value="1000" min="100" max="10000" />
                 </div>
                 <div class="form-row">
                   <label class="form-label" data-i18n="kb.max_body_chars">嵌入最大字符数 (0=自动检测)</label>
-                  <div style="display:flex;gap:8px;align-items:center;">
+                  <div class="kb-inline-row">
                     <input type="number" id="kb-max-body-chars" class="form-input" value="10000" min="0" max="100000" style="width:100px;" />
                     <button id="kb-max-body-chars-save-btn" class="btn" data-i18n="common.save">保存</button>
-                    <span id="kb-auto-detected-chars" style="font-size:12px;color:var(--text-muted);"></span>
+                    <span id="kb-auto-detected-chars" class="kb-hint-inline"></span>
                   </div>
                 </div>
               </div>
 
               <!-- File format toggles -->
-              <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
-                <div style="font-size:13px;font-weight:var(--fw-semibold);color:var(--text-primary);margin-bottom:8px;" data-i18n="kb.formats.title">文件格式</div>
-                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+              <div class="kb-section">
+                <div class="kb-section-title" data-i18n="kb.formats.title">文件格式</div>
+                <label class="reasoning-toggle reasoning-toggle-wide kb-toggle-row">
                   <span class="reasoning-toggle-label" data-i18n="kb.formats.docx">Word 文档 (.docx)</span>
                   <div class="toggle-switch toggle-switch-sm">
                     <input type="checkbox" id="kb-format-docx" />
                     <span class="toggle-slider"></span>
                   </div>
                 </label>
-                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                <label class="reasoning-toggle reasoning-toggle-wide kb-toggle-row">
                   <span class="reasoning-toggle-label" data-i18n="kb.formats.pptx">PowerPoint 演示 (.pptx)</span>
                   <div class="toggle-switch toggle-switch-sm">
                     <input type="checkbox" id="kb-format-pptx" />
                     <span class="toggle-slider"></span>
                   </div>
                 </label>
-                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                <label class="reasoning-toggle reasoning-toggle-wide kb-toggle-row">
                   <span class="reasoning-toggle-label" data-i18n="kb.formats.csv">CSV 表格 (.csv)</span>
                   <div class="toggle-switch toggle-switch-sm">
                     <input type="checkbox" id="kb-format-csv" />
                     <span class="toggle-slider"></span>
                   </div>
                 </label>
-                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                <label class="reasoning-toggle reasoning-toggle-wide kb-toggle-row">
                   <span class="reasoning-toggle-label" data-i18n="kb.formats.xlsx">Excel 表格 (.xlsx)</span>
                   <div class="toggle-switch toggle-switch-sm">
                     <input type="checkbox" id="kb-format-xlsx" />
                     <span class="toggle-slider"></span>
                   </div>
                 </label>
-                <label class="reasoning-toggle" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+                <label class="reasoning-toggle reasoning-toggle-wide kb-toggle-row">
                   <span class="reasoning-toggle-label" data-i18n="kb.formats.pdf">PDF 文档 (.pdf)</span>
                   <div class="toggle-switch toggle-switch-sm">
                     <input type="checkbox" id="kb-format-pdf" />
                     <span class="toggle-slider"></span>
                   </div>
                 </label>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" data-i18n="kb.formats.hint">开启后，重建索引时将扫描这些格式</div>
+                <div class="kb-hint-inline" style="font-size:11px;margin-top:4px;" data-i18n="kb.formats.hint">开启后，重建索引时将扫描这些格式</div>
               </div>
             </div>
           </div>
@@ -630,7 +632,7 @@ brew install opencode</pre>
               <div class="section-header-right">
                 <button id="agent-skills-refresh-btn" class="btn btn-sm btn-icon-only" data-i18n-title="agent_skills.refresh" title="刷新">↻</button>
                 <button id="agent-skills-import-btn" class="btn btn-sm" data-i18n="agent_skills.import">导入</button>
-                <button id="skill-create-btn" class="btn primary btn-sm" data-i18n="agent_skills.new_skill">＋ 新建技能</button>
+                <button id="skill-create-btn" class="btn primary btn-sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="agent_skills.new_skill">新建技能</span></button>
               </div>
             </div>
 
@@ -665,45 +667,6 @@ brew install opencode</pre>
 
             <!-- Skills list -->
             <div id="agent-skills-list" class="skills-list"></div>
-          </div>
-
-          <!-- 字体 Panel -->
-          <div class="settings-panel" id="panel-font">
-            <div class="font-settings">
-              <label class="agent-name-label" data-i18n="font.label">聊天字体</label>
-              <select id="font-select" class="form-select" style="width:100%;margin-bottom:14px;">
-                <option value="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.noto">思源黑体（默认）</option>
-                <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.yahei">微软雅黑</option>
-                <option value="'Noto Serif SC', 'Source Han Serif SC', serif" data-i18n="font.serif">思源宋体</option>
-              </select>
-
-              <h3 class="section-title" style="margin-top:18px;font-size:13px;" data-i18n="font.weight_title">文字粗细</h3>
-
-              <div class="font-weight-grid" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
-                  <label class="form-label" data-i18n="font.weight_normal" style="margin:0;">普通文字</label>
-                  <input type="number" id="fw-normal-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="300" />
-                </div>
-                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
-                  <label class="form-label" data-i18n="font.weight_medium" style="margin:0;">标签 / 小标题</label>
-                  <input type="number" id="fw-medium-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="400" />
-                </div>
-                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
-                  <label class="form-label" data-i18n="font.weight_semibold" style="margin:0;">段落标题</label>
-                  <input type="number" id="fw-semibold-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="700" />
-                </div>
-                <div class="font-weight-row" style="display:flex;justify-content:space-between;align-items:center;">
-                  <label class="form-label" data-i18n="font.weight_bold" style="margin:0;">真正粗体</label>
-                  <input type="number" id="fw-bold-input" class="form-input form-input-sm" style="width:100px;text-align:center;" min="100" max="900" step="100" placeholder="700" />
-                </div>
-              </div>
-
-              <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
-                <button id="fw-reset-btn" class="btn" data-i18n="font.weight_reset" style="padding:6px 14px;">恢复默认</button>
-                <button id="fw-save-btn" class="btn primary" data-i18n="font.weight_save" style="padding:6px 18px;" disabled>保存</button>
-              </div>
-              <p class="hint" data-i18n="font.hint" style="margin-top:10px;">实时预览（仅当前会话），点保存后跨重启保留。微软雅黑仅支持 300/400/700，输入其他值会自动 fallback（无合成）</p>
-            </div>
           </div>
 
           <!-- 外观 Panel -->
@@ -782,6 +745,46 @@ brew install opencode</pre>
             </div>
           </div>
 
+          <!-- 字体 Panel -->
+          <div class="settings-panel" id="panel-font">
+            <h3 class="section-title" data-i18n="settings.font">字体</h3>
+            <div class="font-settings">
+              <label class="settings-group-label" data-i18n="font.label">聊天字体</label>
+              <select id="font-select" class="form-select">
+                <option value="'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.noto">思源黑体（默认）</option>
+                <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif" data-i18n="font.yahei">微软雅黑</option>
+                <option value="'Noto Serif SC', 'Source Han Serif SC', serif" data-i18n="font.serif">思源宋体</option>
+              </select>
+
+              <h3 class="section-title font-subtitle" data-i18n="font.weight_title">文字粗细</h3>
+
+              <div class="font-weight-grid">
+                <div class="font-weight-row">
+                  <label class="form-label" data-i18n="font.weight_normal">普通文字</label>
+                  <input type="number" id="fw-normal-input" class="form-input form-input-sm" min="100" max="900" step="100" placeholder="300" />
+                </div>
+                <div class="font-weight-row">
+                  <label class="form-label" data-i18n="font.weight_medium">标签 / 小标题</label>
+                  <input type="number" id="fw-medium-input" class="form-input form-input-sm" min="100" max="900" step="100" placeholder="400" />
+                </div>
+                <div class="font-weight-row">
+                  <label class="form-label" data-i18n="font.weight_semibold">段落标题</label>
+                  <input type="number" id="fw-semibold-input" class="form-input form-input-sm" min="100" max="900" step="100" placeholder="700" />
+                </div>
+                <div class="font-weight-row">
+                  <label class="form-label" data-i18n="font.weight_bold">真正粗体</label>
+                  <input type="number" id="fw-bold-input" class="form-input form-input-sm" min="100" max="900" step="100" placeholder="700" />
+                </div>
+              </div>
+
+              <div class="font-weight-actions">
+                <button id="fw-reset-btn" class="btn" data-i18n="font.weight_reset">恢复默认</button>
+                <button id="fw-save-btn" class="btn primary" data-i18n="font.weight_save" disabled>保存</button>
+              </div>
+              <p class="hint font-hint" data-i18n="font.hint">实时预览（仅当前会话），点保存后跨重启保留。微软雅黑仅支持 300/400/700，输入其他值会自动 fallback（无合成）</p>
+            </div>
+          </div>
+
           <!-- 语言 Panel -->
           <div class="settings-panel" id="panel-language">
             <div class="form-row">
@@ -796,15 +799,15 @@ brew install opencode</pre>
 
           <!-- 关于 Panel -->
           <div class="settings-panel" id="panel-about">
-            <div style="text-align:center;padding:24px 0 16px;">
-              <img src="avatar.jpg" alt="AideAgent" style="width:64px;height:64px;border-radius:16px;margin-bottom:12px;" />
-              <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0 0 4px;">AideAgent</h2>
-              <p id="about-version" style="font-size:13px;color:var(--text-light);margin:0;"></p>
+            <div class="about-header">
+              <img src="avatar.jpg" alt="AideAgent" class="about-logo" />
+              <h2 class="about-name">AideAgent</h2>
+              <p id="about-version" class="about-version"></p>
             </div>
 
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;margin-bottom:12px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <span style="font-size:14px;font-weight:600;color:var(--text-primary);" data-i18n="about.update">软件更新</span>
+            <div class="about-card">
+              <div class="about-card-header">
+                <span class="about-card-title" data-i18n="about.update">软件更新</span>
                 <button id="update-check-btn" class="btn btn-sm" data-i18n="about.check_update">检查更新</button>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
@@ -816,37 +819,37 @@ brew install opencode</pre>
                   </div>
                 </label>
               </div>
-              <div id="update-status" style="font-size:13px;color:var(--text-light);min-height:20px;" data-i18n="about.status_idle">当前已是最新版本</div>
+              <div id="update-status" class="about-status" data-i18n="about.status_idle">当前已是最新版本</div>
               <div id="update-progress-container" class="hidden" style="margin-top:8px;">
-                <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-light);margin-bottom:4px;">
+                <div class="about-progress-row">
                   <span id="update-progress-text" data-i18n="about.downloading">下载中...</span>
                   <span id="update-progress-percent">0%</span>
                 </div>
-                <div style="background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden;">
-                  <div id="update-progress-bar" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s;border-radius:4px;"></div>
+                <div class="about-progress-track">
+                  <div id="update-progress-bar" class="about-progress-bar"></div>
                 </div>
               </div>
-              <div style="display:flex;gap:8px;margin-top:8px;">
+              <div class="about-actions">
                 <button id="update-download-btn" class="btn primary hidden" style="flex:1;" data-i18n="about.download_update">下载更新</button>
                 <button id="update-install-btn" class="btn primary hidden" style="flex:1;" data-i18n="about.install_update">立即安装并重启</button>
                 <button id="update-skip-btn" class="btn hidden" style="flex:0 0 auto;" data-i18n="about.skip_version">跳过此版本</button>
               </div>
             </div>
 
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
-              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;" data-i18n="about.changelog">更新日志</div>
-              <div id="changelog-content" style="font-size:13px;color:var(--text-secondary);line-height:1.6;max-height:200px;overflow-y:auto;">
-                <p style="margin:0;color:var(--text-light);">加载中...</p>
+            <div class="about-card">
+              <div class="about-card-title" style="margin-bottom:8px;" data-i18n="about.changelog">更新日志</div>
+              <div id="changelog-content" class="about-changelog">
+                <p class="about-changelog-loading">加载中...</p>
               </div>
             </div>
 
-            <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
-              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">联系方式</div>
-              <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
-                <p style="margin:0;"><span data-i18n="about.contact_wechat_label">WeChat</span>：q2993919594</p>
-                <p style="margin:0;"><span data-i18n="about.contact_email_label">Google Email</span>：zefengquan5@gmail.com</p>
-                <p style="margin:0;">
-                  GitHub：<a href="https://github.com/quanzefeng/AideAgent" style="color:var(--primary);text-decoration:none;" target="_blank">github.com/quanzefeng/AideAgent</a>
+            <div class="about-card">
+              <div class="about-card-title" style="margin-bottom:8px;">联系方式</div>
+              <div class="about-contact">
+                <p><span data-i18n="about.contact_wechat_label">WeChat</span>：q2993919594</p>
+                <p><span data-i18n="about.contact_email_label">Google Email</span>：zefengquan5@gmail.com</p>
+                <p>
+                  GitHub：<a href="https://github.com/quanzefeng/AideAgent" class="about-link" target="_blank">github.com/quanzefeng/AideAgent</a>
                 </p>
               </div>
             </div>

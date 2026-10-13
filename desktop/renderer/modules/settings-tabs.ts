@@ -3,7 +3,7 @@
 /**
  * Settings tab switching
  * --------------------------------------------------------------------------
- * 通用 12 个 settings tab 的切换逻辑。点击 tab 元素会切到对应 panel，
+ * 通用 14 个 settings tab 的切换逻辑。点击 tab 元素会切到对应 panel，
  * 其他模块（如 prompt tab 加载 profile）可在自己的 click listener 里
  * 主动调 switchSettingsTab。
  *
