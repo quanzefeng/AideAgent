@@ -130,4 +130,48 @@ describe("runShell (tool-executor.mjs)", () => {
     });
     expect((result as any).error).toBeTypeOf("string");
   });
+
+  describe("AbortSignal support (Stop button)", () => {
+    it("resolves immediately with { error: 'Aborted' } for an already-aborted signal", async () => {
+      const ctrl = new AbortController();
+      ctrl.abort();
+      const start = Date.now();
+      const r = await runShell("echo never-runs", { timeout: 5000, signal: ctrl.signal });
+      expect(r.error).toBe("Aborted");
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
+
+    it("kills a long-running command mid-flight when the signal aborts", async () => {
+      const ctrl = new AbortController();
+      // 30s sleep — would block until the spawn timeout if abort didn't work.
+      const sleepCmd = IS_WINDOWS ? "Start-Sleep -Seconds 30" : "sleep 30";
+      const start = Date.now();
+      const pending = runShell(sleepCmd, { timeout: 60000, signal: ctrl.signal });
+      setTimeout(() => ctrl.abort(), 300);
+      const r = await pending;
+      const elapsed = Date.now() - start;
+      expect(r.error).toBe("Aborted");
+      // Must settle right after the abort, not after the 30s sleep.
+      expect(elapsed).toBeLessThan(10000);
+    });
+
+    it("runTool returns early without executing when the signal is already aborted", async () => {
+      const { runTool } = await import("../core/tool-executor.ts");
+      const ctrl = new AbortController();
+      ctrl.abort();
+      const r = await runTool(
+        { function: { name: "bash", arguments: JSON.stringify({ command: "echo never" }) } },
+        { signal: ctrl.signal }
+      );
+      expect(r.error).toBe("Aborted");
+      expect(r.aborted).toBe(true);
+    });
+
+    it("normal completion is unaffected when signal is present but not aborted", async () => {
+      const ctrl = new AbortController();
+      const r = await runShell("echo still-works", { timeout: 5000, signal: ctrl.signal });
+      expect(r.error).toBeUndefined();
+      expect(r.out!.trim()).toBe("still-works");
+    });
+  });
 });

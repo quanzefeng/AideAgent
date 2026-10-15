@@ -7,14 +7,23 @@ import { join, dirname, extname } from "node:path";
 import { homedir } from "node:os";
 import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { safeStorage } from "electron";
+import { safeStorage, net } from "electron";
 import * as memory from "../memory-store.ts";
 import * as skills from "../skills-store.ts";
 import * as kb from "../knowledge-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { scanSkills } from "./skill-scanner.ts";
-import { searchMeta } from "../search-engine/index.ts";
+import { searchMeta, configureMetaSearch } from "../search-engine/index.ts";
 import * as hookManager from "./hook-manager.ts";
+
+// Route main-process HTTP through Chromium's network stack (net.fetch)
+// so web_search/web_fetch/Tavily respect the system proxy and the
+// explicit proxy set in main.ts (AIDEAGENT_PROXY / HTTPS_PROXY env).
+// Plain Node (vitest) has no net → falls back to global fetch.
+const httpFetch: typeof fetch = (net && typeof (net as any).fetch === "function")
+  ? ((input: any, init?: any) => (net as any).fetch(input, init)) as typeof fetch
+  : ((input: any, init?: any) => globalThis.fetch(input, init)) as typeof fetch;
+configureMetaSearch({ fetch: httpFetch });
 import sessionDb from "../session-db.ts";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
@@ -37,6 +46,16 @@ function persistSessionState() {
 /** Memory body cap (audit fix P2): injected summaries stay small; full text via read_memory. */
 const MEMORY_CONTENT_MAX_CHARS = 2000;
 
+/**
+ * Combine the user's Stop signal with a per-call timeout so a fetch aborts
+ * on EITHER Stop or timeout (whichever comes first). Returns the timeout
+ * signal alone when no Stop signal is present (avoids an extra AbortSignal
+ * allocation on the hot path).
+ */
+function combineSignal(signal: AbortSignal | undefined, timeoutSignal: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
 // Re-export for use by other modules
 export { runShell, isDangerous, requestPermission };
 
@@ -46,10 +65,20 @@ function isDangerous(cmd: string): boolean {
   return DANGEROUS.some(p => p.test(cmd));
 }
 
-function requestPermission(cmd: string): Promise<boolean> {
+function requestPermission(cmd: string, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
+    if (signal?.aborted) { resolve(false); return; }
     const id = nextPermId();
-    pendingPerms.set(String(id), resolve as any);
+    const finish = (allow: boolean) => {
+      signal?.removeEventListener("abort", onAbort);
+      pendingPerms.delete(String(id));
+      resolve(allow);
+    };
+    // Stop pressed while the permission dialog is open → auto-deny so the
+    // tool call doesn't hang forever waiting for a click that never comes.
+    const onAbort = () => finish(false);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    pendingPerms.set(String(id), finish as any);
     sendToRenderer("permission:request", { id, command: cmd });
   });
 }
@@ -65,13 +94,51 @@ function requestPermission(cmd: string): Promise<boolean> {
 // in the `bash` case happens AFTER this — without the cap here, we'd
 // buffer GBs of output in memory and only then slice 60KB off the front.
 const MAX_STREAM_BYTES = 8 * 1024 * 1024; // 8 MiB per stream
-function runShell(command: string, opts: { timeout?: number } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
+
+/**
+ * Kill a spawned child AND its descendants. On Windows `child.kill()` only
+ * terminates the immediate process — the pwsh/powershell wrapper survives and
+ * keeps running its command (an orphaned `npm install` keeps consuming CPU).
+ * `taskkill /T` walks the process tree; POSIX falls back to SIGTERM.
+ */
+function killChildTree(child: import("child_process").ChildProcess): void {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  try {
+    if (process.platform === "win32") {
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).unref?.();
+    } else {
+      child.kill("SIGTERM");
+    }
+  } catch { try { child.kill(); } catch { /* already dead */ } }
+}
+
+/**
+ * Wire an AbortSignal to a spawned child: on abort, kill the whole process
+ * tree and settle the promise with `{ error: "Aborted" }` immediately (the
+ * caller must not wait for the child's `close` event — taskkill may take a
+ * beat, and the agent loop should move on right away).
+ * Returns a cleanup function that removes the abort listener.
+ */
+function wireAbortToChild(child: import("child_process").ChildProcess, signal: AbortSignal | undefined, resolve: (v: any) => void): () => void {
+  if (!signal) return () => {};
+  if (signal.aborted) { killChildTree(child); resolve({ error: "Aborted", code: null }); return () => {}; }
+  const onAbort = () => { killChildTree(child); resolve({ error: "Aborted", code: null }); };
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
+
+function runShell(command: string, opts: { timeout?: number, signal?: AbortSignal } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
   return new Promise(resolve => {
+    if (opts.signal?.aborted) { resolve({ error: "Aborted", code: null }); return; }
+    let settled = false;
+    const finish = (v: any) => { if (settled) return; settled = true; unwire(); resolve(v); };
+    let unwire = () => {};
     try {
       const args = SHELL.buildArgs(command);
       const child = spawn(SHELL.exe as string, args, {
         cwd: getWorkspace() as string, shell: false, timeout: opts.timeout ?? 60000,
       });
+      unwire = wireAbortToChild(child, opts.signal, finish);
       const chunks: { out: Buffer[], err: Buffer[] } = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
       const dropped = { out: 0, err: 0 };
@@ -100,21 +167,26 @@ function runShell(command: string, opts: { timeout?: number } = {}): Promise<{ o
         // dropped for memory reasons (NOT the per-tool MAX_OUTPUT cap).
         if (dropped.out > 0) out += `\n...[stream truncated: dropped ${dropped.out} bytes after ${MAX_STREAM_BYTES}-byte cap to avoid OOM; use head=N/tail=N/offset=N to page through]`;
         if (dropped.err > 0) err += `\n...[stderr truncated: dropped ${dropped.err} bytes after ${MAX_STREAM_BYTES}-byte cap]`;
-        resolve({ out, err, code });
+        finish({ out, err, code });
       });
-      child.on("error", e => resolve({ error: e.message }));
-    } catch (e: any) { resolve({ error: e.message }); }
+      child.on("error", e => finish({ error: e.message }));
+    } catch (e: any) { finish({ error: e.message }); }
   });
 }
 
 // Safe spawn: exe + args array, no shell interpolation → no injection
 // Same bounded-buffer protection as runShell.
-function runSpawnSafe(exe: string, args: string[], opts: { timeout?: number } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
+function runSpawnSafe(exe: string, args: string[], opts: { timeout?: number, signal?: AbortSignal } = {}): Promise<{ out?: string, err?: string, code?: number | null, error?: string }> {
   return new Promise(resolve => {
+    if (opts.signal?.aborted) { resolve({ error: "Aborted", code: null }); return; }
+    let settled = false;
+    const finish = (v: any) => { if (settled) return; settled = true; unwire(); resolve(v); };
+    let unwire = () => {};
     try {
       const child = spawn(exe, args, {
         cwd: getWorkspace() as string, shell: false, timeout: opts.timeout ?? 60000,
       });
+      unwire = wireAbortToChild(child, opts.signal, finish);
       const chunks: { out: Buffer[], err: Buffer[] } = { out: [], err: [] };
       const sizes = { out: 0, err: 0 };
       const dropped = { out: 0, err: 0 };
@@ -140,10 +212,10 @@ function runSpawnSafe(exe: string, args: string[], opts: { timeout?: number } = 
         let err = Buffer.concat(chunks.err).toString("utf-8").trim();
         if (dropped.out > 0) out += `\n...[stream truncated: dropped ${dropped.out} bytes]`;
         if (dropped.err > 0) err += `\n...[stderr truncated: dropped ${dropped.err} bytes]`;
-        resolve({ out, err, code });
+        finish({ out, err, code });
       });
-      child.on("error", e => resolve({ error: e.message }));
-    } catch (e: any) { resolve({ error: e.message }); }
+      child.on("error", e => finish({ error: e.message }));
+    } catch (e: any) { finish({ error: e.message }); }
   });
 }
 
@@ -289,11 +361,19 @@ async function globWalk(dir: string, pattern: string, limit: number): Promise<st
  *
  * @param {{ function: { name: string; arguments: string } }} tc - Tool call object
  *   from LLM response (OpenAI `tool_calls[i]` shape).
+ * @param {{ signal?: AbortSignal }} [opts] - Abort signal from the agent loop.
+ *   When the user hits Stop: spawned shell processes are killed (whole tree),
+ *   MCP tool calls are cancelled, and this function returns early without
+ *   starting new work. Omit for fire-and-forget callers (tests, scripts).
  * @returns {Promise<any>} Tool-specific result. Shape varies per tool name.
  *   Common shapes: `{ content: string }` (text), `{ error: string }` (failure),
  *   `{ [key: string]: any }` (structured data). Callers should handle `error` keys.
  */
-export async function runTool(tc: { id?: string, function: { name: string, arguments: string } }): Promise<any> {
+export async function runTool(tc: { id?: string, function: { name: string; arguments: string } }, opts: { signal?: AbortSignal } = {}): Promise<any> {
+  const signal = opts.signal;
+  // Stop already pressed — don't start new work (mid-flight work is killed
+  // by the signal wiring inside runShell / callTool).
+  if (signal?.aborted) return { error: "Aborted", aborted: true };
   const { name, arguments: argsStr } = tc.function;
   const args = JSON.parse(argsStr);
   const planMode = getPlanMode();
@@ -322,10 +402,11 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
   switch (name) {
     case "bash": {
       if (isDangerous(args.command)) {
-        const ok = await requestPermission(args.command);
-        if (!ok) return { error: "User denied this command" };
+        const ok = await requestPermission(args.command, signal);
+        if (!ok) return { error: signal?.aborted ? "Aborted" : "User denied this command" };
       }
-      const r = await runShell(args.command, { timeout: args.timeout });
+      if (signal?.aborted) return { error: "Aborted", aborted: true };
+      const r = await runShell(args.command, { timeout: args.timeout, signal });
       if (r.error) return { error: r.error };
       // P2: pagination support — let the LLM ask for head/tail/offset slices
       // when the output exceeds MAX_OUTPUT (60KB). Without this, the LLM gets
@@ -524,7 +605,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           const ctxArg = ctx > 0 ? ` -C ${ctx}` : "";
           cmd = `grep -rn${ctxArg} ${include} '${esc(args.pattern)}' '${esc(dir)}' 2>/dev/null | head -n ${maxResults}`;
         }
-        const r = await runShell(cmd, { timeout: args.timeout ?? 15000 });
+        const r = await runShell(cmd, { timeout: args.timeout ?? 15000, signal });
         if (r.error) return { error: r.error };
         const matches = (r.out ?? "").trim().split("\n").filter(Boolean);
         return {
@@ -550,9 +631,9 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
       try {
         if (!isSafeUrl(args.url)) return { error: `URL not allowed. Only https?:// to public hosts are permitted.` };
         const maxLen = Math.min(args.max_length || 8000, 50000);
-        const res = await fetch(args.url, {
+        const res = await httpFetch(args.url, {
           headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-          signal: AbortSignal.timeout(20000),
+          signal: combineSignal(signal, AbortSignal.timeout(20000)),
         });
         if (!res.ok) return { error: `HTTP ${res.status}: ${res.statusText}` };
         const html = await res.text();
@@ -608,11 +689,11 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
               include_answer: false,
             };
             if (wantsNews && daysArg) body.days = daysArg;
-            const res = await fetch("https://api.tavily.com/search", {
+            const res = await httpFetch("https://api.tavily.com/search", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${tavilyKey}` },
               body: JSON.stringify(body),
-              signal: AbortSignal.timeout(15000),
+              signal: combineSignal(signal, AbortSignal.timeout(15000)),
             });
             if (res.ok) {
               const data = await res.json();
@@ -644,8 +725,9 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           // Tavily unavailable → fall through to metasearch
         }
 
-        // ── Meta-search (free, Bing + DDG + GitHub, no API key) ──
-        const meta = await searchMeta(query, maxRes);
+        // ── Meta-search (free, no API key): Bing RSS + DDG + Wikipedia +
+        // GitHub, plus Bing News / Google News RSS when the query is time-sensitive
+        const meta = await searchMeta(query, maxRes, { news: wantsNews, days: daysArg });
         const metaResults = (meta.results || []).map((r: any) => {
           let hostname = "";
           try { hostname = new URL(r.url).hostname.replace(/^www\./, ""); } catch { /* keep empty */ }
@@ -1146,15 +1228,22 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
       if (questions.length === 0) return { error: "At least one question required" };
         return new Promise(resolve => {
           const qId = nextAskId();
-          _askResolvers.set(qId, resolve as any);
-        sendToRenderer("ask:question", { id: qId, questions });
-        setTimeout(() => {
-          if (_askResolvers.has(qId)) {
+          const finish = (v: any) => {
+            signal?.removeEventListener("abort", onAbort);
             _askResolvers.delete(qId);
-            resolve({ answers: {}, timed_out: true });
-          }
-        }, 120_000);
-      });
+            resolve(v);
+          };
+          // Stop pressed while the question dialog is open → resolve empty
+          // so the loop doesn't hang for the full 120s timeout.
+          const onAbort = () => finish({ answers: {}, aborted: true });
+          if (signal?.aborted) { resolve({ answers: {}, aborted: true }); return; }
+          signal?.addEventListener("abort", onAbort, { once: true });
+          _askResolvers.set(qId, finish as any);
+          sendToRenderer("ask:question", { id: qId, questions });
+          setTimeout(() => {
+            if (_askResolvers.has(qId)) finish({ answers: {}, timed_out: true });
+          }, 120_000);
+        });
     }
     case "kb_search": {
       try {
@@ -1259,26 +1348,26 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
     case "git_diff": {
       try {
         const cmd = args.staged ? "git diff --cached" : (args.file ? `git diff -- "${args.file}"` : "git diff");
-        const r = await runShell(cmd);
-        const stat = await runShell("git diff --stat");
+        const r = await runShell(cmd, { signal });
+        const stat = await runShell("git diff --stat", { signal });
         return { diff: r.out || "(no changes)", stats: stat.out || "" };
       } catch (e: any) { return { error: e.message }; }
     }
     case "git_commit": {
       try {
         if (args.files && args.files.length > 0) {
-          for (const f of args.files) await runShell(`git add "${f}"`);
+          for (const f of args.files) await runShell(`git add "${f}"`, { signal });
         } else {
-          await runShell("git add -A");
+          await runShell("git add -A", { signal });
         }
         let msg = args.message;
         if (!msg) {
-          const diff = await runShell("git diff --cached");
+          const diff = await runShell("git diff --cached", { signal });
           return { needsMessage: true, diff: (diff.out || "").slice(0, 8000), hint: "请根据以上 diff 生成 commit message，然后再次调用 git_commit 并传入 message 参数。" };
         }
         const gitArgs = ["commit", "-m", msg];
         if (args.amend) gitArgs.unshift("--amend");
-        const r = await runSpawnSafe("git", gitArgs);
+        const r = await runSpawnSafe("git", gitArgs, { signal });
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e: any) { return { error: e.message }; }
     }
@@ -1286,10 +1375,10 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
       try {
         let r;
         switch (args.action) {
-          case "list": r = await runShell("git branch"); break;
-          case "current": r = await runShell("git branch --show-current"); break;
-          case "create": r = await runSpawnSafe("git", ["checkout", "-b", args.name]); break;
-          case "switch": r = await runSpawnSafe("git", ["checkout", args.name]); break;
+          case "list": r = await runShell("git branch", { signal }); break;
+          case "current": r = await runShell("git branch --show-current", { signal }); break;
+          case "create": r = await runSpawnSafe("git", ["checkout", "-b", args.name], { signal }); break;
+          case "switch": r = await runSpawnSafe("git", ["checkout", args.name], { signal }); break;
           default: return { error: `Unknown action: ${args.action}` };
         }
         return { output: r.out || r.err, success: r.code === 0 };
@@ -1314,7 +1403,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
             if (args.body) ghArgs.push("--body", String(args.body));
             if (args.base) ghArgs.push("--base", String(args.base));
             if (args.head) ghArgs.push("--head", String(args.head));
-            const r = await runSpawnSafe("gh", ghArgs);
+            const r = await runSpawnSafe("gh", ghArgs, { signal });
             return { output: r.out || r.err, success: r.code === 0 };
           }
           case "view": {
@@ -1352,7 +1441,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           }
           default: return { error: `Unknown gh_pr action: ${args.action}` };
         }
-        const r = await runSpawnSafe("gh", ghArgs);
+        const r = await runSpawnSafe("gh", ghArgs, { signal });
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e: any) { return { error: e.message }; }
     }
@@ -1366,7 +1455,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
             ghArgs = ["issue", "create"];
             if (args.title) ghArgs.push("--title", String(args.title));
             if (args.body) ghArgs.push("--body", String(args.body));
-            const r = await runSpawnSafe("gh", ghArgs);
+            const r = await runSpawnSafe("gh", ghArgs, { signal });
             return { output: r.out || r.err, success: r.code === 0 };
           }
           case "view": {
@@ -1402,7 +1491,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           }
           default: return { error: `Unknown gh_issue action: ${args.action}` };
         }
-        const r = await runSpawnSafe("gh", ghArgs);
+        const r = await runSpawnSafe("gh", ghArgs, { signal });
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e: any) { return { error: e.message }; }
     }
@@ -1438,13 +1527,13 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
             let repoArg = args.repo;
             if (!repoArg) {
               // Resolve the current repo via gh's own JSON output.
-              const resolve = await runSpawnSafe("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
+              const resolve = await runSpawnSafe("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { signal });
               if (resolve.code !== 0 || !resolve.out) {
                 return { error: "Could not resolve current repo (run inside a GitHub repo, or pass args.repo).", stderr: resolve.err || "" };
               }
               repoArg = resolve.out.trim();
             }
-            const rr = await runSpawnSafe("gh", ["api", `repos/${repoArg}/readme`, "-q", ".content"]);
+            const rr = await runSpawnSafe("gh", ["api", `repos/${repoArg}/readme`, "-q", ".content"], { signal });
             if (rr.code !== 0) {
               return { error: `gh api readme failed: ${rr.err || rr.out}`, success: false };
             }
@@ -1476,13 +1565,13 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           }
           default: return { error: `Unknown gh_repo action: ${args.action}` };
         }
-        const r = await runSpawnSafe("gh", ghArgs);
+        const r = await runSpawnSafe("gh", ghArgs, { signal });
         return { output: r.out || r.err, success: r.code === 0 };
       } catch (e: any) { return { error: e.message }; }
     }
     default: {
       try {
-        const mcpResult = await mcpManager.callTool(name, args);
+        const mcpResult = await mcpManager.callTool(name, args, signal);
         const contentText = (mcpResult.content || [])
           .map((c: any) => c.type === "text" ? c.text : JSON.stringify(c))
           .join("\n");
@@ -1491,6 +1580,7 @@ export async function runTool(tc: { id?: string, function: { name: string, argum
           : { output: contentText };
         return result;
       } catch (mcpErr: any) {
+        if (mcpErr?.name === "AbortError") return { error: "Aborted", aborted: true };
         return { error: `Unknown tool: ${name} (MCP: ${mcpErr.message})` };
       }
     }

@@ -164,6 +164,12 @@ export function registerIpcHandlers() {
     sendToRenderer("stream:start", {});
     try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
     catch (err: any) {
+      // User-initiated Stop — an AbortError escaping the loop (e.g. from a
+      // continuation summarizer) is expected, not a failure. No error toast.
+      if (err?.name === "AbortError") {
+        sendToRenderer("stream:done", {});
+        return;
+      }
       const raw = String(err?.message || err || "");
       // Surface connection drops as an actionable message instead of the
       // raw undici text ("terminated").
@@ -594,8 +600,12 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("permission:respond", (event, { id, allow }) => {
-    const resolve = pendingPerms.get(id) as ((allow: boolean) => void) | undefined;
-    if (resolve) { resolve(allow); pendingPerms.delete(id); }
+    // Keys are stored as String(id) (tool-executor) but `id` arrives as a
+    // number over IPC — Map lookups are SameValueZero, so normalize both
+    // sides or the Allow/Deny click never resolves the pending promise.
+    const key = String(id);
+    const resolve = pendingPerms.get(key) as ((allow: boolean) => void) | undefined;
+    if (resolve) { resolve(allow); pendingPerms.delete(key); }
   });
 
   ipcMain.handle("ask:respond", (_event, { id, answers }) => {

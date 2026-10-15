@@ -276,12 +276,16 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
 
       for (const tc of tcs) {
         const toolName = tc.function?.name;
+        if (signal.aborted) {
+          msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Aborted", aborted: true }) });
+          continue;
+        }
         if (!SUB_AGENT_TOOL_NAMES.has(toolName)) {
           msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: `Tool "${toolName}" not available to sub-agent` }) });
           continue;
         }
         let result: any;
-        try { result = await runTool(tc as any); } catch (e) { result = { error: (e as any).message }; }
+        try { result = await runTool(tc as any, { signal }); } catch (e) { result = { error: (e as any).message }; }
         const fullStr = JSON.stringify(result);
         // REVERSIBLE (audit fix H2): the 16K tool-result cap used to be a
         // silent irreversible cut (a code-audit sub-agent's result easily

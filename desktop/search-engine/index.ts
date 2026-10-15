@@ -1,9 +1,19 @@
 // ── Zero-Dependency Meta-Search Engine ──────────────────────────
 // Aggregates multiple free search sources with caching, health
-// tracking, intelligent dedup, and score normalization.
+// tracking, intelligent dedup, and weighted Reciprocal Rank Fusion.
 //
-// Sources: Bing / GitHub API
-// All fire in parallel; failures are collected silently.
+// Sources: Bing (RSS, HTML fallback) / Bing News RSS / Google News
+// RSS / DuckDuckGo HTML / Wikipedia REST / GitHub API.
+// News sources activate only when opts.news is set (tool-executor
+// derives it from its recency heuristics).
+//
+// Network: httpFetch is swappable. Electron main injects net.fetch
+// (Chromium network stack → respects system/explicit proxy, see
+// main.ts setProxy); plain Node (tests) keeps global fetch. Sources
+// blocked on the user's network fail fast and get skipped by the
+// health tracker after repeated failures.
+//
+// All sources fire in parallel; failures are collected silently.
 // Results are deduplicated by URL + title similarity and sorted.
 
 // ── In-memory Cache (LRU, bounded) ────────────────────────────
@@ -20,6 +30,7 @@ interface SearchResult {
   url: string;
   content: string;
   score?: number;
+  date?: string; // publication date (ISO) when the source provides one
 }
 
 interface SearchMetaResult {
@@ -28,6 +39,21 @@ interface SearchMetaResult {
   results: SearchResult[];
   _warnings?: string;
 }
+
+export interface MetaSearchOptions {
+  news?: boolean;  // activate news sources (Bing News / Google News RSS)
+  days?: number;   // recency window applied to news sources
+}
+
+// ── Swappable fetch (Electron injects net.fetch; Node keeps global) ──
+let httpFetch: typeof fetch = (input: any, init?: any) => globalThis.fetch(input, init);
+
+export function configureMetaSearch(cfg: { fetch?: typeof fetch }): void {
+  if (cfg.fetch) httpFetch = cfg.fetch;
+}
+
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 function cacheGet(key: string): any {
   const entry = cache.get(key);
@@ -60,8 +86,15 @@ const BACKOFF_MS = 120_000;
 function isSourceHealthy(name: string): boolean {
   const h = sourceHealth.get(name);
   if (!h) return true;
-  if (h.failures >= MAX_FAILURES && Date.now() < h.skipUntil) return false;
-  if (Date.now() >= h.skipUntil) { sourceHealth.delete(name); return true; }
+  if (h.failures >= MAX_FAILURES) {
+    // Careful: skipUntil is 0 until the threshold is hit, and
+    // Date.now() >= 0 is always true — the old unconditional expiry
+    // check deleted the entry on every probe, so failures never
+    // accumulated and backoff never engaged.
+    if (Date.now() < h.skipUntil) return false;
+    sourceHealth.delete(name); // backoff expired — probe again
+    return true;
+  }
   return true;
 }
 
@@ -77,17 +110,25 @@ function recordSuccess(name: string) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
-function stripHtml(text: string): string {
-  return text
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
+function decodeEntities(s: string): string {
+  return s
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#0*39;/g, "'")
     .replace(/&nbsp;/g, " ")
     .replace(/&#(\d+);/g, (_, c: string) => String.fromCharCode(Number(c)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, c: string) => String.fromCharCode(parseInt(c, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+function stripHtml(text: string): string {
+  return decodeEntities(
+    text
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -153,47 +194,129 @@ function deduplicate(results: SearchResult[]): SearchResult[] {
   return final;
 }
 
-// Assign position-based scores then multiply by source weight.
-function scoreResults(results: SearchResult[], weight: number): SearchResult[] {
+// Weighted Reciprocal Rank Fusion: score = weight / (K + rank).
+// Standard meta-search fusion (SearXNG uses the same family of idea);
+// robust to sources returning different result counts, unlike the old
+// linear position-decay which over-weighted whichever source listed
+// results first.
+const RRF_K = 60;
+export function scoreResults(results: SearchResult[], weight: number): SearchResult[] {
   return results.map((r, i) => ({
     ...r,
-    score: weight * Math.max(0, 1 - i * 0.12),
+    score: weight / (RRF_K + i + 1),
   }));
 }
 
+// ── RSS parsing (shared by Bing / Bing News / Google News) ─────
+interface RssItem { title: string; link: string; description: string; pubDate: string; }
+
+function rssField(block: string, tag: string): string {
+  const m = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i").exec(block);
+  if (!m) return "";
+  let v = m[1].trim();
+  const cdata = /<!\[CDATA\[([\s\S]*?)\]\]>/i.exec(v);
+  if (cdata) v = cdata[1];
+  return decodeEntities(v);
+}
+
+export function parseRssItems(xml: string): RssItem[] {
+  const items: RssItem[] = [];
+  const re = /<item[\s>][\s\S]*?<\/item>/gi;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const block = m[0];
+    items.push({
+      title: rssField(block, "title"),
+      link: rssField(block, "link"),
+      description: rssField(block, "description"),
+      pubDate: rssField(block, "pubDate"),
+    });
+  }
+  return items;
+}
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// Parse RFC-822-ish dates, including Bing's Chinese-localized variant
+// ("日, 15 10月 2026 09:38:00 GMT"). Returns ISO string or null.
+export function parseHttpDate(raw: string): string | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  s = s.replace(/(\d{1,2})月/, (_, mo: string) => ` ${MONTH_NAMES[Number(mo) - 1]}`);
+  s = s.replace(/^[^\d,]+,\s*/, ""); // drop localized/English weekday prefix
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function rssToResults(items: RssItem[], maxResults: number): SearchResult[] {
+  return items.slice(0, maxResults)
+    .map(it => ({
+      title: stripHtml(it.title).slice(0, 300),
+      url: it.link.trim(),
+      content: stripHtml(it.description).slice(0, 600),
+      date: parseHttpDate(it.pubDate) || undefined,
+    }))
+    .filter(r => /^https?:\/\//.test(r.url));
+}
+
 // ── Bing ─────────────────────────────────────────────────────────
-// [search-mode]
-// MAXIMIZE SEARCH EFFORT. Launch multiple background agents IN PARALLEL:
-// - explore agents (codebase patterns, file structures, ast-grep)
-// - librarian agents (remote repos, official docs, GitHub examples)
-// Plus direct tools: Grep, ripgrep (rg), ast-grep (sg)
-// NEVER stop at first result - be exhaustive.
-//
-// Uses public Bing search page. Intended for personal, low-frequency use.
-// For production or high-volume usage, replace with Bing Search API:
+// RSS endpoint (format=rss) first: structured XML, carries pubDate,
+// and far less captcha-prone than the HTML SERP. If Bing redirects
+// the RSS request to an HTML page (it does this for some UA/param
+// combos), fall back to the legacy HTML parser.
+// Intended for personal, low-frequency use. For production or
+// high-volume usage, replace with Bing Search API:
 // https://www.microsoft.com/en-us/bing/apis/bing-web-search-api
 export async function searchBing(query: string, maxResults: number): Promise<SearchResult[]> {
   const hasChinese = /[\u4e00-\u9fff]/.test(query);
   const host = hasChinese ? "cn.bing.com" : "www.bing.com";
-  const cc = hasChinese ? "cn" : "us";
-  const lang = hasChinese ? "zh-cn" : "en-us";
-  const url = `https://${host}/search?q=${encodeURIComponent(query)}&count=${maxResults}&setlang=${lang}&cc=${cc}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": hasChinese ? "zh-CN,zh;q=0.9" : "en-US,en;q=0.9",
-    },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Bing HTTP ${res.status}`);
-  const html = await res.text();
-  if (/captcha|unusual traffic|verify your identity/i.test(html)) {
-    throw new Error("Bing captcha challenge");
-  }
+  const url = `https://${host}/search?q=${encodeURIComponent(query)}&format=rss&count=${Math.min(Math.max(maxResults, 5), 10)}`;
 
-  const results = [];
-  // Primary: b_algo. Fallback: b_caption, b_vlist, b_ans, card.
+  const once = async (): Promise<SearchResult[]> => {
+    const res = await httpFetch(url, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept-Language": hasChinese ? "zh-CN,zh;q=0.9" : "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`Bing HTTP ${res.status}`);
+    const body = await res.text();
+    if (/captcha|unusual traffic|verify your identity/i.test(body)) {
+      throw new Error("Bing captcha challenge");
+    }
+    if (/<rss[\s>]|<\?xml/i.test(body)) {
+      const results = rssToResults(parseRssItems(body), maxResults);
+      if (results.length) return results;
+    }
+    return parseBingHtml(body, maxResults);
+  };
+
+  // One retry on transient blips (timeout / connection reset / empty
+  // SERP under rapid queries). Captcha + hard HTTP errors propagate
+  // immediately so the health tracker still sees real degradation.
+  // Empty stays non-fatal: bing is the only source reachable on
+  // proxyless CN networks, so an empty parse never counts as failure.
+  const isTransient = (e: any) =>
+    e?.name === "TimeoutError" || /timeout|abort|fetch failed|network|socket/i.test(e?.message || "");
+
+  let results: SearchResult[];
+  try {
+    results = await once();
+  } catch (e: any) {
+    if (!isTransient(e)) throw e;
+    await new Promise(r => setTimeout(r, 400));
+    results = await once();
+  }
+  if (results.length) return results;
+  await new Promise(r => setTimeout(r, 400));
+  return once();
+}
+
+// Legacy HTML SERP parser — fallback when RSS is unavailable.
+export function parseBingHtml(html: string, maxResults: number): SearchResult[] {
+  const results: SearchResult[] = [];
+  // Primary: b_algo. Fallback: b_caption, b_vlist.
   const patterns = [
     /<li[^>]*class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi,
     /<div[^>]*class="b_caption"[^>]*>([\s\S]*?)<\/div>/gi,
@@ -218,11 +341,148 @@ export async function searchBing(query: string, maxResults: number): Promise<Sea
   return results;
 }
 
+// ── Bing News (RSS) ─────────────────────────────────────────────
+// RSS endpoint, not the /news/infinitescrollajax HTML endpoint — the
+// latter returns empty bodies to non-browser HTTP clients (same lesson
+// as the SearXNG bing_news patch). Needs the full browser UA or Bing
+// redirects to the homepage. Note: from mainland-CN IPs Bing geo-
+// redirects News RSS to the cn homepage (which refuses it) — the
+// health tracker skips this source there after repeated failures;
+// it works fine behind a proxy.
+export async function searchBingNews(query: string, maxResults: number): Promise<SearchResult[]> {
+  const hasChinese = /[\u4e00-\u9fff]/.test(query);
+  const url = `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss`;
+  const res = await httpFetch(url, {
+    headers: {
+      "User-Agent": BROWSER_UA,
+      "Accept": "application/rss+xml, text/xml, */*",
+      "Accept-Language": hasChinese ? "zh-CN,zh;q=0.9" : "en-US,en;q=0.9",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Bing News HTTP ${res.status}`);
+  const body = await res.text();
+  if (!/<rss[\s>]|<\?xml/i.test(body)) {
+    throw new Error("Bing News: not RSS (redirected or blocked)");
+  }
+  const results = rssToResults(parseRssItems(body), maxResults);
+  if (!results.length) throw new Error("Bing News: no items parsed");
+  return results;
+}
+
+// ── Google News (RSS) ───────────────────────────────────────────
+// Official RSS endpoint — no scraping fragility. Item <link> is a
+// news.google.com redirector; the real publisher URL lives in the
+// escaped <a href> inside <description>. Requires a reachable network
+// (proxy for mainland-CN users); health tracking skips it otherwise.
+export async function searchGoogleNews(query: string, maxResults: number): Promise<SearchResult[]> {
+  const hasChinese = /[\u4e00-\u9fff]/.test(query);
+  const locale = hasChinese
+    ? "hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    : "hl=en-US&gl=US&ceid=US:en";
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&${locale}`;
+  const res = await httpFetch(url, {
+    headers: { "User-Agent": BROWSER_UA, "Accept-Language": hasChinese ? "zh-CN,zh;q=0.9" : "en-US,en;q=0.9" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Google News HTTP ${res.status}`);
+  const body = await res.text();
+  if (!/<rss[\s>]|<\?xml/i.test(body)) {
+    throw new Error("Google News: not RSS (redirected or blocked)");
+  }
+  const results = parseGoogleNewsItems(body, maxResults);
+  if (!results.length) throw new Error("Google News: no items parsed");
+  return results;
+}
+
+export function parseGoogleNewsItems(xml: string, maxResults: number): SearchResult[] {
+  return parseRssItems(xml).slice(0, maxResults).map(it => {
+    // Unwrap the real publisher URL from the escaped description anchor.
+    const anchor = /<a[^>]+href="(https?:\/\/[^"]+)"/i.exec(it.description);
+    const realUrl = anchor ? anchor[1] : it.link.trim();
+    return {
+      title: stripHtml(it.title).slice(0, 300),
+      url: realUrl,
+      content: stripHtml(it.description).slice(0, 600),
+      date: parseHttpDate(it.pubDate) || undefined,
+    };
+  }).filter(r => /^https?:\/\//.test(r.url));
+}
+
+// ── DuckDuckGo (html endpoint) ──────────────────────────────────
+// POST to html.duckduckgo.com/html — no JS required. Result links are
+// wrapped in a /l/?uddg=<encoded> redirect; unwrap them. Blocked on
+// mainland-CN networks without a proxy; health tracking skips it.
+export async function searchDuckDuckGo(query: string, maxResults: number): Promise<SearchResult[]> {
+  const res = await httpFetch("https://html.duckduckgo.com/html/", {
+    method: "POST",
+    headers: {
+      "User-Agent": BROWSER_UA,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "text/html",
+      "Referer": "https://html.duckduckgo.com/",
+    },
+    body: new URLSearchParams({ q: query, kl: "wt-wt" }).toString(),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
+  const html = await res.text();
+  if (/anomaly|challenge|blocked/i.test(html)) {
+    throw new Error("DuckDuckGo challenge page");
+  }
+  const results = parseDdgHtml(html, maxResults);
+  if (!results.length) throw new Error("DuckDuckGo: no results parsed");
+  return results;
+}
+
+export function parseDdgHtml(html: string, maxResults: number): SearchResult[] {
+  const results: SearchResult[] = [];
+  const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = linkRe.exec(html)) !== null && results.length < maxResults) {
+    let href = decodeEntities(m[1].trim());
+    if (href.startsWith("//")) href = "https:" + href;
+    const uddg = /[?&]uddg=([^&]+)/.exec(href);
+    if (uddg) { try { href = decodeURIComponent(uddg[1]); } catch { /* keep wrapped */ } }
+    if (!/^https?:\/\//.test(href)) continue;
+    // Snippet lives in the following result__snippet anchor; search a
+    // window after the link instead of relying on parallel match counts.
+    const snip = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(html.slice(m.index, m.index + 3000));
+    results.push({
+      title: stripHtml(m[2]).slice(0, 300),
+      url: href,
+      content: snip ? stripHtml(snip[1]).slice(0, 600) : "",
+    });
+  }
+  return results;
+}
+
+// ── Wikipedia (REST search API) ─────────────────────────────────
+// Official API — structured, no scraping fragility, no key. Good for
+// factual/encyclopedic queries. Blocked in mainland-CN without proxy;
+// health tracking skips it.
+export async function searchWikipedia(query: string, maxResults: number): Promise<SearchResult[]> {
+  const hasChinese = /[\u4e00-\u9fff]/.test(query);
+  const lang = hasChinese ? "zh" : "en";
+  const url = `https://${lang}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=${Math.min(maxResults, 5)}`;
+  const res = await httpFetch(url, {
+    headers: { Accept: "application/json", "User-Agent": BROWSER_UA },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
+  const data = await res.json();
+  return (data.pages || []).slice(0, maxResults).map((p: any) => ({
+    title: String(p.title || ""),
+    url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(String(p.title || "").replace(/ /g, "_"))}`,
+    content: `${p.description ? p.description + " — " : ""}${stripHtml(p.excerpt || "")}`.slice(0, 600),
+  })).filter((r: SearchResult) => r.title);
+}
+
 // ── GitHub API ──────────────────────────────────────────────────
 export async function searchGitHub(query: string, maxResults: number): Promise<SearchResult[]> {
   const perPage = Math.min(maxResults, 5);
   const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=${perPage}&sort=stars`;
-  const res = await fetch(url, {
+  const res = await httpFetch(url, {
     headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "AideAgent" },
     signal: AbortSignal.timeout(8000),
   });
@@ -238,10 +498,9 @@ export async function searchGitHub(query: string, maxResults: number): Promise<S
 // ── Baidu (mobile) ──────────────────────────────────────────────
 export async function searchBaidu(query: string, maxResults: number): Promise<SearchResult[]> {
   const url = `https://m.baidu.com/s?word=${encodeURIComponent(query)}&tn=98050039_dg`;
-  const res = await fetch(url, {
+  const res = await httpFetch(url, {
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": BROWSER_UA,
       "Accept-Language": "zh-CN,zh;q=0.9",
     },
     signal: AbortSignal.timeout(8000),
@@ -257,10 +516,14 @@ export async function searchBaidu(query: string, maxResults: number): Promise<Se
   return [];
 }
 
-// ── Source weights for score normalization ─────────────────────
+// ── Source weights for RRF fusion ───────────────────────────────
 const SOURCE_WEIGHTS = {
-  bing:   1.0,
-  github: 0.6,
+  bing:        1.0,
+  bing_news:   0.9,
+  google_news: 0.85,
+  ddg:         0.8,
+  wikipedia:   0.6,
+  github:      0.5,
 };
 
 // ── Legacy source stubs (unused by the active metasearch path) ─
@@ -269,24 +532,44 @@ export async function searchSogou(query: string, maxResults: number): Promise<Se
   return [];
 }
 
-export async function searchDuckDuckGo(query: string, maxResults: number): Promise<SearchResult[]> {
-  return [];
-}
-
 // ── Public Entry Point ──────────────────────────────────────────
-export async function searchMeta(query: string, maxResults = 5): Promise<SearchMetaResult> {
+export async function searchMeta(query: string, maxResults = 5, opts: MetaSearchOptions = {}): Promise<SearchMetaResult> {
   const maxRes = Math.min(maxResults, 10);
-  const cacheKey = `${query}|${maxRes}`;
+  const cacheKey = `${query}|${maxRes}|${opts.news ? 1 : 0}|${opts.days || 0}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
 
   const allResults: SearchResult[] = [];
   const errors: string[] = [];
 
-  const sources = [
-    { name: "bing",   fn: () => searchBing(query, maxRes),             weight: SOURCE_WEIGHTS.bing },
-    { name: "github", fn: () => searchGitHub(query, Math.min(maxRes, 3)), weight: SOURCE_WEIGHTS.github },
+  // Wrap a news source so the days window filters by parsed pubDate.
+  // Results without a parseable date survive the filter (better than
+  // dropping them for sources that omit dates).
+  const withinDays = (fn: () => Promise<SearchResult[]>) => async (): Promise<SearchResult[]> => {
+    const rs = await fn();
+    if (!opts.days) return rs;
+    const cutoff = Date.now() - opts.days * 86_400_000;
+    return rs.filter(r => {
+      const t = r.date ? Date.parse(r.date) : NaN;
+      return Number.isNaN(t) ? true : t >= cutoff;
+    });
+  };
+
+  const sources: { name: string; fn: () => Promise<SearchResult[]>; weight: number }[] = [
+    // Bing web RSS carries pubDate (last-crawl/update), so the days
+    // window is applied client-side here — the server-side freshness
+    // filter (filters=ex1:"ezN") is ignored on the cn edge.
+    { name: "bing",      fn: opts.days ? withinDays(() => searchBing(query, maxRes)) : () => searchBing(query, maxRes), weight: SOURCE_WEIGHTS.bing },
+    { name: "ddg",       fn: () => searchDuckDuckGo(query, maxRes),          weight: SOURCE_WEIGHTS.ddg },
+    { name: "wikipedia", fn: () => searchWikipedia(query, Math.min(maxRes, 3)), weight: SOURCE_WEIGHTS.wikipedia },
+    { name: "github",    fn: () => searchGitHub(query, Math.min(maxRes, 3)), weight: SOURCE_WEIGHTS.github },
   ];
+  if (opts.news) {
+    sources.push(
+      { name: "bing_news",   fn: withinDays(() => searchBingNews(query, maxRes)),   weight: SOURCE_WEIGHTS.bing_news },
+      { name: "google_news", fn: withinDays(() => searchGoogleNews(query, maxRes)), weight: SOURCE_WEIGHTS.google_news },
+    );
+  }
 
   // Filter out unhealthy sources
   const active = sources.filter(s => isSourceHealthy(s.name));

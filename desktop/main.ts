@@ -188,6 +188,22 @@ app.whenReady().then(async () => {
     }
   }
 
+  // ── Proxy: route main-process HTTP (net.fetch → web_search/web_fetch)
+  // through an explicit proxy when the user sets one. Chromium otherwise
+  // follows system proxy settings on its own, so Clash "system proxy"
+  // mode works with no config. Power users with TUN-only or custom ports:
+  // set AIDEAGENT_PROXY (or HTTPS_PROXY/HTTP_PROXY) before launching.
+  const proxyRules = process.env.AIDEAGENT_PROXY || process.env.HTTPS_PROXY
+    || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  if (proxyRules) {
+    try {
+      await session.defaultSession.setProxy({ proxyRules, proxyBypassRules: "<-loopback>" });
+      console.log(`[main] Proxy enabled for main-process HTTP: ${proxyRules}`);
+    } catch (e: any) {
+      console.error("[main] setProxy failed:", e.message);
+    }
+  }
+
   // Load persisted workspace before window creation so the renderer's
   // first-pick detection sees the right state on first paint.
   initWorkspaceFromConfig();

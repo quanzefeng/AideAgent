@@ -346,8 +346,10 @@ class McpManager {
 
   /**
    * Send a JSON-RPC request to a remote MCP server via HTTP POST.
+   * The optional signal lets the agent loop's Stop cancel an in-flight call
+   * (combined with the timeout via AbortSignal.any).
    */
-  async _remoteRequest(name: string, method: string, params: any, timeout = 30000) {
+  async _remoteRequest(name: string, method: string, params: any, timeout = 30000, signal?: AbortSignal) {
     const server = this.servers[name];
     if (!server) throw new Error(`Server "${name}" not found`);
     const url = server.config.url || server.config.baseUrl;
@@ -356,8 +358,10 @@ class McpManager {
     const headers = { ...(server.config.headers || {}) };
     if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeout);
+    const timeoutCtrl = new AbortController();
+    const timer = setTimeout(() => timeoutCtrl.abort(), timeout);
+    // Combine caller's Stop signal with the request timeout.
+    const ac = signal ? AbortSignal.any([signal, timeoutCtrl.signal]) : timeoutCtrl.signal;
 
     try {
       const resp = await fetch(url, {
@@ -369,7 +373,7 @@ class McpManager {
           method,
           params,
         }),
-        signal: ac.signal,
+        signal: ac,
       });
       if (!resp.ok) {
         const text = await resp.text().catch(() => "");
@@ -471,20 +475,52 @@ class McpManager {
     server.process.stdin.write(msg);
   }
 
-  _request(name: string, method: string, params: any, timeout = 30000) {
+  _request(name: string, method: string, params: any, timeout = 30000, signal?: AbortSignal) {
     const server = this.servers[name];
     if (!server?.process?.stdin?.writable) {
       return Promise.reject(new Error(`Server "${name}" not running`));
     }
+    if (signal?.aborted) return Promise.reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
     const id = ++this._nextId;
     const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let timer: NodeJS.Timeout;
+      let done = false;
+      const settle = (fn: () => void) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        fn();
+      };
+      const onAbort = () => {
         this._pending.delete(id);
-        reject(new Error(`Request "${method}" to "${name}" timed out (${timeout}ms)`));
+        // Best-effort: tell the server to stop working on this request.
+        // Not all servers implement cancellation — ignored if unsupported.
+        try {
+          server.process?.stdin?.write(JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/cancelled",
+            params: { requestId: id, reason: "user stopped" },
+          }) + "\n");
+        } catch { /* stdin already closed */ }
+        settle(() => reject(Object.assign(new Error("Aborted"), { name: "AbortError" })));
+      };
+      timer = setTimeout(() => {
+        this._pending.delete(id);
+        settle(() => reject(new Error(`Request "${method}" to "${name}" timed out (${timeout}ms)`)));
       }, timeout);
-      this._pending.set(id, { resolve, reject, timer, serverName: name });
+      this._pending.set(id, {
+        resolve: (v) => settle(() => resolve(v)),
+        reject: (e) => settle(() => reject(e)),
+        timer,
+        serverName: name,
+      });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      // Cover the race where Stop fired between the check above and
+      // addEventListener — an already-aborted signal never fires listeners.
+      if (signal?.aborted) { onAbort(); return; }
       server.process?.stdin?.write(msg);
     });
   }
@@ -578,19 +614,25 @@ class McpManager {
     return defs;
   }
 
-  /** Call a tool by name across all running servers (stdio + remote). */
-  async callTool(name: string, args: any) {
+  /**
+   * Call a tool by name across all running servers (stdio + remote).
+   * The optional signal (from the agent loop's Stop) cancels an in-flight
+   * call: the promise rejects with AbortError immediately, and for stdio
+   * servers a `notifications/cancelled` is sent best-effort.
+   */
+  async callTool(name: string, args: any, signal?: AbortSignal) {
+    if (signal?.aborted) throw Object.assign(new Error("Aborted"), { name: "AbortError" });
     for (const [serverName, server] of Object.entries(this.servers)) {
       if (server.status !== "running") continue;
       if (server.tools.some(t => t.name === name)) {
         const isRemote = !server.process;
         if (isRemote) {
-          return this._remoteRequest(serverName, "tools/call", { name, arguments: args }, 60000);
+          return this._remoteRequest(serverName, "tools/call", { name, arguments: args }, 60000, signal);
         }
         return this._request(serverName, "tools/call", {
           name,
           arguments: args,
-        }, 60000);
+        }, 60000, signal);
       }
     }
     throw new Error(`MCP tool "${name}" not found in any running server`);

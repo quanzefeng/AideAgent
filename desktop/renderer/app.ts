@@ -1634,6 +1634,19 @@ async function submitQuery() {
 
 function abortQuery() {
   window.aideagent.abortQuery();
+  // Close dialogs the main process just auto-denied (its abort handler
+  // resolves pendingPermission/AskUserQuestion promises) — otherwise the
+  // modals stay on screen waiting for a click that would go nowhere.
+  if (state._permResolve) {
+    state._permResolve(false);
+    state._permResolve = null;
+    permModal.classList.remove("active");
+  }
+  if (_askResolve) {
+    _askResolve({});
+    _askResolve = null;
+    askModal.classList.remove("active");
+  }
   if (state.currentAssistantMsg) {
     finishAssistantMessage(state.currentAssistantMsg);
   }

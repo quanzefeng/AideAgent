@@ -1032,6 +1032,17 @@ export async function agentLoop(
       const agentCalls = tcs.filter(tc => tc.function?.name === "Agent");
       const otherCalls = tcs.filter(tc => tc.function?.name !== "Agent");
 
+      // Stop pressed before this batch started → don't launch anything.
+      // Each skipped tool still gets a tool result row so the message array
+      // stays structurally valid (assistant tool_calls ↔ tool responses).
+      const abortedResultFor = (tc: any) => {
+        mainToolCalls.push({ id: tc.id, name: tc.function.name, args: {}, result: { error: "Aborted", aborted: true } });
+        msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Aborted", aborted: true }) });
+      };
+
+      if (signal.aborted) {
+        for (const tc of [...agentCalls, ...otherCalls]) abortedResultFor(tc);
+      } else {
       if (agentCalls.length > 0) {
         for (const tc of agentCalls) {
           let args;
@@ -1040,7 +1051,7 @@ export async function agentLoop(
         }
 
         const agentResults = await Promise.allSettled(
-          agentCalls.map(tc => runTool(tc))
+          agentCalls.map(tc => runTool(tc, { signal }))
         );
 
         for (let i = 0; i < agentCalls.length; i++) {
@@ -1066,12 +1077,16 @@ export async function agentLoop(
       }
 
       for (const tc of otherCalls) {
+        // Stop pressed during this batch → the running tool was already
+        // killed by the signal (wired into runShell / MCP); skip everything
+        // still queued instead of executing it anyway.
+        if (signal.aborted) { abortedResultFor(tc); continue; }
         let args;
         try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
         sdr("tool:start", { name: tc.function.name, args, toolCallId: tc.id });
 
         let result: any;
-        try { result = await runTool(tc); } catch (e: any) { result = { error: e.message }; }
+        try { result = await runTool(tc, { signal }); } catch (e: any) { result = { error: e.message }; }
 
         let rStr = JSON.stringify(result);
         if (rStr.length > MAX_OUTPUT) {
@@ -1167,6 +1182,16 @@ export async function agentLoop(
             console.error("[checkpoint] save failed:", e.message);
           }
         }
+      }
+      } // end else (!signal.aborted)
+
+      // Stop pressed during the tool batch → exit immediately. No next LLM
+      // call, no continuation summarizer. persistPartialTurn keeps the text
+      // the user already saw (mirrors the AbortError path in the LLM call).
+      if (signal.aborted) {
+        hookManager.fire("SessionEnd", { sessionId: getSessionId(), aborted: true }).catch(() => {});
+        await persistPartialTurn(allText, allReasoning, toolBoundary, mainToolCalls);
+        return { text: splitStreamText(allText, allReasoning, toolBoundary).bodyText, aborted: true };
       }
     }
 

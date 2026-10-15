@@ -260,7 +260,7 @@ AideAgent/
 │   ├── skills-store.ts               # skills catalog
 │   ├── prompts-store.ts              # prompts storage
 │   ├── update-manager.ts             # auto-update manager
-│   ├── search-engine/                # meta-search engine (Bing + GitHub)
+│   ├── search-engine/                # meta-search engine (Bing RSS + News + DDG + Wikipedia + GitHub)
 │   └── scripts/
 │       └── download-model.ts         # downloads ONNX model on first run
 ├── kb/                               # default knowledge base directory
