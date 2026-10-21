@@ -8,6 +8,7 @@ export default defineConfig({
     // 表现为十几个假失败文件，掩盖真实回归。
     exclude: [...configDefaults.exclude, "test/e2e/**"],
     environment: "node",
+    setupFiles: ["./test/setup-memory.ts"],
     testTimeout: 30000,
     fileParallelism: false,
   },

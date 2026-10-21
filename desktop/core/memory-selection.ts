@@ -21,8 +21,15 @@ const HARD_USER_LIMIT = 1;
 const HARD_FEEDBACK_LIMIT = 2;
 const HARD_PROJECT_LIMIT = 8 - HARD_USER_LIMIT - HARD_FEEDBACK_LIMIT; // 5
 
-export async function selectRelevantMemories(query: string, apiKey: string, apiUrl: string, model: string, apiFormat: string) {
-  const memories = memory.listMemories();
+export async function selectRelevantMemories(
+  query: string,
+  apiKey: string,
+  apiUrl: string,
+  model: string,
+  apiFormat: string,
+  workspace?: string | null,
+) {
+  const memories = memory.listMemories(workspace ? { workspace } : undefined);
   if (memories.length === 0) return "";
 
   // P3方案3(c): prune TTL-expired entries from the surfaced-set so the
@@ -213,6 +220,7 @@ function renderMemories(memories: MemoryEntry[]): string {
     if (body.length > MEMORY_INJECT_MAX_CHARS) {
       body = body.slice(0, MEMORY_INJECT_MAX_CHARS) + `\n…(全文 ${m.body.length} 字，需要细节时用 read_memory(filename="${m.filename}"))`;
     }
-    return `\n### [${m.type}] ${m.name}${ageNote}\n${body}`;
+    const freshness = m.type === "user" ? "（最新优先；冲突时以最新为准）" : "";
+    return `\n### [${m.type}] ${m.name}${ageNote}${freshness}\n${body}`;
   }).join("\n");
 }

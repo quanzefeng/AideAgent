@@ -14,11 +14,11 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "bash",
-      description: "Run a PowerShell command on Windows. Returns stdout/stderr/exit code.\n\nUSE for: running builds, tests, git/npm/Node commands, exploring project structure (`Get-ChildItem`, `Select-String`), one-off shell operations.\n\nDO NOT use for: reading a file you already know the path to (use `file_read`); searching code (use `grep`); finding files by name (use `glob`). The shell is your fallback — prefer the dedicated tools above whenever possible.\n\n**Output handling (P2):** If output exceeds 60,000 chars or the response indicates truncation, re-run with `head=N` (first N lines), `tail=N` (last N lines), or `offset=N` (start at line N) to page through large outputs. Combining `offset=100` and `head=50` shows lines 100-149.",
+      description: "Run a shell command (PowerShell on Windows, bash on macOS/Linux). Returns stdout/stderr/exit code.\n\nUSE for: running builds, tests, git/npm/Node commands, exploring project structure (`Get-ChildItem` on Windows, `ls` on macOS/Linux), one-off shell operations.\n\nDO NOT use for: reading a file you already know the path to (use `file_read`); searching code (use `grep`); finding files by name (use `glob`). The shell is your fallback — prefer the dedicated tools above whenever possible.\n\n**Output handling (P2):** If output exceeds 60,000 chars or the response indicates truncation, re-run with `head=N` (first N lines), `tail=N` (last N lines), or `offset=N` (start at line N) to page through large outputs. Combining `offset=100` and `head=50` shows lines 100-149.",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "The PowerShell command to execute" },
+          command: { type: "string", description: "The shell command to execute (PowerShell on Windows, bash on macOS/Linux)" },
           description: { type: "string", description: "Brief description shown to user" },
           head: { type: "integer", description: "If set, return only the first N lines (useful for paginating large output)." },
           tail: { type: "integer", description: "If set, return only the last N lines (useful for seeing the end of build/test output)." },
@@ -33,7 +33,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "file_read",
-      description: "Read the full text content of a single file. Use when you know the path.\n\nUSE for: reading source code, config files, SKILL.md, CLAUDE.md, package.json.\n\nDO NOT use for: searching content across files (use `grep`); listing files in a directory (use `glob` or `bash Get-ChildItem`); reading knowledge-base notes (use `kb_get_note`); binary or huge files (>2000 lines — read in slices via grep first).",
+      description: "Read the full text content of a single file. Use when you know the path.\n\nUSE for: reading source code, config files, SKILL.md, CLAUDE.md, package.json.\n\nDO NOT use for: searching content across files (use `grep`); listing files in a directory (use `glob` or `bash ls`); reading knowledge-base notes (use `kb_get_note`); binary or huge files (>2000 lines — read in slices via grep first).",
       parameters: {
         type: "object", properties: {
           path: { type: "string", description: "Path to the file (absolute or relative to workspace)" },
@@ -104,7 +104,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "glob",
-      description: "Find files by name pattern (glob). Returns file paths.\n\nUSE for: finding files by name (`**/*.ts`, `src/**/*.css`); listing directory contents by extension; locating config files.\n\nDO NOT use for: searching file contents (use `grep`); reading a known file (use `file_read`); recursive directory trees (use `bash Get-ChildItem -Recurse`).\n\n**Cross-platform `**` (P3):** the matcher runs natively in-process and supports `**` (any depth), `*` and `?` identically on Windows and POSIX — the old Windows `-Filter` could not expand `**/*.ts`. Node's own `node_modules`, `.git` and other heavy dirs are skipped automatically.",
+      description: "Find files by name pattern (glob). Returns file paths.\n\nUSE for: finding files by name (`**/*.ts`, `src/**/*.css`); listing directory contents by extension; locating config files.\n\nDO NOT use for: searching file contents (use `grep`); reading a known file (use `file_read`); recursive directory trees (use `bash` with `Get-ChildItem -Recurse` on Windows or `find` on macOS/Linux).\n\n**Cross-platform `**` (P3):** the matcher runs natively in-process and supports `**` (any depth), `*` and `?` identically on Windows and POSIX — the old Windows `-Filter` could not expand `**/*.ts`. Node's own `node_modules`, `.git` and other heavy dirs are skipped automatically.",
       parameters: {
         type: "object", properties: {
           pattern: { type: "string", description: "Glob pattern with ** support (e.g. **/*.ts, src/**/*.css)" },
@@ -130,7 +130,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search the internet for current information.\n\nMUST USE when answering ANY question that involves:\n  - Current events, news, recent developments (anything that may have changed after your training cutoff)\n  - Latest versions of libraries/frameworks/tools (Node.js, Python, packages, APIs)\n  - Time-sensitive data (prices, status, availability, statistics)\n  - Current best practices or recent documentation that may differ from your training data\n  - Anything where being wrong by a few months would mislead the user\n  - Questions about 昨天/今天/最近/最新/近期/刚刚/news/yesterday/today/latest/recent\n\nQUERY RULES (time-sensitive):\n  - Put an explicit date in the query (e.g. \"2026-09-22\", \"Sept 22 2026\", \"昨天\", \"this week\") so the engine ranks fresh pages.\n  - For news / 最近 / yesterday-style asks, run AT LEAST 5 searches with different angles (headline + topic + official/primary source + fact-check/reverse query), then merge. Do NOT stop after 2-3 weak hits.\n  - Each result may include published_date and hostname — check both. Prefer sources dated within the requested window; discard or flag stale pages.\n  - If results have no dates or look older than the ask, search again with a tighter date rather than answering from memory.\n\nTRUTH / ANTI-FAKE-NEWS RULES:\n  - Search count ≠ truth. A claim is supported only when ≥2 DIFFERENT hostnames independently agree (≥3 for major/controversial claims, including ≥1 primary/authoritative source).\n  - Multiple articles from the same site, syndicated copies, and content-farm rewrites count as ONE source.\n  - Rank trust: official/primary > major media > industry press > personal blog > unknown aggregator. A low-trust domain alone is never sufficient.\n  - If sources conflict, search again; if still split, present both sides as unconfirmed — do not pick one silently.\n  - Single-source claims must be hedged (\"only reported by X, not independently confirmed\") or verified with another search / web_fetch of the original page.\n\nDO NOT use for: searching the user's local files (use `grep` / `glob`); searching their knowledge base (use `kb_search`); questions about the current project (read the files instead — they are authoritative).\n\nIf you would otherwise answer from memory and the answer involves dates, versions, or recent changes, you MUST call this tool first. Hallucinating a version number or API change is worse than saying 'let me check'.",
+      description: "Search the internet for current information.\n\nMUST USE when the answer depends on:\n  - Current events, news, recent developments (anything that may have changed after your training cutoff)\n  - Latest versions of libraries/frameworks/tools (Node.js, Python, packages, APIs)\n  - Time-sensitive data (prices, status, availability, statistics)\n  - Current best practices or recent documentation that may differ from your training data\n  - Anything where being wrong by a few months would mislead the user\n  - Questions about 昨天/今天/最近/最新/近期/刚刚/news/yesterday/today/latest/recent\n\nQUERY RULES (time-sensitive):\n  - Put an explicit date in the query (e.g. \"2026-09-22\", \"Sept 22 2026\", \"昨天\", \"this week\") so the engine ranks fresh pages.\n  - Simple fact/version lookups: 1-2 targeted searches are enough when the first result is authoritative. For recent/contested news, use 2-4 angles (headline + topic + official/primary source + fact-check/reverse query), then merge. Stop when the claim is supported by independent sources — not after a fixed count.\n  - Each result may include published_date and hostname — check both. Prefer sources dated within the requested window; discard or flag stale pages.\n  - If results have no dates or look older than the ask, search again with a tighter date rather than answering from memory.\n\nTRUTH / ANTI-FAKE-NEWS RULES:\n  - Search count ≠ truth. Prefer one primary/authoritative source; for key numbers or contested claims, look for a second INDEPENDENT hostname. Major/controversial claims should have ≥1 primary source plus independent corroboration.\n  - Multiple articles from the same site, syndicated copies, and content-farm rewrites count as ONE source.\n  - Rank trust: official/primary > major media > industry press > personal blog > unknown aggregator. A low-trust domain alone is never sufficient.\n  - If sources conflict, search again; if still split, present both sides as unconfirmed — do not pick one silently.\n  - Single-source claims must be hedged (\"only reported by X, not independently confirmed\") or verified with another search / web_fetch of the original page.\n\nDO NOT use for: searching the user's local files (use `grep` / `glob`); searching their knowledge base (use `kb_search`); questions about the current project (read the files instead — they are authoritative).\n\nIf you would otherwise answer from memory and the answer involves dates, versions, or recent changes, you MUST call this tool first. Hallucinating a version number or API change is worse than saying 'let me check'.",
       parameters: {
         type: "object", properties: {
           query: { type: "string", description: "The search query. For time-sensitive asks, include an explicit date (e.g. \"OpenAI news 2026-09-22\" or \"昨天 AI 新闻\")." },
@@ -189,7 +189,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "list_memories",
-      description: "List all persistent memories (user/feedback/project/reference) with structured metadata: total count, by-type breakdown, names, descriptions, and per-memory file path.\n\nUSE for: any question about 'how many memories do you have', 'what do you remember about me', 'is there a memory about X'. This is the AUTHORITATIVE source of truth — never bash/grep `~/.aideagent/memories/` to discover memory files; that directory may contain unrelated markdown. The canonical path is `~/.aideagent/memory/`.\n\nDO NOT use for: reading a specific memory's full content (use `read_memory` or `write_memory` to search); saving new memory (use `write_memory`).",
+      description: "List persistent memories (user/feedback/project/reference) with structured metadata: total count, by-type breakdown, names, descriptions, and per-memory file path. Project/reference entries are filtered to the current workspace; user/feedback are global.\n\nUSE for: any question about 'how many memories do you have', 'what do you remember about me', 'is there a memory about X'. This is the AUTHORITATIVE source of truth — never bash/grep `~/.aideagent/memories/` to discover memory files; that directory may contain unrelated markdown. The canonical path is `~/.aideagent/memory/`.\n\nDO NOT use for: reading a specific memory's full content (use `read_memory` or `write_memory` to search); saving new memory (use `write_memory`).",
       parameters: {
         type: "object",
         properties: {
@@ -204,7 +204,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "list_skills",
-      description: "List all loaded skills with structured metadata: total count, by-source breakdown (canonical paths only), cross-source duplicates, and per-skill sourcePath/description/version.\n\nUSE for: any question about 'how many skills do you have', 'any duplicates', 'where do skills come from', 'is skill X installed'. This is the AUTHORITATIVE source of truth — never bash/grep the filesystem to answer such questions. The 3rd-party GitHub clone at `D:\\claude_skills\\skills-main\\skills` is NOT a loaded source; the only canonical paths are `~/.agents/skills/` and `~/.claude/skills/`.\n\nDO NOT use for: loading a specific skill's instructions (use `skill`); creating a skill (use `create_skill`).",
+      description: "List all loaded skills with structured metadata: total count, by-source breakdown (canonical paths only), cross-source duplicates, and per-skill sourcePath/description/version.\n\nUSE for: any question about 'how many skills do you have', 'any duplicates', 'where do skills come from', 'is skill X installed'. This is the AUTHORITATIVE source of truth — never bash/grep the filesystem to answer such questions. Third-party GitHub clones and arbitrary skill folders are NOT loaded sources; the only canonical paths are `~/.agents/skills/` and `~/.claude/skills/`.\n\nDO NOT use for: loading a specific skill's instructions (use `skill`); creating a skill (use `create_skill`).",
       parameters: {
         type: "object",
         properties: {
@@ -232,7 +232,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "write_memory",
-      description: "Save an important fact to permanent cross-session memory.\n\nFour types: 'user' (about the user), 'feedback' (guidance/corrections from user), 'project' (ongoing work context), 'reference' (external system pointers).\n\nUSE for: user preferences, project deadlines/stand, stakeholder decisions, external API keys/URLs, recurring corrections.\n\nDO NOT save: code patterns/architecture (read the files); git history (git log is authoritative); debug solutions (the fix is in code); info already in CLAUDE.md/AGENTS.md; ephemeral task state; anything derivable from the current project. Only save non-obvious, non-derivable context that would be lost across sessions. Use 'name' and 'description' fields for future search. If updating, provide 'filename'.",
+      description: "Save an important fact to permanent cross-session memory.\n\nFour types: 'user' (about the user), 'feedback' (guidance/corrections from user), 'project' (ongoing work context, scoped to this workspace), 'reference' (external system pointers, scoped to this workspace).\n\nUSE for: user preferences, project deadlines/stakeholder decisions, docs/endpoint pointers, recurring corrections.\n\nDO NOT save: secrets (API keys, passwords, tokens — store the env-var name or docs URL instead); code patterns/architecture (read the files); git history (git log is authoritative); debug solutions (the fix is in code); info already in CLAUDE.md/AGENTS.md; ephemeral task state; anything derivable from the current project. Only save non-obvious, non-derivable context that would be lost across sessions. Use 'name' and 'description' fields for future search. If updating, provide 'filename'.",
       parameters: {
         type: "object", properties: {
           type: { type: "string", enum: ["user", "feedback", "project", "reference"], description: "Memory type" },
@@ -248,7 +248,7 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "read_memory",
-      description: "Read a memory file's FULL markdown body by filename. USE for: expanding a memory whose injected summary was truncated in the 相关记忆 block, or checking the exact wording of a stored rule before following it. list_memories returns only name/description — this returns the body.",
+      description: "Read a memory file's FULL markdown body by filename. Project/reference files are readable only in their workspace; user/feedback are global. USE for: expanding a memory whose injected summary was truncated in the 相关记忆 block, or checking the exact wording of a stored rule before following it. list_memories returns only name/description — this returns the body.",
       parameters: {
         type: "object",
         properties: {
@@ -390,11 +390,17 @@ export const TOOL_DEFS = [
     type: "function",
     function: {
       name: "Agent",
-      description: "Launch a sub-agent to work on an INDEPENDENT task in parallel.\n\nUSE for: gathering information from 2+ independent sources simultaneously (e.g. read 3 different files for context, or search web + grep code in parallel). Sub-agents have a broad tool set — file_read, grep, glob, web_search, web_fetch, bash, file_write, file_edit, git tools, skills, memory and KB tools (the Agent tool description is authoritative for the live list). They return a single text summary. They CAN modify files, so delegate write work to them only when it is genuinely independent of your current task.\n\nDO NOT use for: sequential tasks (one task depends on another's result); single quick lookups. Don't use Agent when the same job can be done with one direct tool call.",
+      description: "Launch a sub-agent to work on an INDEPENDENT task in parallel.\n\nUSE for: gathering information from 2+ independent sources simultaneously (e.g. read 3 different files for context, or search web + grep code in parallel). Sub-agents return one text summary.\n\nAgent types:\n- `explore` (recommended for research): READ-ONLY tools — file_read, grep, glob, web_search, web_fetch, lsp, KB/memory reads. Cannot modify files. Use for \"find X across the repo\", \"research Y on the web\".\n- `plan`: READ-ONLY, tuned for producing an implementation plan with file/line references.\n- `general`: full tool set including writes and bash. Can modify files, so delegate write work only when it is genuinely independent of your current task.\n\nDO NOT use for: sequential tasks (one task depends on another's result); single quick lookups. Don't use Agent when the same job can be done with one direct tool call.",
       parameters: {
         type: "object", properties: {
           description: { type: "string", description: "Short name for this sub-task (e.g. 'search AI news', 'find TODO files')" },
           prompt: { type: "string", description: "The complete task for the sub-agent. Be specific about what to find and what format to return." },
+          agent_type: {
+            type: "string",
+            enum: ["explore", "plan", "general"],
+            description: "explore = read-only codebase/web research (default for information gathering); plan = read-only implementation planning; general = full tools including writes. Default: general.",
+            default: "general",
+          },
         }, required: ["description", "prompt"],
       },
     },

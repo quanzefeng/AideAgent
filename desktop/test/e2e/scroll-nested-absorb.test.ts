@@ -52,7 +52,6 @@ test("no vertical nested scroller inside #message-list", async () => {
   const { app, window } = await launchApp();
 
   const setup: any = await window.evaluate(() => {
-    document.getElementById("boot-screen")?.remove();
     const ml: any = document.getElementById("message-list");
     document.getElementById("chat-area")?.classList.remove("is-blank");
     ml.innerHTML = "";

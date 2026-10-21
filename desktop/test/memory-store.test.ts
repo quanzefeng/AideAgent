@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, searchMemory, purgeByType, tokenizeForMemory, checkDuplicate } from "../memory-store.ts";
+import { memoryAgeDays, memoryAge, memoryFreshnessNote, listMemories, readMemory, createMemory, updateMemory, deleteMemory, archiveMemory, searchMemory, purgeByType, tokenizeForMemory, checkDuplicate, appendProjectMemory, appendFeedbackMemory, appendUserMemory, readUserMemory, writeUserMemory, getMemoryIndex } from "../memory-store.ts";
 
 describe("Memory Store", () => {
   let createdFilename: any;
@@ -101,6 +101,12 @@ describe("Memory Store", () => {
       const result = createMemory("", "", "", "");
       expect(result.error).toBeTruthy();
     });
+
+    it("rejects path traversal in readMemory", () => {
+      expect(readMemory("../../secret.md")).toBeNull();
+      expect(readMemory("..\\..\\secret.md")).toBeNull();
+      expect(readMemory("MEMORY.md")).toBeNull();
+    });
   });
 
   describe("purgeByType", () => {
@@ -144,6 +150,132 @@ describe("Memory Store", () => {
       expect(afterProjects.length).toBe(0);
       expect(feedbackStillThere).toBeTruthy();
       expect(feedbackStillThere!.type).toBe("feedback");
+    });
+  });
+
+  describe("workspace scope", () => {
+    const wsA = "C:\\test\\project-a";
+    const wsB = "C:\\test\\project-b";
+    const files: string[] = [];
+
+    afterAll(() => {
+      for (const filename of files) {
+        // Try both scopes; global feedback is visible from either.
+        try { deleteMemory(filename, { workspace: wsA }); } catch { /* ignored */ }
+        try { deleteMemory(filename, { workspace: wsB }); } catch { /* ignored */ }
+      }
+    });
+
+    it("keeps project memories local but feedback global", () => {
+      const a = createMemory("scope_a", "A only", "project", "alpha project secret", { workspace: wsA });
+      const b = createMemory("scope_b", "B only", "project", "beta project secret", { workspace: wsB });
+      const f = createMemory("scope_feedback", "Shared rule", "feedback", "always use the shared rule", { workspace: wsA });
+      files.push(a.filename!, b.filename!, f.filename!);
+
+      const listA = listMemories({ workspace: wsA });
+      expect(listA.some(m => m.filename === a.filename)).toBe(true);
+      expect(listA.some(m => m.filename === b.filename)).toBe(false);
+      expect(listA.some(m => m.filename === f.filename)).toBe(true);
+
+      // Direct reads must not cross the workspace boundary either.
+      expect(readMemory(b.filename!, { workspace: wsA })).toBeNull();
+      expect(readMemory(a.filename!, { workspace: wsA })?.body).toContain("alpha project secret");
+
+      const indexA = getMemoryIndex({ workspace: wsA });
+      expect(indexA).toContain("scope_a");
+      expect(indexA).not.toContain("scope_b");
+    });
+
+    it("caps/purges only the current workspace", () => {
+      const a = createMemory("scope_purge_a", "A purge", "project", "purge only alpha workspace", { workspace: wsA });
+      const b = createMemory("scope_purge_b", "B purge", "project", "purge only beta workspace", { workspace: wsB });
+      files.push(a.filename!, b.filename!);
+
+      const result = purgeByType("project", { workspace: wsA });
+      expect(result.ok).toBe(true);
+      expect(result.names).toContain(a.filename);
+      expect(result.names).not.toContain(b.filename);
+      expect(readMemory(a.filename!, { workspace: wsA })).toBeNull();
+      expect(readMemory(b.filename!, { workspace: wsB })).toBeTruthy();
+    });
+
+    it("stores title/summary metadata on auto-extracted project memory", () => {
+      const result = appendProjectMemory(
+        "The storage layer uses SQLite FTS5 for local search.",
+        { workspace: wsA, title: "Local search storage", summary: "SQLite FTS5 is the local search backend" },
+      );
+      expect(result.ok).toBe(true);
+      files.push(result.filename!);
+      const mem = readMemory(result.filename!, { workspace: wsA });
+      expect(mem?.name).toBe("Local search storage");
+      expect(mem?.description).toContain("SQLite FTS5");
+    });
+
+    it("stores title/summary metadata on feedback", () => {
+      const result = appendFeedbackMemory(
+        "Do not run the full test suite after every small edit.",
+        { workspace: wsA, title: "Avoid full suite", summary: "Use focused tests for small edits" },
+      );
+      expect(result.ok).toBe(true);
+      files.push(result.filename!);
+      const mem = readMemory(result.filename!, { workspace: wsA });
+      expect(mem?.type).toBe("feedback");
+      expect(mem?.name).toBe("Avoid full suite");
+    });
+
+    it("archives evicted memories instead of hard-deleting them", () => {
+      const created = createMemory("archive_target", "Archive target", "project", "archive me safely", { workspace: wsA });
+      const archived = archiveMemory(created.filename!, { workspace: wsA });
+      expect(archived.ok).toBe(true);
+      expect(archived.archivedTo).toContain("archive");
+      expect(readMemory(created.filename!, { workspace: wsA })).toBeNull();
+      expect(listMemories({ workspace: wsA }).some(m => m.filename === created.filename)).toBe(false);
+    });
+  });
+
+  describe("user profile core block", () => {
+    it("puts the newest preference first and stays bounded", () => {
+      const original = readUserMemory();
+      try {
+        writeUserMemory("old preference ".repeat(400)); // deliberately over the cap
+        const appended = appendUserMemory("latest preference: answer in Chinese");
+        expect(appended.ok).toBe(true);
+        const body = readUserMemory();
+        expect(body).toContain("latest preference: answer in Chinese");
+        expect(body.length).toBeLessThanOrEqual(2450);
+        expect(body.indexOf("latest preference: answer in Chinese"))
+          .toBeLessThan(body.indexOf("old preference"));
+      } finally {
+        writeUserMemory(original);
+      }
+    });
+
+    it("does not duplicate an identical preference", () => {
+      const original = readUserMemory();
+      try {
+        writeUserMemory("## 用户偏好\n- use tabs");
+        appendUserMemory("use tabs");
+        appendUserMemory("use tabs");
+        const occurrences = readUserMemory().split("use tabs").length - 1;
+        expect(occurrences).toBe(1);
+      } finally {
+        writeUserMemory(original);
+      }
+    });
+  });
+
+  describe("update duplicate check", () => {
+    it("can exclude the target file so updates are not blocked", () => {
+      const ws = "C:\\test\\project-update";
+      const created = createMemory("update_target", "Target", "project", "A unique update path for testing", { workspace: ws });
+      try {
+        expect(checkDuplicate("project", "A unique update path for testing", { workspace: ws })).toBe(true);
+        expect(checkDuplicate("project", "A unique update path for testing", { workspace: ws, excludeFilename: created.filename })).toBe(false);
+        const updated = updateMemory(created.filename!, "A unique update path for testing — revised", "update_target", "Target", "project", { workspace: ws });
+        expect(updated.ok).toBe(true);
+      } finally {
+        deleteMemory(created.filename!, { workspace: ws });
+      }
     });
   });
 

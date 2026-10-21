@@ -11,6 +11,7 @@ const translations = {
     // ── Settings Tabs ──
     "settings.title": "设置",
     "settings.api": "API 配置",
+    "settings.permissions": "权限与安全",
     "settings.avatar": "头像",
     "settings.skills": "技能",
     "settings.prompt": "系统提示词",
@@ -26,14 +27,6 @@ const translations = {
     "settings.language": "语言",
     "settings.about": "关于",
     "settings.close": "关闭",
-
-    // ── Boot Sequence ──
-    "boot.power_on": "系统供电 · 核心自检",
-    "boot.post": "内存校验 · 通过",
-    "boot.net_init": "网络链路 · 已建立",
-    "boot.auth": "身份认证 · 已验证",
-    "boot.ready": "就绪 · 欢迎回来，{name}",
-    "boot.skip": "跳过",
 
     // ── About / Update ──
     "about.version": "版本 {version}",
@@ -62,6 +55,27 @@ const translations = {
     "perm.hint": "以下命令需要您的批准：",
     "perm.deny": "拒绝",
     "perm.allow": "允许",
+
+    // ── Permissions Settings ──
+    "permissions.hint": "此设置全局生效，保存后立即应用到当前和后续会话。",
+    "permissions.mode_readonly": "只读",
+    "permissions.mode_readonly_desc": "只能读取和搜索，禁止修改文件或执行修改性命令。",
+    "permissions.mode_ask": "逐次确认",
+    "permissions.mode_ask_desc": "每次写文件或执行命令都需要手动批准。",
+    "permissions.mode_auto": "智能",
+    "permissions.mode_auto_desc": "工作区内自动执行；危险命令、外部路径和 MCP 工具会询问。",
+    "permissions.mode_full": "完全权限",
+    "permissions.mode_full_desc": "所有工具、路径和命令都自动执行，不再弹出授权框。",
+    "permissions.recommended": "推荐",
+    "permissions.no_approval": "不询问",
+    "permissions.full_warning": "⚠️ 完全权限下，Agent 可以读写任意文件、执行任意命令，包括删除文件和访问网络。仍会遵守 permissions.json 中的 deny 规则；工作区外写入和 bash 副作用无法回滚，请只在信任当前任务时使用。",
+    "permissions.allow_unattended": "允许微信/后台会话使用完全权限",
+    "permissions.allow_unattended_desc": "默认关闭，避免远程消息触发任意命令。",
+    "permissions.saved": "权限设置已保存",
+    "permissions.save_failed": "保存失败：{error}",
+    "permissions.load_failed": "加载权限配置失败：{error}",
+    "permissions.confirm_full": "切换到完全权限？Agent 将不再询问，可以读写任意文件、执行任意命令和 MCP 工具。此操作可能造成不可恢复的后果。",
+    "permissions.indicator_hint": "当前权限模式，点击修改",
 
     // ── Ask Question Modal ──
     "ask.title": "🤔 需要确认",
@@ -707,6 +721,7 @@ const translations = {
     // ── Settings Tabs ──
     "settings.title": "Settings",
     "settings.api": "API Config",
+    "settings.permissions": "Permissions",
     "settings.avatar": "Avatar",
     "settings.skills": "Skills",
     "settings.prompt": "System Prompt",
@@ -722,14 +737,6 @@ const translations = {
     "settings.language": "Language",
     "settings.about": "About",
     "settings.close": "Close",
-
-    // ── Boot Sequence ──
-    "boot.power_on": "POWER ON · CORE INIT",
-    "boot.post": "MEMORY CHECK · OK",
-    "boot.net_init": "NETWORK LINK · ESTABLISHED",
-    "boot.auth": "AUTH · VERIFIED",
-    "boot.ready": "READY · WELCOME BACK, {name}",
-    "boot.skip": "SKIP",
 
     // ── About / Update ──
     "about.version": "Version {version}",
@@ -758,6 +765,27 @@ const translations = {
     "perm.hint": "The following command needs your approval:",
     "perm.deny": "Deny",
     "perm.allow": "Allow",
+
+    // ── Permissions Settings ──
+    "permissions.hint": "This setting is global and applies immediately to current and future sessions.",
+    "permissions.mode_readonly": "Read-only",
+    "permissions.mode_readonly_desc": "Read and search only; file edits and mutating commands are blocked.",
+    "permissions.mode_ask": "Ask every time",
+    "permissions.mode_ask_desc": "Every file write or command needs manual approval.",
+    "permissions.mode_auto": "Smart",
+    "permissions.mode_auto_desc": "Automatic inside the workspace; asks for dangerous commands, outside paths, and MCP tools.",
+    "permissions.mode_full": "Full access",
+    "permissions.mode_full_desc": "All tools, paths, and commands run automatically with no approval prompt.",
+    "permissions.recommended": "Recommended",
+    "permissions.no_approval": "No prompts",
+    "permissions.full_warning": "⚠️ With full access, the agent can read/write any file and run any command, including deleting files and accessing the network. Explicit deny rules in permissions.json still apply. Writes outside the workspace and bash side effects cannot be rolled back; use it only when you trust the task.",
+    "permissions.allow_unattended": "Allow full access for WeChat/background sessions",
+    "permissions.allow_unattended_desc": "Off by default to prevent remote messages from triggering arbitrary commands.",
+    "permissions.saved": "Permission settings saved",
+    "permissions.save_failed": "Save failed: {error}",
+    "permissions.load_failed": "Failed to load permission settings: {error}",
+    "permissions.confirm_full": "Switch to full access? The agent will no longer ask before reading/writing any file, running any command, or calling MCP tools. This can cause irreversible changes.",
+    "permissions.indicator_hint": "Current permission mode; click to change",
 
     // ── Ask Question Modal ──
     "ask.title": "🤔 Confirmation Needed",

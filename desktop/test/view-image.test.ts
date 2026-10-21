@@ -15,6 +15,7 @@ import { writeFileSync, mkdirSync, rmSync, statSync, existsSync } from "node:fs"
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runTool } from "../core/tool-executor.ts";
+import { _setPermissionConfigForTests } from "../core/permissions.ts";
 
 const TEST_DIR = join(tmpdir(), `aideagent-view-image-${Date.now()}`);
 
@@ -56,6 +57,10 @@ const JPEG_1X1 = Buffer.from([
 
 describe("view_image tool (P3方案A)", () => {
   beforeAll(() => {
+    // The fixture directory lives outside process.cwd(); the permission layer
+    // would otherwise raise an interactive "read outside workspace" prompt,
+    // which no renderer can answer in a unit test.
+    _setPermissionConfigForTests({ mode: "auto", rules: [{ tool: "*", action: "allow" }] });
     mkdirSync(TEST_DIR, { recursive: true });
     writeFileSync(join(TEST_DIR, "test.png"), PNG_1X1);
     writeFileSync(join(TEST_DIR, "test.jpg"), JPEG_1X1);
@@ -64,6 +69,7 @@ describe("view_image tool (P3方案A)", () => {
   });
 
   afterAll(() => {
+    _setPermissionConfigForTests(null, null);
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true, force: true });
   });
 

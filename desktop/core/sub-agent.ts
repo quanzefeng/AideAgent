@@ -7,7 +7,13 @@ interface ApiConfig {
   apiFormat?: string;
 }
 
-import { SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS, _subAgentCtrls, getLastApiConfig, sendToRenderer, parseContextWindowFromError, setContextWindow, getSessionId } from "./state.ts";
+import {
+  SUB_AGENT_TOOL_NAMES, SUB_AGENT_MAX_TURNS,
+  EXPLORE_TOOL_NAMES, PLAN_AGENT_TOOL_NAMES,
+  EXPLORE_AGENT_MAX_TURNS, PLAN_AGENT_MAX_TURNS,
+  _subAgentCtrls, getLastApiConfig, sendToRenderer, parseContextWindowFromError,
+  setContextWindow, getSessionId, isInteractiveSession,
+} from "./state.ts";
 import { archiveDropped, pointerSuffix } from "./context-archive.ts";
 import { getAllToolDefs, computeMaxTokens, isContextOverflowText } from "./format-adapters.ts";
 import { runTool } from "./tool-executor.ts";
@@ -76,39 +82,87 @@ export function parseStructured(text: string): SubAgentStructured | null {
   };
 }
 
-export async function runSubAgent(description: string, prompt: string, subAgentId: string | null = null): Promise<{ text: string, aborted?: boolean, structured?: SubAgentStructured | null }> {
+export type AgentType = "general" | "explore" | "plan";
+
+function toolSetFor(agentType: AgentType): Set<string> {
+  if (agentType === "explore") return EXPLORE_TOOL_NAMES;
+  if (agentType === "plan") return PLAN_AGENT_TOOL_NAMES;
+  return SUB_AGENT_TOOL_NAMES;
+}
+
+function maxTurnsFor(agentType: AgentType): number {
+  if (agentType === "explore") return EXPLORE_AGENT_MAX_TURNS;
+  if (agentType === "plan") return PLAN_AGENT_MAX_TURNS;
+  return SUB_AGENT_MAX_TURNS;
+}
+
+function systemPromptFor(agentType: AgentType, prompt: string): string {
+  const structured = `\n重要：如果任务适合结构化汇报（调研/审计/搜索类），请在最终回复末尾附上以下小节（没有内容就写"无"）：\n## 结论\n## 关键证据\n## 未解决问题\n## 建议的下一步\n不适合（如纯文本翻译/写作）就直接返回文本，不要硬套格式。`;
+  if (agentType === "explore") {
+    return `你是 AideAgent 的只读探索子代理（explore）。
+可用工具: file_read, grep, glob, web_search, web_fetch, lsp, read_memory, kb_search, kb_get_note, context_recall, git_diff。
+你不能修改文件、不能执行 shell、不能向用户提问。请用最少的调用定位事实，引用文件时写成 \`path:line\`。
+你的任务是: ${prompt}
+完成后直接返回文本结果。${structured}`;
+  }
+  if (agentType === "plan") {
+    return `你是 AideAgent 的只读规划子代理（plan）。
+可用工具: file_read, grep, glob, web_search, web_fetch, lsp, read_memory, kb_search, kb_get_note, context_recall, git_diff。
+你不能修改文件、不能执行 shell、不能向用户提问。
+你的任务是: ${prompt}
+请先阅读相关代码，然后输出可执行的实施计划：每一步的文件路径、改动要点、风险与验证方式。不要修改任何文件。${structured}`;
+  }
+  return `你是 AideAgent 的子代理，拥有完整工具集。
+可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, context_recall（取回被压缩移出上下文的原文）, TaskList。
+你的任务是: ${prompt}
+完成后直接返回文本结果。注意：写文件和危险命令受权限策略约束（工作区外写入/危险命令需要用户确认，无人值守会话会直接拒绝）。${structured}`;
+}
+
+export async function runSubAgent(
+  description: string,
+  prompt: string,
+  subAgentId: string | null = null,
+  agentType: string = "general",
+  parentSignal?: AbortSignal,
+): Promise<{ text: string, aborted?: boolean, structured?: SubAgentStructured | null }> {
   const cfg: ApiConfig = getLastApiConfig() as any;
   if (!cfg.apiKey || !cfg.apiUrl) return { text: "(子代理不可用：请先在主对话中发送一条消息激活 API)" };
+
+  const type: AgentType = agentType === "explore" || agentType === "plan" ? agentType : "general";
+  const allowed = toolSetFor(type);
+  const maxTurns = maxTurnsFor(type);
 
   const id = subAgentId || `sub_${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
   const ctrl = new AbortController();
   _subAgentCtrls.set(id, ctrl);
-  const { signal } = ctrl;
+  // Link the parent's abort signal: Stop / new query must cancel sub-agents
+  // immediately, not just via the IPC abort-all path.
+  const signal = parentSignal
+    ? AbortSignal.any([ctrl.signal, parentSignal])
+    : ctrl.signal;
 
+  // Plan mode is inherited: getAllToolDefs() already returns only the
+  // read-only schema in plan mode; intersecting with the agent type's set is
+  // a second line of defense in runTool below.
   const allToolDefs = getAllToolDefs();
-  const subTools = allToolDefs.filter(t => SUB_AGENT_TOOL_NAMES.has(t.function?.name));
+  const subTools = allToolDefs.filter(t => allowed.has(t.function?.name));
 
-  const sysContent = `你是 AideAgent 的子代理，拥有完整工具集。
-可用工具: bash（执行命令）, file_read, file_write, file_edit, grep, glob, web_search, web_fetch, lsp（代码跳转/引用/hover）, git_diff, git_commit, git_branch, gh_pr, gh_issue, gh_repo, skill, invoke_skill, create_skill, write_memory, kb_write, kb_search, kb_get_note, context_recall（取回被压缩移出上下文的原文）, TaskList, AskUserQuestion。
-你的任务是: ${prompt}
-完成后直接返回文本结果。注意：bash 命令需要用户确认才能执行。
-重要：如果任务适合结构化汇报（调研/审计/搜索类），请在最终回复末尾附上以下小节（没有内容就写"无"）：
-## 结论
-## 关键证据
-## 未解决问题
-## 建议的下一步
-不适合（如纯文本翻译/写作）就直接返回文本，不要硬套格式。`;
+  const emit = (channel: string, data: any) => {
+    if (isInteractiveSession()) sendToRenderer(channel, data);
+  };
+
+  const sysContent = systemPromptFor(type, prompt);
   const msgs: SubAgentMessage[] = [
     { role: "system", content: sysContent },
     { role: "user", content: prompt },
   ];
 
-  console.error("[sub-agent] starting:", id, description);
+  console.error("[sub-agent] starting:", id, type, description);
   let allText = "";
   let ctxRetries = 0;
 
   try {
-    for (let turns = 0; turns < SUB_AGENT_MAX_TURNS; turns++) {
+    for (let turns = 0; turns < maxTurns; turns++) {
       const { apiKey, apiUrl, model, apiFormat } = cfg;
       const isAnthropic = apiFormat === "anthropic";
 
@@ -214,7 +268,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
             if (data.type === "content_block_delta") {
               if (data.delta?.type === "text_delta") {
                 content += data.delta.text;
-                sendToRenderer("subagent:chunk", { id, text: data.delta.text });
+                emit("subagent:chunk", { id, text: data.delta.text });
               } else if (data.delta?.type === "input_json_delta") {
                 const idx = data.index ?? 0;
                 if (!tcAccum[idx]) tcAccum[idx] = { id: "", name: "", args: "" };
@@ -230,7 +284,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
             const delta = data.choices?.[0]?.delta;
             if (delta?.content) {
               content += delta.content;
-              sendToRenderer("subagent:chunk", { id, text: delta.content });
+              emit("subagent:chunk", { id, text: delta.content });
             }
             if (delta?.tool_calls) {
               for (const tc of delta.tool_calls) {
@@ -265,7 +319,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
         function: { name: tc.name, arguments: tc.args || "{}" },
       }));
 
-      sendToRenderer("subagent:progress", { id, description, turn: turns, content: content.slice(-200), tcsCount: tcs.length, done: false });
+      emit("subagent:progress", { id, description, turn: turns, content: content.slice(-200), tcsCount: tcs.length, done: false });
 
       allText += content || "";
       const asst: SubAgentMessage = { role: "assistant", content: content || null };
@@ -280,7 +334,7 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
           msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: "Aborted", aborted: true }) });
           continue;
         }
-        if (!SUB_AGENT_TOOL_NAMES.has(toolName)) {
+        if (!allowed.has(toolName)) {
           msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({ error: `Tool "${toolName}" not available to sub-agent` }) });
           continue;
         }
@@ -309,6 +363,6 @@ export async function runSubAgent(description: string, prompt: string, subAgentI
     _subAgentCtrls.delete(id);
   }
 
-  sendToRenderer("subagent:progress", { id, description, turn: -1, content: "", tcsCount: 0, done: true });
+  emit("subagent:progress", { id, description, turn: -1, content: "", tcsCount: 0, done: true });
   return { text: allText || "(no result)", structured: parseStructured(allText) };
 }

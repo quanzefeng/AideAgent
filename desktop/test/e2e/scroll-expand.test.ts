@@ -65,7 +65,6 @@ test("scroll-expand: expanded nested scrollers must not freeze the main list", a
 
   // ── 1) 搭"对话刚结束"的真实形态 DOM：thinking 长文本(真滚动容器) + 工具块短结果(假滚动容器) ──
   const setup: any = await window.evaluate(() => {
-    document.getElementById("boot-screen")?.remove();
     const ml: any = document.getElementById("message-list");
     const area = document.getElementById("chat-area");
     if (area) area.classList.remove("is-blank");

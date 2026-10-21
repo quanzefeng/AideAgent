@@ -4,9 +4,12 @@ import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { getWorkspace } from "./state.ts";
 
-let _cache: Record<string, any> | null = null;   // { PreToolUse: [...], PostToolUse: [...], SessionEnd: [...] }
-let _workspace = "";
+// Cache is keyed by workspace. The previous module-level `_cache`/`_workspace`
+// meant a WeChat session running concurrently with the desktop could re-init
+// hooks for a different project and make the desktop fire the wrong scripts.
+const _cacheByWorkspace = new Map<string, Record<string, any> | null>();
 const GLOBAL_HOOKS_DIR = join(homedir(), ".aideagent");
 
 function loadConfig(dir: string) {
@@ -29,21 +32,29 @@ function mergeConfigs(base: Record<string, any>, override: Record<string, any>) 
 }
 
 export function initHookManager(workspace: string) {
-  _workspace = workspace || "";
+  const ws = workspace || "";
   // project-level hooks first, then global hooks
-  let config = {};
-  if (_workspace) {
-    config = mergeConfigs(config, loadConfig(_workspace));
+  let config: Record<string, any> = {};
+  if (ws) {
+    config = mergeConfigs(config, loadConfig(ws));
   }
   config = mergeConfigs(config, loadConfig(join(homedir(), ".aideagent")));
-  _cache = Object.keys(config).length > 0 ? config : null;
+  _cacheByWorkspace.set(ws, Object.keys(config).length > 0 ? config : null);
+  return _cacheByWorkspace.get(ws);
 }
 
-function runScript(script: string, data: any, timeoutMs = 5000): Promise<any> {
+function hooksForCurrentWorkspace(): { config: Record<string, any> | null, workspace: string } {
+  const ws = getWorkspace() || "";
+  const cached = _cacheByWorkspace.get(ws);
+  if (cached !== undefined) return { config: cached, workspace: ws };
+  return { config: initHookManager(ws) ?? null, workspace: ws };
+}
+
+function runScript(script: string, data: any, timeoutMs = 5000, workspace = ""): Promise<any> {
   return new Promise<any>(resolve => {
     const parts: Buffer[] = [];
     const child = spawn("node", [script], {
-      cwd: _workspace,
+      cwd: workspace || undefined,
       shell: false,
       timeout: timeoutMs,
       stdio: ["pipe", "pipe", "pipe"],
@@ -89,17 +100,17 @@ function withinBase(abs: string, base: string) {
  * relative to the workspace; global hooks resolve relative to ~/.aideagent.
  * @param {string} script
  */
-function safeScriptPath(script: string) {
+function safeScriptPath(script: string, workspace: string) {
   if (!script || typeof script !== "string") return null;
   // Absolute scripts: allow when inside workspace or global hooks dir.
   if (script.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(script)) {
-    return withinBase(script, _workspace) || withinBase(script, GLOBAL_HOOKS_DIR)
+    return withinBase(script, workspace) || withinBase(script, GLOBAL_HOOKS_DIR)
       ? script
       : null;
   }
   // Relative scripts: try workspace first (project hooks), then global dir.
-  const wsPath = resolveScriptPath(script, _workspace);
-  if (wsPath && withinBase(wsPath, _workspace)) return wsPath;
+  const wsPath = resolveScriptPath(script, workspace);
+  if (wsPath && withinBase(wsPath, workspace)) return wsPath;
   const globalPath = resolveScriptPath(script, GLOBAL_HOOKS_DIR);
   if (globalPath && withinBase(globalPath, GLOBAL_HOOKS_DIR)) return globalPath;
   return null;
@@ -111,8 +122,9 @@ function safeScriptPath(script: string) {
  * For others: fire-and-forget, returns null.
  */
 export async function fire(event: string, data: any) {
-  if (!_cache) return null;
-  const scripts = _cache[event];
+  const { config: cache, workspace } = hooksForCurrentWorkspace();
+  if (!cache) return null;
+  const scripts = cache[event];
   if (!scripts || scripts.length === 0) return null;
 
   const tool = data?.tool;
@@ -129,10 +141,10 @@ export async function fire(event: string, data: any) {
 
       const timeout = entry.timeout || 5000;
       const onError = entry.onError || "allow";
-      const absPath = safeScriptPath(script);
+      const absPath = safeScriptPath(script, workspace);
       if (!absPath || !existsSync(absPath)) continue;
 
-      const decision = await runScript(absPath, data, timeout);
+      const decision = await runScript(absPath, data, timeout, workspace);
       // null decision = timeout / crash / non-JSON output
       if (!decision) {
         if (onError === "block") {
@@ -156,9 +168,9 @@ export async function fire(event: string, data: any) {
     const script = entry.script;
     if (!script) continue;
     if (entry.tools && entry.tools.length > 0 && tool && !entry.tools.includes(tool)) continue;
-    const absPath = safeScriptPath(script);
+    const absPath = safeScriptPath(script, workspace);
     if (!absPath || !existsSync(absPath)) continue;
-    runScript(absPath, data, entry.timeout || 5000).catch(() => {});
+    runScript(absPath, data, entry.timeout || 5000, workspace).catch(() => {});
   }
   return null;
 }

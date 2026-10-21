@@ -48,9 +48,6 @@ test("scroll diag: finished-state range + wheel over nested scrollers", async ()
 
   // ── 1) 搭一段"对话刚结束"的真实 DOM（details 全部折叠） ──
   const setup: any = await window.evaluate(() => {
-    // 测试环境里开机动画可能还没结束（全屏 z-index:2000 盖层会吞掉所有
-    // 指针事件）——真实用户在启动结束后不会遇到，这里直接移除以测量真实布局。
-    document.getElementById("boot-screen")?.remove();
     const ml: any = document.getElementById("message-list");
     const area = document.getElementById("chat-area");
     if (area) area.classList.remove("is-blank");

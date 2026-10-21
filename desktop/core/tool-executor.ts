@@ -28,17 +28,20 @@ import sessionDb from "../session-db.ts";
 import {
   SHELL, IS_WINDOWS, getWorkspace, MAX_OUTPUT, DANGEROUS, GIT_SAFE, GH_SAFE,
   getPlanMode, pendingPerms, nextPermId, sendToRenderer,
-  taskStore, getTodoList, setTodoList,
+  getTaskStore, getTodoList, setTodoList,
   _askResolvers, nextAskId,
   getLastApiConfig, getSessionId,
+  PLAN_MODE_READONLY, isInteractiveSession,
 } from "./state.ts";
+import { evaluateToolCall } from "./permissions.ts";
+import { grepFiles } from "./fs-search.ts";
 
 /** Persist current task/todo state to the session DB (P2). Fire-and-forget. */
 function persistSessionState() {
   const sid = getSessionId();
   if (!sid) return;
   try {
-    sessionDb.saveSessionTasks(sid, Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted") as any);
+    sessionDb.saveSessionTasks(sid, Array.from(getTaskStore().values()).filter((t: any) => t.status !== "deleted") as any);
     sessionDb.saveSessionTodos(sid, getTodoList());
   } catch { /* persistence is best-effort; never block tool execution */ }
 }
@@ -65,7 +68,20 @@ function isDangerous(cmd: string): boolean {
   return DANGEROUS.some(p => p.test(cmd));
 }
 
-function requestPermission(cmd: string, signal?: AbortSignal): Promise<boolean> {
+export interface PermissionPrompt {
+  /** Dialog title, e.g. "修改文件". */
+  title?: string;
+  /** Full command / path / args shown in the dialog body. */
+  detail?: string;
+  /** Legacy alias for detail (tests and old callers pass a bare string). */
+  command?: string;
+  /** Why the layer asked — shown as a small hint. */
+  reason?: string;
+}
+
+function requestPermission(input: string | PermissionPrompt, signal?: AbortSignal): Promise<boolean> {
+  const p: PermissionPrompt = typeof input === "string" ? { detail: input, command: input } : input;
+  const detail = p.detail || p.command || "";
   return new Promise(resolve => {
     if (signal?.aborted) { resolve(false); return; }
     const id = nextPermId();
@@ -79,7 +95,13 @@ function requestPermission(cmd: string, signal?: AbortSignal): Promise<boolean> 
     const onAbort = () => finish(false);
     signal?.addEventListener("abort", onAbort, { once: true });
     pendingPerms.set(String(id), finish as any);
-    sendToRenderer("permission:request", { id, command: cmd });
+    sendToRenderer("permission:request", {
+      id,
+      command: detail,
+      detail,
+      title: p.title || "需要确认",
+      reason: p.reason || "confirm",
+    });
   });
 }
 
@@ -250,13 +272,20 @@ function isSafeUrl(u: string): boolean {
 }
 
 // Lazy imports for circular dependency avoidance
-let _runSubAgent: ((description: string, prompt: string, subAgentId?: string | null) => Promise<{ text: string, aborted?: boolean, structured?: import("./sub-agent.ts").SubAgentStructured | null }>) | null = null;
-async function getRunSubAgent() {
+type RunSubAgentFn = (
+  description: string,
+  prompt: string,
+  subAgentId?: string | null,
+  agentType?: string,
+  signal?: AbortSignal,
+) => Promise<{ text: string, aborted?: boolean, structured?: import("./sub-agent.ts").SubAgentStructured | null }>;
+let _runSubAgent: RunSubAgentFn | null = null;
+async function getRunSubAgent(): Promise<RunSubAgentFn> {
   if (!_runSubAgent) {
     const mod = await import("./sub-agent.ts");
     _runSubAgent = mod.runSubAgent;
   }
-  return _runSubAgent;
+  return _runSubAgent!;
 }
 
 let _loadWxConfig: (() => any) | null = null;
@@ -378,16 +407,12 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
   const args = JSON.parse(argsStr);
   const planMode = getPlanMode();
 
-  // Hard block: plan mode prevents ALL write operations at execution level
-  if (planMode) {
-    const WRITE_TOOLS = new Set(["bash", "file_write", "file_edit", "create_skill", "git_commit", "git_branch"]);
-    const GH_WRITE_ACTIONS: Record<string, string[]> = { gh_pr: ["create", "merge", "close", "checkout"], gh_issue: ["create", "close", "reopen", "comment"], gh_repo: ["create", "clone"] };
-    if (WRITE_TOOLS.has(name)) {
-      return { error: `🚫 计划模式下禁止执行 "${name}" 操作。请先制定计划，等用户确认后再执行。` };
-    }
-    if (GH_WRITE_ACTIONS[name] && GH_WRITE_ACTIONS[name].includes(args.action)) {
-      return { error: `🚫 计划模式下禁止执行 "${name}(${args.action})" 操作。请先制定计划，等用户确认后再执行。` };
-    }
+  // Plan mode is a WHITELIST. The old implementation blacklisted four write
+  // tool names; adding a new write tool silently bypassed plan mode. Now
+  // anything not explicitly read-only is rejected at the execution layer,
+  // even if it reached us through a stale tool schema or a sub-agent.
+  if (planMode && !PLAN_MODE_READONLY.has(name)) {
+    return { error: `🚫 计划模式下禁止执行 "${name}" 操作。请先制定计划，等用户确认后再执行。`, denied: true };
   }
 
   // ── PreToolUse hook ──
@@ -399,12 +424,43 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
     Object.assign(args, hookResult.args);
   }
 
+  // ── Permission gate ──
+  // Runs after hooks so a hook cannot smuggle a dangerous command past the
+  // policy (it is evaluated on the final args), and mutations happen only
+  // after approval.
+  const interactive = isInteractiveSession();
+  const decision = evaluateToolCall({
+    tool: name, args, workspace: getWorkspace(), interactive,
+  });
+  if (decision.action === "deny") {
+    return { error: `🚫 权限拒绝: ${decision.detail || decision.reason}`, permission: decision.reason, denied: true };
+  }
+  // Dangerous shell commands still get a prompt even in auto mode; the
+  // permission engine's command regex is deliberately broader, but this
+  // preserves the battle-tested DANGEROUS list as a second net. Full access
+  // sets `unrestricted`, which opts out of this second net.
+  const needsApproval = decision.action === "ask"
+    || (!decision.unrestricted && name === "bash" && isDangerous(String(args.command || "")));
+  if (needsApproval) {
+    if (!interactive) {
+      return {
+        error: `🚫 该操作需要用户确认，但当前会话无人值守（WeChat/后台）：${decision.title || name}`,
+        permission: decision.reason || "unattended",
+        denied: true,
+      };
+    }
+    const ok = await requestPermission(
+      decision.action === "ask"
+        ? { title: decision.title, detail: decision.detail, reason: decision.reason }
+        : { title: "执行危险命令", detail: String(args.command || ""), reason: "dangerous-command" },
+      signal,
+    );
+    if (!ok) return { error: signal?.aborted ? "Aborted" : "用户拒绝了该操作", denied: true };
+  }
+  if (signal?.aborted) return { error: "Aborted", aborted: true };
+
   switch (name) {
     case "bash": {
-      if (isDangerous(args.command)) {
-        const ok = await requestPermission(args.command, signal);
-        if (!ok) return { error: signal?.aborted ? "Aborted" : "User denied this command" };
-      }
       if (signal?.aborted) return { error: "Aborted", aborted: true };
       const r = await runShell(args.command, { timeout: args.timeout, signal });
       if (r.error) return { error: r.error };
@@ -582,36 +638,22 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
     }
     case "grep": {
       try {
-        const dir = args.path || getWorkspace();
-        const esc = (s: any) => String(s).replace(/'/g, "''");
-        // P: configurable context lines + result cap. Previously hardcoded to
-        // 100 matches with zero context — symbol searches lost surrounding code.
-        const ctx = Number.isFinite(args.context) ? Math.max(0, Math.floor(args.context)) : 2;
-        const maxResults = Number.isFinite(args.max_results) ? Math.max(1, Math.min(500, Math.floor(args.max_results))) : 100;
-        let cmd;
-        if (IS_WINDOWS) {
-          const filter = args.include ? `-Include '${esc(args.include)}'` : "";
-          // P: honor context on Windows — print each match line, then its
-          // post-context lines indented. (Select-String -Context discards
-          // context if we only project $_.Line, so emit both explicitly.)
-          const ctxArg = ctx > 0 ? ` -Context 0,${ctx}` : "";
-          const ctxEmit = ctx > 0
-            ? `; $_.Context.PostContext | % { "  | " + $_ }`
-            : "";
-          cmd = `Get-ChildItem -Path '${esc(dir)}' -Recurse ${filter} -File | Select-String -Pattern '${esc(args.pattern)}'${ctxArg} | Select-Object -First ${maxResults} | % { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())"${ctxEmit} }`;
-        } else {
-          // POSIX: grep -rn supports --include='*.ext' glob for filtering
-          const include = args.include ? `--include='${esc(args.include)}'` : "";
-          const ctxArg = ctx > 0 ? ` -C ${ctx}` : "";
-          cmd = `grep -rn${ctxArg} ${include} '${esc(args.pattern)}' '${esc(dir)}' 2>/dev/null | head -n ${maxResults}`;
-        }
-        const r = await runShell(cmd, { timeout: args.timeout ?? 15000, signal });
-        if (r.error) return { error: r.error };
-        const matches = (r.out ?? "").trim().split("\n").filter(Boolean);
+        // Native in-process search (ripgrep-backed when available). The old
+        // PowerShell pipeline walked node_modules/.git and broke on quotes.
+        const result = await grepFiles({
+          pattern: String(args.pattern),
+          path: args.path || getWorkspace(),
+          include: args.include,
+          context: args.context,
+          maxResults: args.max_results,
+          timeout: args.timeout,
+        }, getWorkspace(), signal);
         return {
-          matches,
-          count: matches.length,
-          ...(matches.length === maxResults ? { hint: `Result cap reached (${maxResults}). Refine the pattern or use max_results to raise the limit (max 500).` } : {}),
+          matches: result.matches,
+          count: result.count,
+          engine: result.engine,
+          ...(result.truncated ? { truncated: true } : {}),
+          ...(result.hint ? { hint: result.hint } : {}),
         };
       } catch (e: any) { return { error: e?.message || String(e) }; }
     }
@@ -916,7 +958,8 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
       // Prevents the failure mode of agent bash-exploring ~/.aideagent/memories
       // and mistaking unrelated markdown files for memories.
       try {
-        const all = memory.listMemories() || [];
+        const workspace = getWorkspace();
+        const all = memory.listMemories({ workspace }) || [];
         const typeFilter = args.type && args.type !== "all" ? args.type : null;
         const searchTerm = typeof args.search === "string" ? args.search.toLowerCase().trim() : "";
         let filtered = typeFilter ? all.filter(m => m.type === typeFilter) : all;
@@ -932,14 +975,13 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
           const t = m.type || "unknown";
           byType[t] = (byType[t] || 0) + 1;
         }
-        // Also count USER.md and MEMORY.md size for total context awareness
-        const oldHome = homedir();
-        const oldUserPath = join(oldHome, ".aideagent", "memories", "USER.md");
-        const oldMemoryPath = join(oldHome, ".aideagent", "memories", "MEMORY.md");
+        // Canonical files for context awareness (the scoped index is built by
+        // getMemoryIndex; the raw MEMORY.md may include other workspaces).
+        const memDir = join(homedir(), ".aideagent", "memory");
         const fileMeta: Record<string, any> = {};
-        for (const [label, p] of [["USER.md", oldUserPath], ["MEMORY.md", oldMemoryPath]]) {
+        for (const [label, p] of [["MEMORY.md", join(memDir, "MEMORY.md")], ["user_profile.md", join(memDir, "user_profile.md")]]) {
           try {
-            const st = statSync(p as string);
+            const st = statSync(p);
             fileMeta[label] = { path: p, size: st.size, mtime: st.mtime.toISOString() };
           } catch { /* not present */ }
         }
@@ -948,8 +990,9 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
           byType,
           filtered: filtered.length,
           canonicalPath: "~/.aideagent/memory/",
+          workspace,
           specialFiles: fileMeta,
-          warning: "These are the canonical memory files. Files in `~/.aideagent/memories/` (note the trailing 's') are unrelated markdown and are NOT memories.",
+          warning: "These are the canonical memory files for the current workspace. Project/reference memories are scoped; user/feedback are global. Files in `~/.aideagent/memories/` (note the trailing 's') are unrelated markdown and are NOT memories.",
           memories: filtered.map(m => ({
             filename: m.filename,
             name: m.name,
@@ -1003,7 +1046,7 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
             agents: "~/​.agents/skills/",
             claude: "~/​.claude/skills/",
           },
-          warning: "These are the ONLY canonical skill sources. Files in other directories (e.g. D:\\claude_skills\\skills-main\\skills\\) are third-party GitHub clones and are NOT loadable via the `skill` tool.",
+          warning: "These are the ONLY canonical skill sources. Files in other directories are third-party GitHub clones or arbitrary folders and are NOT loadable via the `skill` tool.",
           duplicates: duplicateNames,
           duplicatesCount: duplicateNames.length,
           skills: filtered.map(s => ({
@@ -1055,18 +1098,23 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
         const body = rawBody.length > MEMORY_CONTENT_MAX_CHARS
           ? rawBody.slice(0, MEMORY_CONTENT_MAX_CHARS) + `\n…(超出 ${MEMORY_CONTENT_MAX_CHARS} 字已截断)`
           : rawBody;
-        if (memory.checkDuplicate(type, content)) return { note: "Similar memory already exists — nothing new added" };
+        const scope = { workspace: getWorkspace() };
+        // Only check duplicates when creating. An explicit update must be
+        // allowed to revise a memory even if its old text is still similar.
+        if (!filename && memory.checkDuplicate(type, content, scope)) {
+          return { note: "Similar memory already exists — nothing new added" };
+        }
 
         const memName = name || (type + "_" + Date.now().toString(36));
         const memDesc = description || "Memory of type " + type;
 
         if (filename) {
-          const result = memory.updateMemory(filename, body, memName, memDesc, type);
+          const result = memory.updateMemory(filename, body, memName, memDesc, type, scope);
           if (result.error) return result;
           return { saved: true, type, name: memName, filename: result.filename || filename, updated: true };
         }
 
-        const result = memory.createMemory(memName, memDesc, type, body);
+        const result = memory.createMemory(memName, memDesc, type, body, scope);
         if (result.error) return result;
         return { saved: true, type, name: result.name, filename: result.filename };
       } catch (e: any) { return { error: e.message }; }
@@ -1076,7 +1124,7 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
       try {
         const filename = typeof args.filename === "string" ? args.filename.trim() : "";
         if (!filename) return { error: "filename required" };
-        const mem = memory.readMemory(filename);
+        const mem = memory.readMemory(filename, { workspace: getWorkspace() });
         if (!mem) return { error: `Memory not found: ${filename}. Use list_memories to see available files.` };
         return { filename: mem.filename, name: mem.name, description: mem.description, type: mem.type, body: mem.body };
       } catch (e: any) { return { error: e.message }; }
@@ -1154,16 +1202,16 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
         status: "pending", activeForm: args.activeForm || args.subject,
         owner: "", metadata: args.metadata || {}, createdAt: new Date().toISOString(),
       };
-      taskStore.set(id, task);
+      getTaskStore().set(id, task);
       persistSessionState();
       return { task: { id, subject: task.subject } };
     }
     case "TaskUpdate": {
-      const t: any = taskStore.get(args.taskId);
+      const t: any = getTaskStore().get(args.taskId);
       if (!t) return { error: `Task ${args.taskId} not found` };
       const updatedFields: string[] = [];
       if (args.status === "deleted") {
-        taskStore.delete(args.taskId);
+        getTaskStore().delete(args.taskId);
         persistSessionState();
         return { success: true, taskId: args.taskId, updatedFields: ["status"], statusChange: { from: t.status, to: "deleted" } };
       }
@@ -1185,15 +1233,15 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
         t.completedAt = new Date().toISOString();
         updatedFields.push("completedAt");
       }
-      if (args.status) { t.status = args.status; taskStore.set(args.taskId, t); updatedFields.push("status"); }
-      if (args.subject) { t.subject = args.subject; taskStore.set(args.taskId, t); updatedFields.push("subject"); }
-      if (args.description) { t.description = args.description; taskStore.set(args.taskId, t); updatedFields.push("description"); }
+      if (args.status) { t.status = args.status; getTaskStore().set(args.taskId, t); updatedFields.push("status"); }
+      if (args.subject) { t.subject = args.subject; getTaskStore().set(args.taskId, t); updatedFields.push("subject"); }
+      if (args.description) { t.description = args.description; getTaskStore().set(args.taskId, t); updatedFields.push("description"); }
       t.updatedAt = new Date().toISOString();
       persistSessionState();
       return { success: true, taskId: args.taskId, updatedFields, unverified: t.unverified || false };
     }
     case "TaskList": {
-      const tasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted");
+      const tasks: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.status !== "deleted");
       return {
         tasks: tasks.map(t => ({ id: t.id, subject: t.subject, status: t.status, activeForm: t.activeForm, evidence: t.evidence, unverified: t.unverified || false })),
         summary: `${tasks.filter(t => t.status === "completed").length}/${tasks.length} completed, ${tasks.filter(t => t.status === "in_progress").length} in progress`,
@@ -1207,25 +1255,37 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
     }
     case "Agent": {
       const subAgentId = `sub_${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
-      sendToRenderer("subagent:start", { id: subAgentId, description: args.description });
+      const agentType = ["general", "explore", "plan"].includes(args.agent_type) ? args.agent_type : "general";
+      if (isInteractiveSession()) {
+        sendToRenderer("subagent:start", { id: subAgentId, description: args.description, agentType });
+      }
       try {
         const runSubAgent = await getRunSubAgent();
-        const result = await runSubAgent(args.description, args.prompt, subAgentId);
+        const result = await runSubAgent(args.description, args.prompt, subAgentId, agentType, signal);
         const output = result.text || "(no result)";
-        sendToRenderer("subagent:done", { id: subAgentId, description: args.description, output });
+        if (isInteractiveSession()) {
+          sendToRenderer("subagent:done", { id: subAgentId, description: args.description, output, agentType });
+        }
         // Audit fix C4: pass text/structured through alongside the legacy
         // `output` field — agent-loop's summarizeSubAgentResult reads them to
         // replace large structured replies with a summary + archive pointer.
         // Dropping them here silently disabled that path in production.
         return { output, text: result.text || "", structured: result.structured ?? null, aborted: result.aborted || false };
       } catch (e: any) {
-        sendToRenderer("subagent:done", { id: subAgentId, description: args.description, error: e.message });
+        if (isInteractiveSession()) {
+          sendToRenderer("subagent:done", { id: subAgentId, description: args.description, error: e.message });
+        }
         return { error: e.message };
       }
     }
     case "AskUserQuestion": {
       const questions = args.questions || [];
       if (questions.length === 0) return { error: "At least one question required" };
+      // WeChat/bridge sessions have no renderer to answer. Fail fast instead
+      // of holding the tool call open for the full dialog timeout.
+      if (!isInteractiveSession()) {
+        return { error: "该会话无人值守，无法向用户提问。请自行做出合理假设并继续。", unattended: true };
+      }
         return new Promise(resolve => {
           const qId = nextAskId();
           const finish = (v: any) => {
@@ -1347,19 +1407,27 @@ export async function runTool(tc: { id?: string, function: { name: string; argum
     }
     case "git_diff": {
       try {
-        const cmd = args.staged ? "git diff --cached" : (args.file ? `git diff -- "${args.file}"` : "git diff");
-        const r = await runShell(cmd, { signal });
+        const diffArgs = args.staged
+          ? ["diff", "--cached"]
+          : args.file ? ["diff", "--", String(args.file)] : ["diff"];
+        const r = await runSpawnSafe("git", diffArgs, { signal });
         const stat = await runShell("git diff --stat", { signal });
         return { diff: r.out || "(no changes)", stats: stat.out || "" };
       } catch (e: any) { return { error: e.message }; }
     }
     case "git_commit": {
       try {
-        if (args.files && args.files.length > 0) {
-          for (const f of args.files) await runShell(`git add "${f}"`, { signal });
-        } else {
-          await runShell("git add -A", { signal });
-        }
+        // Stage with an argv array: file names come from the model, and
+        // interpolating them into a shell string allowed quote/metachar
+        // injection (`"x"; rm -rf ...`) even though the old code wrapped
+        // each name in quotes.
+        const files = Array.isArray(args.files) && args.files.length > 0
+          ? args.files.map((f: any) => String(f))
+          : null;
+        const add = files
+          ? await runSpawnSafe("git", ["add", "--", ...files], { signal })
+          : await runSpawnSafe("git", ["add", "-A"], { signal });
+        if (add.code !== 0) return { error: add.err || add.out || "git add failed" };
         let msg = args.message;
         if (!msg) {
           const diff = await runShell("git diff --cached", { signal });

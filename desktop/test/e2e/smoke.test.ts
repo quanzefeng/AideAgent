@@ -221,33 +221,16 @@ test("hud overlay hides when data-hud is off", async () => {
   await closeApp(app);
 });
 
-// ── 10. Boot 序列：默认出现并自行结束 ──────────────
-test("boot sequence appears on launch and self-removes", async () => {
+// ── 10. 启动动画已移除：启动时不再出现全屏 boot 覆盖层 ──────
+test("startup does not render a boot overlay", async () => {
   const { app, window } = await launchApp();
 
-  // launchApp 完成后 boot 仍应存在（POWER_ON 阶段）
-  const boot = window.locator("#boot-screen");
-  await expect(boot).toBeAttached();
-  // boot 尚在时，日志区应有内容（至少一行启动文本）
-  await expect(window.locator("#boot-log .boot-line").first()).toBeVisible({ timeout: 3000 });
-  // 等待自动结束（状态机总时长 < 6s，给足余量）
-  await expect(boot).not.toBeAttached({ timeout: 8000 });
+  expect(await window.locator("#boot-screen").count()).toBe(0);
+  await expect(window.locator("#prompt-input")).toBeVisible();
   await closeApp(app);
 });
 
-// ── 11. Boot 可点击跳过 ───────────────────────────
-test("boot sequence skips on click", async () => {
-  const { app, window } = await launchApp();
-
-  // 立即点击 boot（不等动画跑完），应立即进入 fade 并移除
-  const boot = window.locator("#boot-screen");
-  await expect(boot).toBeAttached();
-  await boot.click({ position: { x: 20, y: 20 }, timeout: 2000 });
-  await expect(boot).not.toBeAttached({ timeout: 3000 });
-  await closeApp(app);
-});
-
-// ── 13. 阶段3 实时数据：IPC 事件填充 HUD ────────
+// ── 11. 阶段3 实时数据：IPC 事件填充 HUD ────────
 test("hud telemetry fills HUD from IPC events", async () => {
   const { app, window } = await launchApp();
 
@@ -269,7 +252,7 @@ test("hud telemetry fills HUD from IPC events", async () => {
   await closeApp(app);
 });
 
-// ── 14. 阶段4 全站精修：HUD 开启时有切角+弹窗括号，关闭即还原 ──
+// ── 12. 阶段4 全站精修：HUD 开启时有切角+弹窗括号，关闭即还原 ──
 test("full-site polish applies with hud on and reverts when off", async () => {
   const { app, window } = await launchApp();
   await window.waitForTimeout(500);
@@ -297,22 +280,5 @@ test("full-site polish applies with hud on and reverts when off", async () => {
   expect(bw).toBeGreaterThanOrEqual(1.5);
   expect(bw).toBeLessThanOrEqual(2.5);
 
-  await closeApp(app);
-});
-
-// ── 12. Boot 跟随 HUD 开关：关闭时不出现 ────────────
-test("boot sequence is skipped when HUD is off", async () => {
-  const { app, window } = await launchApp();
-
-  await window.evaluate(() => {
-    localStorage.setItem("AideAgent_hud", "off");
-    document.documentElement.dataset.hud = "off";
-  });
-  await window.reload();
-  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
-  await window.waitForTimeout(500);
-
-  const bootCount = await window.locator("#boot-screen").count();
-  expect(bootCount).toBe(0);
   await closeApp(app);
 });

@@ -7,7 +7,6 @@ import './modules/font-settings.ts';
 import './modules/bg-settings.ts';
 import './modules/hud-overlay.ts';
 import './modules/sidebar-collapse.ts';
-import './modules/boot-sequence.ts';
 import './modules/hud-telemetry.ts';
 import './modules/workspace.ts';
 import { initKnowledgeBase, loadKnowledgeBasePanel } from './modules/knowledge-base.ts';
@@ -18,6 +17,7 @@ import { loadAgentName, loadUserName, applyAgentName, applyUserName, initAgentNa
 import { sanitize, escapeHtml, renderMarkdown, renderLatexInElement, autoResize, formatFileSize, scrollToBottom, autoFollowScroll, pinScrollBottom, setStatus, loadReasoningEffort, saveReasoningEffort } from './modules/helpers.ts';
 import { loadEnabledSkills, loadAndRenderSkills } from './modules/skills-panel.ts';
 import { switchSettingsTab, initSettingsTabs } from './modules/settings-tabs.ts';
+import { initPermissionsSettings } from './modules/permissions-settings.ts';
 import { createFilePreviews } from './modules/file-previews.ts';
 import { initUpdateToast, getSkippedVersion, setSkippedVersion } from './modules/update-toast.ts';
 import { createPromptStore } from './modules/prompt-store.ts';
@@ -181,6 +181,8 @@ function activePlanModeEnabled() {
 }
 const newChatBtn = $("#new-chat");
 const permModal = $("#perm-modal");
+const permTitle = $("#perm-title");
+const permReason = $("#perm-reason");
 const permCommand = $("#perm-command");
 const permAllow = $("#perm-allow");
 const permDeny = $("#perm-deny");
@@ -634,9 +636,28 @@ function updateInfoBar() {
   // Show model name (or provider label if no model). preset.name is an i18n
   // KEY — translate it here so language switches are reflected immediately.
   const preset = cfg.provider ? PROVIDER_PRESETS[cfg.provider] : null;
-  const label = preset ? t(preset.name) : (cfg.apiUrl?.replace(/https?:\/\//, "").split("/")[0] || "");
+  const fallback = preset ? t(preset.name) : (cfg.apiUrl?.replace(/https?:\/\//, "").split("/")[0] || "");
   const model = cfg.model || "";
-  infoModelName.textContent = model ? `${label} · ${model}` : label;
+  // Prefer the model name; the provider is visible in Settings → API and just
+  // adds noise here (e.g. "token.sensenova.cn · deepseek-v4.1-flash").
+  infoModelName.textContent = model || fallback;
+}
+
+/**
+ * Put the context-usage pill back into its "not measured yet" state. The
+ * indicator is intentionally always visible (0%) so a fresh chat does not
+ * look like the feature disappeared. The next context:usage event replaces
+ * this with the real token counts.
+ */
+function resetContextUsage() {
+  const el = document.getElementById("context-usage");
+  if (!el) return;
+  el.classList.remove("hidden", "soft", "warn", "danger");
+  el.classList.add("ok");
+  el.querySelector(".context-usage-bar")?.style.setProperty("--fill", "0%");
+  const text = el.querySelector(".context-usage-text");
+  if (text) text.textContent = "0%";
+  el.title = t("chat.context_usage");
 }
 
 /* ── Reasoning effort picker (pill + upward menu) ──── */
@@ -1659,6 +1680,7 @@ function abortQuery() {
     _loadedSessionId = null;
     state.currentAssistantMsg = null;
     _pendingNewSession = false;
+    resetContextUsage();
   }
   refreshSessionList();
 }
@@ -1736,6 +1758,7 @@ function resetChat() {
     promptInput.value = "";
     const ocIn = ocPromptInput();
     if (ocIn) ocIn.value = "";
+    resetContextUsage();
     setStatus(t("status.ready"));
     refreshSessionList();
     requestAnimationFrame(() => activePromptInput().focus());
@@ -1768,6 +1791,7 @@ function resetChat() {
     promptInput.value = "";
     const ocIn2 = ocPromptInput();
     if (ocIn2) ocIn2.value = "";
+    resetContextUsage();
     setStatus(t("status.ready"));
     refreshSessionList();
     requestAnimationFrame(() => activePromptInput().focus());
@@ -1895,6 +1919,7 @@ function loadChat(sessionId) {
     // Load with readOnly to avoid overwriting backend state
     window.aideagent.loadSession(sessionId, { readOnly: true }).then(data => {
       if (!data) return;
+      resetContextUsage();
       _loadedSessionId = data.sessionId;
       if (sessionDisplay) sessionDisplay.textContent = data.title || data.sessionId || "—";
       rebuildMessages(data);
@@ -1906,6 +1931,7 @@ function loadChat(sessionId) {
 
   window.aideagent.loadSession(sessionId).then(data => {
     if (!data) return;
+    resetContextUsage();
     _loadedSessionId = data.sessionId;
     state.sessionId = data.sessionId;
     state.isStreaming = false;
@@ -2348,10 +2374,26 @@ function showAskQuestion(data) {
 }
 
 /* ── Permission dialog ───────────────────────────────── */
+const PERM_REASON_LABELS = {
+  "outside-workspace-write": "目标路径不在当前工作区内。",
+  "outside-workspace-read": "读取路径不在当前工作区内。",
+  "dangerous-command": "该命令可能造成不可逆的破坏。",
+  "mcp-or-unknown": "该工具来自外部扩展，无法预判副作用。",
+  "ask-mode": "当前权限模式为 ask，写操作需要逐次确认。",
+  "readonly-mode": "当前为只读模式。",
+  "remote-write": "这会修改 GitHub 上的远程内容。",
+};
+
 function showPermission(evt) {
   return new Promise((resolve) => {
     state._permResolve = resolve;
-    permCommand.textContent = evt.command;
+    permTitle.textContent = evt.title || "需要确认";
+    const reason = evt.reason && evt.reason !== "confirm"
+      ? (PERM_REASON_LABELS[evt.reason] || evt.reason)
+      : "";
+    permReason.textContent = reason;
+    permReason.style.display = reason ? "block" : "none";
+    permCommand.textContent = evt.detail || evt.command || "";
     permModal.classList.add("active");
 
     const cleanup = () => { permModal.classList.remove("active"); };
@@ -2541,6 +2583,7 @@ function setupIPC() {
         _loadedSessionId = null;
         state.currentAssistantMsg = null;
         _pendingNewSession = false;
+        resetContextUsage();
       }
       refreshSessionList();
       // Process queued queries
@@ -2565,6 +2608,7 @@ function setupIPC() {
         _loadedSessionId = null;
         state.currentAssistantMsg = null;
         _pendingNewSession = false;
+        resetContextUsage();
       }
       refreshSessionList();
       addErrorMessage(data.message || t("misc.unknown_error"));
@@ -2679,11 +2723,8 @@ function setupIPC() {
         el.classList.add("warn");
       } else if (data.usagePct >= warnPct) {
         el.classList.add("soft");
-      } else if (data.totalTokens > 5000) {
-        el.classList.add("ok");
       } else {
-        el.classList.add("hidden");
-        return;
+        el.classList.add("ok");
       }
       el.querySelector(".context-usage-bar").style.setProperty("--fill", data.usagePct + "%");
       // 已用/上限在前、百分比在后 —— 百分比 alone 不足以判断「还剩多少 k」，
@@ -3082,6 +3123,7 @@ window.addEventListener("focus", () => {
 
 /* ── Init ──────────────────────────────────────────────── */
 initSettingsTabs();
+initPermissionsSettings(showConfirmDialog);
 initInputMenu();
 filePreviews.init();
 filePreviews.initPasteSupport(promptInput);
@@ -3150,6 +3192,7 @@ if (cfg.provider) {
   if (cwdDisplay) cwdDisplay.textContent = t("misc.unconfigured");
 }
 updateInfoBar();
+resetContextUsage();
 // 配置是异步加载的，横幅必须在 initApiKeys 完成后再刷新一次，
 // 否则启动时 hasApiConfig() 还是空 → 误报"请先配置 API"。
 updateConfigBanner();

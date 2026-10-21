@@ -164,7 +164,6 @@ test("scroll-stream-real v2: multi-turn real stream end forensics", async () => 
   console.log(`[srr2] mock api ${api.url}`);
   const { app, window } = await launchApp();
 
-  await window.evaluate(() => document.getElementById("boot-screen")?.remove());
   const pre: any[] = await window.evaluate(() => (window as any).aideagent.listSessions()).catch(() => []);
   for (const s of pre.filter((x: any) => String(x.title || "").includes(MARKER))) {
     await window.evaluate((id: any) => (window as any).aideagent.deleteSession(id), s.id);
@@ -181,7 +180,6 @@ test("scroll-stream-real v2: multi-turn real stream end forensics", async () => 
     .catch(() => {});
   await window.waitForLoadState("domcontentloaded", { timeout: 20_000 });
   await window.waitForTimeout(1500);
-  await window.evaluate(() => document.getElementById("boot-screen")?.remove());
 
   await window.evaluate(() => {
     (window as any).__wheelLog = [];

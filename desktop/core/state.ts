@@ -6,8 +6,16 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { loadWorkspaceConfig, saveWorkspaceConfig } from "./workspace-config.ts";
+import {
+  currentAgentSession, genId, resetActiveAgentSession, activateAgentSession,
+  assignSessionId, allAgentSessions, isSessionBound,
+} from "./agent-session.ts";
 import type { BrowserWindow } from "electron";
 import type { OpencodeAcpClient } from "./opencode-acp-client.ts";
+
+// Re-exported for backward compatibility (callers and tests import genId
+// from state.ts).
+export { genId };
 
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = dirname(__dirname);
@@ -49,12 +57,22 @@ export function getMainWindow() { return mainWindow; }
 export let WORKSPACE = process.cwd();
 export function setWorkspace(ws: string) {
   WORKSPACE = ws;
+  // The running conversation follows the switch. Suspended/other sessions
+  // keep their own workspace — that is the point of per-session isolation.
+  currentAgentSession().workspace = ws;
   // Persist synchronously — setWorkspace is called only from IPC
   // handlers (workspace:pick / workspace:set) which already validate
   // the path, so this is a single, predictable write per user action.
   saveWorkspaceConfig({ current: ws });
 }
-export function getWorkspace() { return WORKSPACE; }
+export function getWorkspace() {
+  // Inside an agent run, the session's own workspace wins. Outside one
+  // (IPC, renderer-facing helpers) this resolves to the active session,
+  // which setWorkspace keeps in sync with WORKSPACE.
+  return currentAgentSession().workspace || WORKSPACE;
+}
+/** The persisted app-wide workspace, ignoring the bound session. */
+export function getGlobalWorkspace() { return WORKSPACE; }
 
 /**
  * Load the persisted workspace config and override WORKSPACE if
@@ -64,7 +82,10 @@ export function getWorkspace() { return WORKSPACE; }
  */
 export function initWorkspaceFromConfig() {
   const cfg = loadWorkspaceConfig();
-  if (cfg?.current) WORKSPACE = cfg.current;
+  if (cfg?.current) {
+    WORKSPACE = cfg.current;
+    currentAgentSession().workspace = cfg.current;
+  }
 }
 
 // ── Constants ───────────────────────────────────────────────
@@ -146,13 +167,44 @@ export const MAX_API_RETRIES = 5;
 export const RETRY_BACKOFF_MS = [4000, 8000, 15000, 20000, 30000];
 export const RETRY_MAX_SINGLE_WAIT = 30_000; // cap on any single retry wait (Retry-After honored up to this)
 
-export let abortCtrl: AbortController | null = null;
-export function setAbortCtrl(ctrl: AbortController | null) { abortCtrl = ctrl; }
-export function getAbortCtrl() { return abortCtrl; }
+// ── Session-scoped state (delegates to agent-session.ts) ────
+// Every accessor below resolves against the session bound by
+// AsyncLocalStorage (running agent loop / tool call) or the active desktop
+// session (IPC / renderer). See agent-session.ts for why.
 
-export let sessionId: string | null = null;
-export function setSessionId(id: string | null) { sessionId = id; }
-export function getSessionId() { return sessionId; }
+export function setAbortCtrl(ctrl: AbortController | null) {
+  currentAgentSession().abortCtrl = ctrl;
+}
+export function getAbortCtrl() {
+  return currentAgentSession().abortCtrl;
+}
+
+export function setSessionId(id: string | null) {
+  if (id === null) {
+    // `session:reset` — start a fresh draft. The previous session object
+    // stays in the registry so it can still be resumed from the sidebar.
+    const ws = currentAgentSession().workspace;
+    resetActiveAgentSession({ workspace: ws });
+    return;
+  }
+  if (isSessionBound()) {
+    // Called from inside a running agent loop. Mutating the global "active"
+    // pointer here would switch the desktop conversation as a side effect of
+    // an WeChat/background run; bind the id to the session we are actually in.
+    assignSessionId(currentAgentSession(), id);
+    return;
+  }
+  activateAgentSession(id);
+}
+export function getSessionId() {
+  return currentAgentSession().id;
+}
+/** Assign the first id to a draft session and register it. */
+export function ensureSessionId(id: string) {
+  const s = currentAgentSession();
+  if (!s.id) assignSessionId(s, id);
+  return s.id;
+}
 
 /**
  * Long-lived `OpencodeAcpClient` instance reused across consecutive prompts
@@ -171,15 +223,18 @@ export function getSessionId() { return sessionId; }
  *
  * @type {import("./opencode-acp-client.ts").OpencodeAcpClient|null}
  */
-export let opencodeAcpClient: OpencodeAcpClient | null = null;
-export function setOpencodeAcpClient(c: OpencodeAcpClient | null) { opencodeAcpClient = c; }
-export function getOpencodeAcpClient() { return opencodeAcpClient; }
+export function setOpencodeAcpClient(c: OpencodeAcpClient | null) {
+  currentAgentSession().opencodeClient = c;
+}
+export function getOpencodeAcpClient() {
+  return currentAgentSession().opencodeClient;
+}
 /**
  * Test if the cached ACP client is still connected to a live subprocess.
  * Returns false when the client is null, has been stopped, or its process
  * has exited.
  */
-export function isOpencodeAcpClientAlive(client: OpencodeAcpClient | null = opencodeAcpClient): boolean {
+export function isOpencodeAcpClientAlive(client: OpencodeAcpClient | null = getOpencodeAcpClient()): boolean {
   if (!client) return false;
   // Private fields — guarded reads.
   if (client._closed) return false;
@@ -187,19 +242,31 @@ export function isOpencodeAcpClientAlive(client: OpencodeAcpClient | null = open
   return true;
 }
 
-export let history: any[] = [];
-export function setHistory(h: any[]) { history = h; }
-export function getHistory() { return history; }
+export function setHistory(h: any[]) {
+  currentAgentSession().history = h;
+}
+export function getHistory() {
+  return currentAgentSession().history;
+}
 
-export let _episodicSearched = false;
-export function setEpisodicSearched(v: boolean) { _episodicSearched = v; }
-export function getEpisodicSearched() { return _episodicSearched; }
+export function setEpisodicSearched(v: boolean) {
+  currentAgentSession().episodicSearched = v;
+}
+export function getEpisodicSearched() {
+  return currentAgentSession().episodicSearched;
+}
 
 // ── Task Store ──────────────────────────────────────────────
-export const taskStore = new Map<string, unknown>();
-export let _todoList: any[] = [];
-export function setTodoList(list: any[]) { _todoList = list; }
-export function getTodoList() { return _todoList; }
+// Per-session: two conversations must not see each other's task list.
+export function getTaskStore(): Map<string, any> {
+  return currentAgentSession().taskStore;
+}
+export function setTodoList(list: any[]) {
+  currentAgentSession().todoList = list;
+}
+export function getTodoList() {
+  return currentAgentSession().todoList;
+}
 
 export let _askId = 0;
 export function nextAskId() { return ++_askId; }
@@ -207,19 +274,24 @@ export function nextAskId() { return ++_askId; }
 export const _askResolvers = new Map<number, unknown>();
 
 // ── Plan Mode ───────────────────────────────────────────────
-export let planMode = false;
-export function setPlanMode(v: boolean) { planMode = v; }
-export function getPlanMode() { return planMode; }
+export function setPlanMode(v: boolean) {
+  currentAgentSession().planMode = v;
+}
+export function getPlanMode() {
+  return currentAgentSession().planMode;
+}
 
 // ── Current Runtime ─────────────────────────────────────────
 // Tracks which runtime ("aide" | "opencode") is active for the in-flight
 // session. Set by `query:submit` so that downstream helpers (e.g. the
 // `session:reset` saveSession helper in ipc-handlers.mjs) can persist the
 // session with the correct runtime tag instead of hardcoding "aide".
-// Default "aide" preserves behavior for legacy code paths that never set it.
-export let currentRuntime = "aide";
-export function setCurrentRuntime(rt: string) { currentRuntime = rt === "opencode" ? "opencode" : "aide"; }
-export function getCurrentRuntime() { return currentRuntime; }
+export function setCurrentRuntime(rt: string) {
+  currentAgentSession().runtime = rt === "opencode" ? "opencode" : "aide";
+}
+export function getCurrentRuntime() {
+  return currentAgentSession().runtime;
+}
 
 export const PLAN_MODE_READONLY = new Set([
   "file_read", "view_image", "grep", "glob", "web_search", "web_fetch",
@@ -233,44 +305,51 @@ export let permId = 0;
 export function nextPermId() { return ++permId; }
 
 // ── Sub-Agent ───────────────────────────────────────────────
-// Write-tool blacklist (audit fix C3, P1): TaskCreate/TaskUpdate/TodoWrite
-// mutate the main agent's structured state (taskStore / todoList) directly,
-// and sub-agents run in PARALLEL (Promise.allSettled) — concurrent writes
-// race. Removed; TaskList (read-only) stays so sub-agents can see task state.
-// write_memory/kb_write intentionally stay: semantic memory (§6 of the user's
-// spec) is a shared cross-session layer, NOT §5.3's "structured state", and a
-// sub-agent discovering durable facts is expected behaviour (write_memory has
-// checkDuplicate dedupe).
+// Sub-agents run in PARALLEL (Promise.allSettled). TaskCreate/TaskUpdate/
+// TodoWrite mutate the parent's structured state and would race, so they are
+// not in the general allowlist (TaskList read-only stays). AskUserQuestion is
+// also excluded: parallel sub-agents share one renderer dialog slot, so a
+// sub-agent question can steal/close the parent's dialog.
 export const SUB_AGENT_TOOL_NAMES = new Set([
   "bash", "file_read", "file_write", "file_edit", "grep", "glob",
   "web_fetch", "web_search", "skill", "write_memory", "read_memory", "invoke_skill",
-  "create_skill", "TaskList", "AskUserQuestion", "kb_write", "lsp",
+  "create_skill", "TaskList", "kb_write", "lsp",
   "git_diff", "git_commit", "git_branch", "gh_pr", "gh_issue", "gh_repo",
   "kb_search", "kb_get_note", "context_recall",
 ]);
+
+// Read-only agent types. `explore` is for broad codebase/web reconnaissance,
+// `plan` for producing an implementation plan. Neither can mutate the
+// workspace, so the parent can fan them out without approval concerns.
+export const EXPLORE_TOOL_NAMES = new Set([
+  "file_read", "view_image", "grep", "glob", "lsp", "skill", "invoke_skill",
+  "web_search", "web_fetch", "read_memory", "kb_search", "kb_get_note",
+  "context_recall", "TaskList",
+  "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools", "get_session_info",
+  "git_diff",
+]);
+export const PLAN_AGENT_TOOL_NAMES = new Set([
+  // Same read-only surface as explore. GitHub tools are deliberately excluded:
+  // gh_pr/gh_issue/gh_repo can create and close remote objects, which is not
+  // read-only even though part of their action space is.
+  ...EXPLORE_TOOL_NAMES,
+]);
 export const SUB_AGENT_MAX_TURNS = 12;
+export const EXPLORE_AGENT_MAX_TURNS = 16;
+export const PLAN_AGENT_MAX_TURNS = 10;
 export const _subAgentCtrls = new Map<string, unknown>();
 
 // ── Memory Selection ────────────────────────────────────────
-// P3方案3(c): _surfacedMemories now has a per-turn TTL so that memories
-// surfaced once can become candidates again after N conversation turns.
-// Without TTL, a memory that the LLM surfaced in turn 1 stays "locked out"
-// for the entire session even if the user's topic shifts — leading to the
-// Agent seeing only stale memories and "answering about the wrong thing".
-//
-// Map<filename, { turn: number, expiresAt: number }> instead of Set<string>.
-// Public API: markSurfaced(filename), pruneSurfacedMemories(now, ttl),
-// isSurfaced(filename, now) — wrapped in helpers so callers don't have
-// to think about the data shape.
+// Per-session surfaced-memory TTL: a memory surfaced once can become a
+// candidate again after N conversation turns, so a topic shift doesn't leave
+// the agent stuck with stale memories.
 const _SURFACED_TTL_TURNS = 50; // 50 turns ~= 1-2 hours of active conversation
-
-/** @type {Map<string, { turn: number, expiresAt: number }>} */
-const _surfacedMemories = new Map();
 
 /** @param {string} filename */
 export function markSurfaced(filename: string) {
-  const turn = _currentTurn;
-  _surfacedMemories.set(filename, { turn, expiresAt: turn + _SURFACED_TTL_TURNS });
+  const s = currentAgentSession();
+  const turn = s.turnCounter;
+  s.surfacedMemories.set(filename, { turn, expiresAt: turn + _SURFACED_TTL_TURNS });
 }
 
 /**
@@ -278,33 +357,37 @@ export function markSurfaced(filename: string) {
  * @param {number} now
  */
 export function pruneSurfacedMemories(now: number) {
-  for (const [k, v] of _surfacedMemories) {
-    if (v.expiresAt <= now) _surfacedMemories.delete(k);
+  const s = currentAgentSession();
+  for (const [k, v] of s.surfacedMemories) {
+    if (v.expiresAt <= now) s.surfacedMemories.delete(k);
   }
 }
 
 export function isSurfaced(filename: string, now: number): boolean {
-  const v = _surfacedMemories.get(filename);
+  const v = currentAgentSession().surfacedMemories.get(filename);
   return !!(v && v.expiresAt > now);
 }
 
 /** Get raw entries (for tests + debugging). */
 export function getSurfacedMemoriesSnapshot() {
-  return Array.from(_surfacedMemories.entries()).map(([k, v]) => ({ filename: k, ...v }));
+  return Array.from(currentAgentSession().surfacedMemories.entries()).map(([k, v]) => ({ filename: k, ...v }));
 }
 
-/** Reset for tests. */
+/** Reset surfaced memories for the current session. */
 export function resetSurfacedMemories() {
-  _surfacedMemories.clear();
+  currentAgentSession().surfacedMemories.clear();
 }
 
 // Per-session turn counter. Bumped once per LLM call by the agent loop.
 // Memory-selection uses this to decide which "surfaced" memories have expired.
-let _currentTurn = 0;
-export function bumpTurnCounter() { _currentTurn++; return _currentTurn; }
-export function getCurrentTurn() { return _currentTurn; }
+export function bumpTurnCounter() {
+  const s = currentAgentSession();
+  s.turnCounter++;
+  return s.turnCounter;
+}
+export function getCurrentTurn() { return currentAgentSession().turnCounter; }
 /** Test-only: reset to 0. */
-export function resetTurnCounter() { _currentTurn = 0; }
+export function resetTurnCounter() { currentAgentSession().turnCounter = 0; }
 
 // ── Prompt Store ────────────────────────────────────────────
 export let _promptStorePath: string | null = null;
@@ -341,8 +424,12 @@ export function setLastApiConfig(cfg: Record<string, unknown>) { _lastApiConfig 
 export function getLastApiConfig() { return _lastApiConfig; }
 
 // ── Helpers ─────────────────────────────────────────────────
-export function genId() {
-  return `ses_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+/** All live sessions (used to invalidate per-session prompt caches). */
+export function getAllAgentSessions() { return allAgentSessions(); }
+
+/** True when a renderer is available to answer approval dialogs. */
+export function isInteractiveSession() {
+  return currentAgentSession().interactive;
 }
 
 // ── Renderer message ring buffer ─────────────────────────────

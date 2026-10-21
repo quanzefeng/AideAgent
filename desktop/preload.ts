@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld("aideagent", {
   getTurnProgress: (id: any) => ipcRenderer.invoke("session:turn-progress", id),
   clearTurnProgress: (id: any) => ipcRenderer.invoke("session:clear-turn-progress", id),
   replayRendererBuffer: () => ipcRenderer.invoke("renderer:replay-buffer"),
+  // Permissions (mode + rules, persisted to ~/.aideagent/permissions.json)
+  getPermissions: () => ipcRenderer.invoke("permissions:get"),
+  setPermissions: (cfg: any) => ipcRenderer.invoke("permissions:set", cfg),
+  // Usage ledger (per-session token accounting)
+  getUsage: () => ipcRenderer.invoke("usage:get"),
+  onUsage: (cb: any) => ipcRenderer.on("stream:usage", (_event, d) => cb(d)),
   // Memory Store
   memoryReadUser: () => ipcRenderer.invoke("memory:read-user"),
   memoryWriteUser: (content: any) => ipcRenderer.invoke("memory:write-user", content),

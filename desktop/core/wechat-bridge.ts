@@ -12,11 +12,16 @@ import {
   getWxBotToken, setWxBotToken, getWxBotId, setWxBotId,
   getWxUserId, setWxUserId, getWxPollAbort, setWxPollAbort,
   getLastApiConfig, sendToRenderer,
-  getHistory, setHistory,
-  getSessionId, setSessionId,
-  getAbortCtrl, setAbortCtrl,
+  getGlobalWorkspace,
 } from "./state.ts";
+import { getOrCreateAgentSession, runInAgentSession } from "./agent-session.ts";
+import sessionDb from "../session-db.ts";
 import { updateContextWindowForModel } from "./context-window.ts";
+
+// Messages from the same WeChat user must not share history/abortCtrl at the
+// same time. The desktop path has the same guarantee via the per-session run
+// lock in ipc-handlers; the bridge gets a small promise chain per user.
+const _wxRunQueues = new Map<string, Promise<unknown>>();
 
 function randomWxUin() {
   return Buffer.from(String(Math.floor(Math.random() * 4294967296)), "utf-8").toString("base64");
@@ -129,7 +134,7 @@ async function wxPollLoop() {
         console.log(`[wechat] incoming from ${uid}: "${text.substring(0, 50)}"`);
         sendToRenderer("wechat:incoming", { userId: uid, text: text.substring(0, 200) });
         try {
-          const reply = await generateWxReply(text);
+          const reply = await generateWxReply(text, uid);
           console.log(`[wechat] replying: "${reply.substring(0, 50)}..."`);
           await wxSendMessage(uid, reply, msg.context_token);
         } catch (err: any) {
@@ -158,7 +163,7 @@ function saveWxConfig(cfg: any): void {
   writeFileSync(join(d, "wechat.json"), JSON.stringify(cfg, null, 2));
 }
 
-async function generateWxReply(prompt: string): Promise<string> {
+async function generateWxReply(prompt: string, userId: string): Promise<string> {
   const cfg = loadWxConfig();
   const lastApi = getLastApiConfig();
   const apiKey = cfg.apiKey || lastApi.apiKey;
@@ -168,30 +173,53 @@ async function generateWxReply(prompt: string): Promise<string> {
 
   if (!apiKey || !apiUrl) return "请先在桌面端发送一条消息激活 API，或重新扫码登录";
 
-  // ── Save desktop session state before WeChat processing ──
-  const savedHistory = [...getHistory()];
-  const savedSessionId = getSessionId();
-  const savedAbortCtrl = getAbortCtrl();
+  // ── Per-WeChat-user session ──
+  // The old bridge saved the desktop globals, cleared them, ran the loop,
+  // then restored them. That still clobbered a desktop query that was in
+  // flight, and every message started from an empty history. Now each WeChat
+  // user gets a stable session id; the agent loop is bound to that session
+  // with AsyncLocalStorage, so desktop and WeChat can run concurrently.
+  const sessionId = `wx_${userId}`;
+  const session = getOrCreateAgentSession(sessionId, {
+    workspace: getGlobalWorkspace(),
+    runtime: "aide",
+    interactive: false,
+  });
+  session.workspace = getGlobalWorkspace();
 
-  // Set up isolated state for WeChat
-  setAbortCtrl(new AbortController());
-  setSessionId(null);
-  setHistory([]);
+  // First use in this process: rehydrate persisted history/tasks so the
+  // conversation continues after an app restart.
+  if (session.history.length === 0) {
+    try {
+      const data = sessionDb.loadSession(sessionId);
+      if (data?.history?.length) session.history = data.history as any[];
+      const tasks = sessionDb.loadSessionTasks(sessionId) || [];
+      for (const t of tasks as any[]) session.taskStore.set(t.id, {
+        id: t.id, subject: t.subject, description: t.description,
+        status: t.status, activeForm: t.activeForm || t.subject,
+        evidence: t.evidence, unverified: t.unverified,
+        completedAt: t.completedAt, createdAt: t.createdAt, updatedAt: t.updatedAt,
+      });
+      session.todoList = sessionDb.loadSessionTodos(sessionId) || [];
+    } catch { /* best-effort */ }
+  }
 
   // Lazy import to avoid circular dependency
-  const { agentLoop, resetPromptCache } = await import("./agent-loop.ts");
-  try {
+  const { agentLoop } = await import("./agent-loop.ts");
+  const previous = _wxRunQueues.get(sessionId) ?? Promise.resolve();
+  const chained = previous.catch(() => {}).then(() => runInAgentSession(session, async () => {
     const result = await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, [], [], "none", "", undefined, false, true, true, "aide", undefined);
     return result.text || "";
+  }));
+  const tail = chained.catch(() => {});
+  _wxRunQueues.set(sessionId, tail);
+  try {
+    return await chained;
   } catch (err: any) {
     console.error("[wechat] agentLoop error:", err.message);
     return `[出错: ${err.message}]`;
   } finally {
-    // ── Restore desktop session state ──
-    setHistory(savedHistory);
-    setSessionId(savedSessionId);
-    setAbortCtrl(savedAbortCtrl);
-    resetPromptCache();
+    if (_wxRunQueues.get(sessionId) === tail) _wxRunQueues.delete(sessionId);
   }
 }
 

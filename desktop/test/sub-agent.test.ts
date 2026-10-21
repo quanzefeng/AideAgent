@@ -15,6 +15,7 @@ const stateMock = {
   _subAgentCtrls: new Map(),
   getLastApiConfig: vi.fn(),
   getSessionId: vi.fn(() => null),
+  isInteractiveSession: vi.fn(() => true),
   sendToRenderer: vi.fn(),
   parseContextWindowFromError: vi.fn(() => null),
   setContextWindow: vi.fn(),

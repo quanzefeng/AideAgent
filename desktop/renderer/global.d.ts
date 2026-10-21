@@ -116,13 +116,13 @@ declare global {
 
       // Memory
       memoryList(opts?: any): Promise<any[]>;
-      memoryListAll(): Promise<Array<{ filename: string; name: string; description: string; type: string; body: string }>>;
+      memoryListAll(): Promise<Array<{ filename: string; name: string; description: string; type: string; body: string; workspace?: string }>>;
       memoryAdd(content: string, type: string): Promise<void>;
-      memoryDelete(filename: string): Promise<{ success: boolean; error?: string }>;
-      memoryUpdate(filename: string, content: string, name: string, description: string, type: string): Promise<{ success: boolean; error?: string }>;
+      memoryDelete(filename: string): Promise<{ ok: boolean; error?: string }>;
+      memoryUpdate(filename: string, content: string, name: string, description: string, type: string): Promise<{ ok: boolean; filename?: string; name?: string; error?: string }>;
       memoryRead(filename: string): Promise<string>;
-      memoryReadOne(filename: string): Promise<{ filename: string; name: string; description: string; type: string; body: string } | null>;
-      memoryCreate(name: string, description: string, type: string, body: string): Promise<{ success: boolean; error?: string }>;
+      memoryReadOne(filename: string): Promise<{ filename: string; name: string; description: string; type: string; body: string; workspace?: string } | null>;
+      memoryCreate(name: string, description: string, type: string, body: string): Promise<{ ok: boolean; filename?: string; name?: string; error?: string }>;
       memoryPurgeByType(type: string): Promise<{ ok: boolean; removed?: number; error?: string }>;
 
       // Skills
@@ -152,6 +152,16 @@ declare global {
       promptsCreate(input: { title: string; body: string }): Promise<{ ok: boolean; error?: string }>;
       promptsUpdate(id: string, input: { title: string; body: string }): Promise<{ ok: boolean; error?: string }>;
       promptsDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+
+      // Permissions (main process: permissions.ts)
+      getPermissions(): Promise<{
+        mode: "auto" | "ask" | "readonly" | "full";
+        rules: Array<{ tool: string; pattern?: string; action: "allow" | "ask" | "deny" }>;
+        allowUnattendedFullAccess?: boolean;
+      }>;
+      setPermissions(cfg: any): Promise<{ ok: boolean; config?: any; error?: string }>;
+      getUsage(): Promise<{ requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; lastPromptTokens: number; lastOutputTokens: number; lastRequestAt: number | null }>;
+      onUsage(cb: (data: any) => void): void;
 
       // Session info
       sessionInfoUpdate(snapshot: any): void;

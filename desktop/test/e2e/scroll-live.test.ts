@@ -79,7 +79,6 @@ test("scroll-live: during-stream + post-finish scroll", async () => {
 
   // ── 0) 清理上次残留 + 注入 API 配置后 reload（测试实例 localStorage 初始为空 →
   //      banner 可见且无法发查询；注入后 banner 应隐藏、查询可发） ──
-  await window.evaluate(() => document.getElementById("boot-screen")?.remove());
   const pre: any[] = await window.evaluate(() => (window as any).aideagent.listSessions()).catch(() => []);
   for (const s of pre.filter((x: any) => String(x.title || "").includes(MARKER))) {
     await window.evaluate((id: any) => (window as any).aideagent.deleteSession(id), s.id);
@@ -97,7 +96,6 @@ test("scroll-live: during-stream + post-finish scroll", async () => {
     .catch(() => { /* reload 导致的导航中断可忽略 */ });
   await window.waitForLoadState("domcontentloaded", { timeout: 20_000 });
   await window.waitForTimeout(1500);
-  await window.evaluate(() => document.getElementById("boot-screen")?.remove());
 
   const bannerState: any = await window.evaluate(() => {
     const b: any = document.getElementById("config-banner");

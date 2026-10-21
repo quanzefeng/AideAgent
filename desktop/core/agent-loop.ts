@@ -4,6 +4,7 @@ import sessionDb from "../session-db.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { openaiCall, anthropicCall, responsesCall, getAllToolDefs, toChatCompletionsUrl } from "./format-adapters.ts";
 import { selectRelevantMemories } from "./memory-selection.ts";
+import { parseMemoryExtraction } from "./memory-extraction.ts";
 import { runTool } from "./tool-executor.ts";
 import { compressContext, sendContextUsage, estimateTokens, estimateMessageTokens, trimToBudget, TOKEN_BUDGET_WARN, TOKEN_BUDGET_HARD, summarizeForContinuation, setToolSchemaTokens, estimateToolDefsTokens } from "./token-budget.ts";
 import { archiveDropped, pointerSuffix } from "./context-archive.ts";
@@ -18,17 +19,32 @@ import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
   getWorkspace,
-  taskStore, getTodoList,
+  getTaskStore, getTodoList,
   sendToRenderer, genId, MAX_OUTPUT, MAX_TURNS, MAX_CONTINUATIONS,
   CONTEXT_WINDOW, CONTEXT_COMPRESS_PCT, LLM_CALL_TIMEOUT,
   resetSurfacedMemories, bumpTurnCounter,
   getOpencodeAcpClient, setOpencodeAcpClient, isOpencodeAcpClientAlive,
   detectModelContextWindow, setContextWindow,
+  getAllAgentSessions,
 } from "./state.ts";
+import { currentAgentSession, recordUsage } from "./agent-session.ts";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
-let _sysPromptCache: string | null = null;
-let _contextBlockBaseCache: string | null = null;
+// The cache lives on the AgentSession (not module scope) so two concurrent
+// sessions — desktop + WeChat, or two windows — cannot serve each other a
+// stale prompt built for a different workspace/model/plan mode.
+
+// Read-only tools that are safe to run concurrently within one batch. The
+// model frequently emits 3-5 independent lookups in a single turn; running
+// them sequentially wasted most of the latency. Anything that mutates state,
+// asks the user, or launches a sub-agent stays sequential/parallel-by-category.
+const PARALLEL_SAFE_TOOLS = new Set([
+  "file_read", "view_image", "grep", "glob", "lsp",
+  "web_fetch", "web_search",
+  "kb_search", "kb_get_note", "read_memory",
+  "list_skills", "list_memories", "list_kb", "list_mcp", "list_tools",
+  "get_session_info", "context_recall", "TaskList", "git_diff",
+]);
 
 interface LoopMessage {
   role: string;
@@ -284,7 +300,16 @@ const VISION_BRIDGE_SCRIPT = VISION_BRIDGE_CANDIDATES.find(p => existsSync(p)) ?
  *   instead of leaking the in-flight request and writing a memory
  *   derived from a half-finished session.
  */
-async function autoReview(msgs: LoopMessage[], apiKey: string, apiUrl: string, model: string, apiFormat: string, signal?: AbortSignal, timeoutMs = 20000): Promise<void> {
+async function autoReview(
+  msgs: LoopMessage[],
+  apiKey: string,
+  apiUrl: string,
+  model: string,
+  apiFormat: string,
+  signal?: AbortSignal,
+  timeoutMs = 20000,
+  workspace?: string,
+): Promise<void> {
   try {
     // Take the last 40 user/assistant messages (~20 exchanges) — the old
     // window of 8 exchanges missed long-range decisions made earlier in a
@@ -298,27 +323,32 @@ async function autoReview(msgs: LoopMessage[], apiKey: string, apiUrl: string, m
       return `[${role}] ${text}`;
     }).join("\n");
 
-    const reviewPrompt = `分析以下对话片段，提取值得长期记忆的信息。只提取以下三类：
+    const reviewPrompt = `分析以下对话片段，提取真正值得长期记忆的信息。最多 5 条；宁可少提，不要为了凑数而提取。
 
-1. **用户偏好**：用户明确表达的习惯、偏好、风格要求
-2. **决策**：本次对话中做出的重要技术决策或业务决策
-3. **新知识**：新学到的、对未来有帮助的信息
+类型：
+- user：用户明确表达的长期偏好、身份、习惯（例如“以后用中文回复”）
+- feedback：用户对助手行为的纠正或规则（例如“不要每次都跑全量测试”）
+- project：本项目的重要决策、约束、截止日期（只对当前工作区有效）
+- reference：外部系统/文档/端点指针（只对当前工作区有效）
 
-如果没有值得保存的内容，回复 "NONE"。
+规则：
+- 不保存代码可推导的事实、git 历史、临时任务状态、一次性调试过程。
+- 绝不保存 API key、密码、token 等密钥；只保存环境变量名或文档地址。
+- content 写成可独立理解的短段落，不要只写“同上”“继续”。
+- title 不超过 40 字，summary 是一句话。
+
+没有值得保存的内容时返回 {"memories":[]}。
 
 对话：
 ${convText}
 
-输出格式（中文）：
-PREFERENCE: <内容>
-DECISION: <内容>
-KNOWLEDGE: <内容>
-如果没有，回复 NONE。`;
+只返回 JSON，不要 markdown 代码块：
+{"memories":[{"type":"user|feedback|project|reference","title":"...","summary":"...","content":"..."}]}`;
 
     const body: any = {
       model: model || "deepseek-chat",
       messages: [{ role: "user", content: reviewPrompt }],
-      max_tokens: 1024,
+      max_tokens: 1200,
       temperature: 0.3,
       stream: false,
     };
@@ -349,22 +379,26 @@ KNOWLEDGE: <内容>
 
     if (!text || text.trim().toUpperCase().startsWith("NONE")) return;
 
-    // Parse and save extracted items
-    const lines = text.split("\n").filter(Boolean);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("PREFERENCE:")) {
-        const val = trimmed.slice("PREFERENCE:".length).trim();
-        if (val && !/^NONE$/i.test(val)) memory.appendUserMemory(val);
-      } else if (trimmed.startsWith("DECISION:")) {
-        const val = trimmed.slice("DECISION:".length).trim();
-        if (val && !/^NONE$/i.test(val)) memory.appendProjectMemory(val);
-      } else if (trimmed.startsWith("KNOWLEDGE:")) {
-        const val = trimmed.slice("KNOWLEDGE:".length).trim();
-        if (val && !/^NONE$/i.test(val)) memory.appendProjectMemory(val);
+    const items = parseMemoryExtraction(text);
+    for (const item of items) {
+      if (item.type === "user") {
+        memory.appendUserMemory(item.content);
+      } else if (item.type === "feedback") {
+        memory.appendFeedbackMemory(item.content, {
+          title: item.title,
+          summary: item.summary,
+          workspace,
+        });
+      } else {
+        memory.appendProjectMemory(item.content, {
+          title: item.title,
+          summary: item.summary,
+          type: item.type,
+          workspace,
+        });
       }
     }
-    console.log("[auto-review] Saved learnings:", lines.length, "items");
+    console.log("[auto-review] Saved learnings:", items.length, "items");
   } catch (e: any) {
     console.error("[auto-review] Failed:", e.message);
   }
@@ -613,8 +647,18 @@ export async function agentLoop(
     userMessage = { role: "user", content: prompt };
   }
 
-  // First turn OR process restarted (caches are null) — rebuild everything
-  const isFirstTurn = getHistory().length === 0 || !_sysPromptCache;
+  // Rebuild when the conversation is new, the process restarted (cache is
+  // null), or the prompt inputs changed (workspace switch, model switch,
+  // plan-mode toggle, skills). The old code only checked `!cache`, so a
+  // workspace switch kept injecting the previous project's AGENTS.md.
+  const session = currentAgentSession();
+  const promptKey = JSON.stringify([
+    getWorkspace(), model || "", agentName || "", kbEnabled, isPlanMode,
+    webSearchEnabled, reasoningEffort || "", [...(enabledSkills || [])].sort(),
+  ]);
+  const isFirstTurn = getHistory().length === 0
+    || !session.sysPromptCache
+    || session.sysPromptKey !== promptKey;
 
   let sysContent: string, contextBlockBase: string;
 
@@ -654,12 +698,13 @@ export async function agentLoop(
       }
     }
 
-    _sysPromptCache = sysContent;
-    _contextBlockBaseCache = contextBlockBase;
+    session.sysPromptCache = sysContent;
+    session.sysPromptKey = promptKey;
+    session.contextBlockBaseCache = contextBlockBase;
   } else {
-    // ── Turn 2+: use cached system prompt (already has KB/AGENTS.md from turn 1) ──
-    sysContent = _sysPromptCache!;
-    contextBlockBase = _contextBlockBaseCache ?? "";
+    // ── Turn 2+: use the session's cached system prompt ──
+    sysContent = session.sysPromptCache!;
+    contextBlockBase = session.contextBlockBaseCache ?? "";
   }
 
   // ── Build dynamic context block on top of cached base ──
@@ -667,7 +712,7 @@ export async function agentLoop(
   // `contextBlock` keeps the combined string for continuation snapshot
   let contextBlock = contextBlockBase;
 
-  const activeTasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
+  const activeTasks: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
   if (activeTasks.length > 0) {
     let taskBlock = "\n## 当前任务状态\n";
     for (const t of activeTasks) {
@@ -705,7 +750,7 @@ export async function agentLoop(
       .map(m => `[${m.role}] ${typeof m.content === "string" ? m.content.slice(0, 200) : ""}`)
       .join("\n");
     const memQuery = `最近对话:\n${recentContext}\n\n用户最新消息: ${prompt || ""}`;
-    const relevantMems = await selectRelevantMemories(memQuery, apiKey, apiUrl, model, apiFormat);
+    const relevantMems = await selectRelevantMemories(memQuery, apiKey, apiUrl, model, apiFormat, getWorkspace());
     if (relevantMems) {
       const memBlock = "\n\n## 相关记忆\n" + relevantMems;
       contextBlock += memBlock;
@@ -766,9 +811,9 @@ export async function agentLoop(
   // Previously this was a single-shot snapshot, so any task/todo changes that
   // happened mid-conversation were lost when the context was rebuilt.
   const buildContextMsg = (): LoopMessage | null => {
-    const liveActive: any[] = Array.from(taskStore.values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
+    const liveActive: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.status !== "completed" && t.status !== "deleted");
     const liveTodos = getTodoList();
-    const liveUnverified: any[] = Array.from(taskStore.values()).filter((t: any) => t.unverified === true);
+    const liveUnverified: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.unverified === true);
     const parts: string[] = [];
     if (liveActive.length > 0) {
       let block = "## 当前任务状态\n";
@@ -872,6 +917,28 @@ export async function agentLoop(
         // ── Log cache metrics & forward to UI ──
         if (result.usage) {
           const u: any = result.usage;
+          // Normalize provider usage into the session ledger (P3). The
+          // heuristic token estimator remains for budgeting, but this is the
+          // authoritative cost/usage record for the conversation.
+          const promptTokens = u.prompt_tokens ?? u.input_tokens ?? 0;
+          const outputTokens = u.completion_tokens ?? u.output_tokens ?? 0;
+          const cacheRead = u.prompt_cache_hit_tokens
+            ?? u.cache_read_input_tokens
+            ?? u.input_tokens_details?.cached_tokens
+            ?? 0;
+          const cacheWrite = u.cache_creation_input_tokens
+            ?? u.prompt_cache_miss_tokens
+            ?? 0;
+          if (promptTokens || outputTokens) {
+            const ledger = recordUsage(currentAgentSession(), {
+              promptTokens, outputTokens,
+              cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite,
+            });
+            sdr("stream:usage", {
+              last: { promptTokens, outputTokens, cacheRead, cacheWrite },
+              session: { ...ledger },
+            });
+          }
           if (u.prompt_cache_hit_tokens !== undefined) {
             const total = u.prompt_tokens || 0;
             const miss = u.prompt_cache_miss_tokens ?? 0;
@@ -983,8 +1050,8 @@ export async function agentLoop(
           turns++;
           if (turns < MAX_TURNS) continue;
         }
-        const unverified: any[] = Array.from(taskStore.values()).filter((t: any) => t.unverified === true);
-        const activeTasks: any[] = Array.from(taskStore.values()).filter((t: any) => t.status === "in_progress" || t.status === "pending");
+        const unverified: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.unverified === true);
+        const activeTasks: any[] = Array.from(getTaskStore().values()).filter((t: any) => t.status === "in_progress" || t.status === "pending");
         if (unverified.length > 0 || activeTasks.length > 0) {
           // Don't finish — push a reminder and continue the loop
           const reminder = unverified.length > 0
@@ -1005,19 +1072,22 @@ export async function agentLoop(
         // the user see that it refused to act.
         const hasActionIntent = /(改|修|查|找|跑|执行|删除|创建|添加|读取|分析|搜索|运行|test|run|fix|search|read|write|delete|create|build|install|test|debug|find)/i.test(prompt || "");
         if (toolsCalledThisTurn === 0 && hasActionIntent && turns < MAX_TURNS - 2) {
-          msgs.push({ role: "user", content: "⚠️ 你还没调用任何工具就准备结束。用户的要求是操作性任务（不是纯聊天），请先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，再回答。如果你不确定要做什么，请用 AskUserQuestion 向用户确认。" });
+          msgs.push({ role: "user", content: "⚠️ 你还没调用任何工具就准备结束。用户的要求看起来是操作性任务（不是纯聊天），请先用 file_read / bash / grep / web_search 等工具获取信息或执行操作，再回答。如果要做什么不明确，请用 AskUserQuestion 向用户确认；如果这确实是纯文本解释/分析（不需要工具），请直接说明并给出回答。" });
           turns++;
           continue;
         }
-        // Recency guard: 昨天/最近/news-style prompts must not finish after
-        // 2-3 shallow searches — that is how stale/fake answers slip through.
+        // Recency guard: 昨天/最近/news-style prompts must not finish on a
+        // single shallow search — that is how stale/fake answers slip through.
+        // Threshold is deliberately soft (2 searches): the prompt and the
+        // web_search tool description carry the tiered policy (1-2 for simple
+        // facts, 2-4 for contested news), this guard only catches zero/one-stop.
         const wantsRecency = webSearchEnabled && /(昨天|今日|今天|昨日|最近|最新|近期|刚刚|新闻|快讯|时事|yesterday|today|latest|recent|breaking|this\s+(week|month)|news)/i.test(prompt || "");
-        const RECENCY_MIN_SEARCHES = 5;
+        const RECENCY_MIN_SEARCHES = 2;
         if (wantsRecency && webSearchCalls < RECENCY_MIN_SEARCHES && recencyNudges < 3 && turns < MAX_TURNS - 2) {
           recencyNudges++;
           msgs.push({
             role: "user",
-            content: `⚠️ 时效性/新闻类问题证据不足：目前 ${webSearchCalls}/次 web_search（要求 ≥${RECENCY_MIN_SEARCHES}），且核心断言须有 ≥2 个不同 hostname 独立源一致（重大结论 ≥3 源 + 1 个一手/权威源）。请继续：① 换角度再搜（query 带当前日期，可传 days）；② 核对 published_date 与 hostname 多样性（同站多篇/转载只算 1 源）；③ 源冲突则再搜或并列标注"未证实"；④ 不足 2 独立源时用"仅见 X 报道"降级表述，禁止把单源当已证实事实。核够再给最终答案。`,
+            content: `⚠️ 时效性问题证据不足：目前 ${webSearchCalls} 次 web_search（简单事实 1-2 次、争议性/新闻 2-4 次不同角度即可）。请确认：① query 带日期；② 优先一手/权威源；③ 关键断言若只有单一来源，用"仅见 X 报道，尚未独立证实"降级表述，不要写成已证实事实。核够再给最终答案。`,
           });
           turns++;
           continue;
@@ -1076,17 +1146,48 @@ export async function agentLoop(
         }
       }
 
-      for (const tc of otherCalls) {
+      // ── Parallel pre-pass for independent read-only calls ──
+      // Emit tool:start for all first (UI shows the whole batch), run them
+      // concurrently, then consume results in the original call order below.
+      // All results are cached by tool_call id so the sequential loop keeps
+      // its ordering/archival/image-injection semantics unchanged.
+      const canParallel = otherCalls.length > 1
+        && !signal.aborted
+        && otherCalls.every(tc => PARALLEL_SAFE_TOOLS.has(tc.function?.name));
+      const parallelResults = new Map<string, any>();
+      if (canParallel) {
+        for (const tc of otherCalls) {
+          let args;
+          try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
+          sdr("tool:start", { name: tc.function.name, args, toolCallId: tc.id });
+        }
+        const settled = await Promise.allSettled(otherCalls.map(tc => runTool(tc, { signal })));
+        settled.forEach((s, i) => {
+          const key = otherCalls[i].id || `idx_${i}`;
+          parallelResults.set(key, s.status === "fulfilled"
+            ? s.value
+            : { error: (s.reason as any)?.message || "tool failed" });
+        });
+      }
+
+      for (let oi = 0; oi < otherCalls.length; oi++) {
+        const tc = otherCalls[oi];
         // Stop pressed during this batch → the running tool was already
         // killed by the signal (wired into runShell / MCP); skip everything
         // still queued instead of executing it anyway.
         if (signal.aborted) { abortedResultFor(tc); continue; }
         let args;
         try { args = JSON.parse(tc.function.arguments); } catch { args = { raw: tc.function.arguments }; }
-        sdr("tool:start", { name: tc.function.name, args, toolCallId: tc.id });
+        if (!canParallel) {
+          sdr("tool:start", { name: tc.function.name, args, toolCallId: tc.id });
+        }
 
         let result: any;
-        try { result = await runTool(tc, { signal }); } catch (e: any) { result = { error: e.message }; }
+        if (canParallel) {
+          result = parallelResults.get(tc.id || `idx_${oi}`) ?? { error: "tool produced no result" };
+        } else {
+          try { result = await runTool(tc, { signal }); } catch (e: any) { result = { error: e.message }; }
+        }
 
         let rStr = JSON.stringify(result);
         if (rStr.length > MAX_OUTPUT) {
@@ -1436,7 +1537,7 @@ ${convText}
   // delay every answer's completion toast. The write happens within seconds
   // of the turn either way; failures are logged, never swallowed — except a
   // user-initiated Stop, whose abort is the expected outcome, not an error.
-  autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal, 8000).catch((e: any) => {
+  autoReview(msgs, apiKey, apiUrl, model, apiFormat, signal, 8000, getWorkspace()).catch((e: any) => {
     if (e?.name !== "AbortError") console.error("[autoReview] failed:", e?.message || e);
   });
 
@@ -1459,9 +1560,23 @@ ${convText}
   return { text: bodyText || "(no text response)" };
 }
 
+/**
+ * Invalidate prompt caches for every live session. Called from IPC after a
+ * workspace switch / settings change / session reset; rebuilding is cheap
+ * compared to serving a conversation a prompt built for another project.
+ */
 export function resetPromptCache() {
-  _sysPromptCache = null;
-  _contextBlockBaseCache = null;
+  const bound = currentAgentSession();
+  const all = getAllAgentSessions();
+  for (const s of all) {
+    s.sysPromptCache = null;
+    s.sysPromptKey = null;
+    s.contextBlockBaseCache = null;
+  }
+  // Include the active draft (not yet in the registry).
+  bound.sysPromptCache = null;
+  bound.sysPromptKey = null;
+  bound.contextBlockBaseCache = null;
 }
 
 /**

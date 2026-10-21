@@ -132,20 +132,19 @@ export async function loadMemoryPanel() {
 
     if (statusEl) statusEl.textContent = t("memory.saving");
     try {
+      let result: { ok?: boolean; filename?: string; error?: string };
       if (_memoryCurrentFile) {
-        await window.aideagent.memoryUpdate(_memoryCurrentFile, body, name, desc, type);
+        result = await window.aideagent.memoryUpdate(_memoryCurrentFile, body, name, desc, type);
       } else {
-        await window.aideagent.memoryCreate(name, desc, type, body);
+        result = await window.aideagent.memoryCreate(name, desc, type, body);
       }
+      if (result?.ok === false) throw new Error(result.error || "save failed");
       if (statusEl) {
         statusEl.textContent = t("memory.saved");
         setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2000);
       }
-      await refreshList((searchInput as any)?.value || "");
-      if (!_memoryCurrentFile) {
-        const safe = name.replace(/[^a-zA-Z0-9_\-一-鿿]/g, "_");
-        _memoryCurrentFile = safe + ".md";
-      }
+      // createMemory may return a suffixed filename when the name collides.
+      if (!_memoryCurrentFile && result?.filename) _memoryCurrentFile = result.filename;
       await refreshList((searchInput as any)?.value || "");
     } catch (e) {
       if (statusEl) statusEl.textContent = t(("memory.save_fail") as any).replace("{error}", /** @type {Error} */ (e as any).message);

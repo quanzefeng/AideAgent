@@ -11,12 +11,14 @@ import * as kb from "../knowledge-store.ts";
 import * as prompts from "../prompts-store.ts";
 import mcpManager from "../mcp-manager.ts";
 import { agentLoop, resetPromptCache } from "./agent-loop.ts";
+import { runInAgentSession, getActiveAgentSession, assignSessionId, genId } from "./agent-session.ts";
+import { loadPermissionConfig, savePermissionConfig } from "./permissions.ts";
 import { scanSkills } from "./skill-scanner.ts";
 import { detectOpencode, listOpencodeModels } from "./opencode-detector.ts";
 import {
   getSessionId, setSessionId, getHistory, setHistory,
   getAbortCtrl, setAbortCtrl,
-  taskStore, setTodoList, getTodoList,
+  getTaskStore, setTodoList, getTodoList,
   setEpisodicSearched,
   _subAgentCtrls as _subAgentCtrlsRaw, resetSurfacedMemories,
   getWorkspace, setWorkspace,
@@ -33,6 +35,33 @@ import { setRendererSnapshot } from "./session-info.ts";
 import { updateContextWindowForModel } from "./context-window.ts";
 
 const _subAgentCtrls: Map<string, AbortController> = _subAgentCtrlsRaw as any;
+
+// ── Per-session run lock ────────────────────────────────────
+// `query:submit` used to abort the global controller and start a new loop
+// immediately, so two submits could interleave and share `history`/`msgs`.
+// Now a submit aborts the previous run and waits for it to settle before
+// starting. Cross-session runs (desktop vs WeChat) use different keys and
+// proceed concurrently.
+const _runLocks = new Map<string, Promise<void>>();
+
+function currentLockKey(): string {
+  return getActiveAgentSession().id || "__draft__";
+}
+
+async function acquireRunLock(onWait: () => void): Promise<() => void> {
+  const key = currentLockKey();
+  while (_runLocks.has(key)) {
+    onWait();
+    try { await _runLocks.get(key)!; } catch { /* previous run failed — fine */ }
+  }
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  _runLocks.set(key, gate);
+  return () => {
+    if (_runLocks.get(key) === gate) _runLocks.delete(key);
+    release();
+  };
+}
 
 function getHistoryTitle(history: Array<{ role: string, content: string }>): string {
   const firstUser = history.find(m => m.role === "user");
@@ -153,33 +182,46 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoningEffort = "medium", agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null, contextWindowOverride }) => {
-    setPlanMode(!!pm);
-    setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
-    console.log("[query:submit] runtime =", runtime, "opencodeModelId =", opencodeModelId, "planMode =", getPlanMode(), "pm =", pm);
-    if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
-    // Re-resolve the context window for the active model (local servers need
-    // no apiKey, so this runs outside the guard above). Fire-and-forget: the
-    // sync path sets an immediate best guess; the server probe refines async.
-    updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride });
-    sendToRenderer("stream:start", {});
-    try { await agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId); }
-    catch (err: any) {
+    const session = getActiveAgentSession();
+    // Assign the id BEFORE taking the lock: the lock key is the session id,
+    // and agentLoop would otherwise assign it after we acquired "__draft__",
+    // letting a second submit miss the lock entirely.
+    if (!session.id) assignSessionId(session, genId());
+
+    // Abort-and-wait: a new prompt cancels the previous one but never runs
+    // concurrently with it. Different sessions (WeChat) hold different locks.
+    const release = await acquireRunLock(() => session.abortCtrl?.abort());
+    try {
+      // Announce the run only after the previous one has finished unwinding —
+      // otherwise the old run's `stream:done` arrives after this `stream:start`
+      // and the renderer drops back to idle while this prompt is still queued.
+      sendToRenderer("stream:start", {});
+      setPlanMode(!!pm);
+      setCurrentRuntime(runtime);  // so saveSession helper in session:reset tags correctly
+      console.log("[query:submit] runtime =", runtime, "opencodeModelId =", opencodeModelId, "planMode =", getPlanMode(), "pm =", pm);
+      if (apiKey && apiUrl) setLastApiConfig({ apiKey, apiUrl, model, apiFormat, agentName });
+      // Re-resolve the context window for the active model (local servers need
+      // no apiKey, so this runs outside the guard above). Fire-and-forget: the
+      // sync path sets an immediate best guess; the server probe refines async.
+      updateContextWindowForModel({ model, apiUrl, apiKey, apiFormat, contextWindowOverride });
+      await runInAgentSession(session, () => agentLoop(prompt, apiKey, apiUrl, model, apiFormat, files, enabledSkills, reasoningEffort, agentName, kbEnabled, getPlanMode(), webSearchEnabled, false, runtime, opencodeModelId));
+    } catch (err: any) {
       // User-initiated Stop — an AbortError escaping the loop (e.g. from a
       // continuation summarizer) is expected, not a failure. No error toast.
-      if (err?.name === "AbortError") {
-        sendToRenderer("stream:done", {});
-        return;
+      if (err?.name !== "AbortError") {
+        const raw = String(err?.message || err || "");
+        // Surface connection drops as an actionable message instead of the
+        // raw undici text ("terminated").
+        const dropped = raw.includes("terminated")
+          || /ECONNRESET|other side closed|socket hang up|UND_ERR_SOCKET/i.test(raw);
+        sendToRenderer("stream:error", {
+          message: dropped ? `连接被服务端中断，请重试（网络或 API 网关断流）。原文: ${raw}` : raw,
+        });
       }
-      const raw = String(err?.message || err || "");
-      // Surface connection drops as an actionable message instead of the
-      // raw undici text ("terminated").
-      const dropped = raw.includes("terminated")
-        || /ECONNRESET|other side closed|socket hang up|UND_ERR_SOCKET/i.test(raw);
-      sendToRenderer("stream:error", {
-        message: dropped ? `连接被服务端中断，请重试（网络或 API 网关断流）。原文: ${raw}` : raw,
-      });
+    } finally {
+      release();
+      sendToRenderer("stream:done", {});
     }
-    sendToRenderer("stream:done", {});
   });
 
   ipcMain.handle("query:abort", () => {
@@ -194,6 +236,17 @@ export function registerIpcHandlers() {
     // ghost agent keeps running in the background consuming tokens.
     const mainAbortCtrl = getAbortCtrl();
     if (mainAbortCtrl) { mainAbortCtrl.abort(); setAbortCtrl(null); }
+    // Wait for the in-flight run (if any) to finish unwinding before the
+    // history/task state is cleared under it. Without this, the old loop
+    // could keep appending to the session after reset.
+    const resetKey = getSessionId() || "__draft__";
+    const inflight = _runLocks.get(resetKey);
+    if (inflight) { try { await inflight; } catch { /* ignored */ } }
+
+    // Capture the ACP client before switching to a fresh draft: setSessionId
+    // (null) rebinds the active session, so reading it afterwards returned
+    // the new session's null and leaked the old subprocess.
+    const cachedOpencode = getOpencodeAcpClient();
 
     const sessionId = getSessionId();
     const history = getHistory();
@@ -214,13 +267,13 @@ export function registerIpcHandlers() {
       }
       // P2: persist the current task/todo state before clearing in-memory
       try {
-        sessionDb.saveSessionTasks(sessionId, Array.from(taskStore.values()).filter((t: any) => t.status !== "deleted") as any);
+        sessionDb.saveSessionTasks(sessionId, Array.from(getTaskStore().values()).filter((t: any) => t.status !== "deleted") as any);
         sessionDb.saveSessionTodos(sessionId, getTodoList());
       } catch (e: any) { console.error("[session:reset] task persist failed:", e?.message); }
     }
     setSessionId(null); setHistory([]);
     setEpisodicSearched(false);
-    taskStore.clear();
+    getTaskStore().clear();
     setTodoList([]);
     resetSurfacedMemories();
     for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
@@ -233,7 +286,6 @@ export function registerIpcHandlers() {
     // path would reuse the prior session's context (a worse leak than
     // the original bug). Best-effort: stop() can throw if the process
     // already exited, and that's fine.
-    const cachedOpencode = getOpencodeAcpClient();
     if (cachedOpencode) {
       try { await cachedOpencode.stop(); } catch { /* ignore */ }
       setOpencodeAcpClient(null);
@@ -246,6 +298,14 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle("session:load", async (_event, id, opts) => {
+    if (!opts?.readOnly) {
+      // Switching away from a running conversation: stop it and wait for it
+      // to settle before rebinding the active session object.
+      const prevKey = getSessionId();
+      getAbortCtrl()?.abort();
+      const inflight = prevKey ? _runLocks.get(prevKey) : null;
+      if (inflight) { try { await inflight; } catch { /* ignored */ } }
+    }
     const data = await sessionDb.loadSession(id);
     if (data) {
       if (!opts?.readOnly) {
@@ -259,9 +319,9 @@ export function registerIpcHandlers() {
         // P2: restore task/todo state from DB
         try {
           const tasks: any[] = sessionDb.loadSessionTasks(id) || [];
-          taskStore.clear();
+          getTaskStore().clear();
           for (const t of tasks) {
-            taskStore.set(t.id, {
+            getTaskStore().set(t.id, {
               id: t.id, subject: t.subject, description: t.description, status: t.status,
               activeForm: t.activeForm, evidence: t.evidence, unverified: t.unverified,
               completedAt: t.completedAt, createdAt: t.createdAt, updatedAt: t.updatedAt,
@@ -288,6 +348,15 @@ export function registerIpcHandlers() {
   ipcMain.handle("session:delete-all", async () => {
     try {
       console.log("[session:delete-all] starting...");
+      // Stop the in-flight run first: otherwise it can persist a session
+      // after the DB has been cleared, making "delete all" only partial.
+      getAbortCtrl()?.abort();
+      setAbortCtrl(null);
+      for (const ctrl of _subAgentCtrls.values()) ctrl.abort();
+      _subAgentCtrls.clear();
+      const key = getSessionId();
+      const inflight = key ? _runLocks.get(key) : null;
+      if (inflight) { try { await inflight; } catch { /* ignored */ } }
       const result = sessionDb.deleteAllSessions();
       sessionDb.forceCheckpoint();
       console.log("[session:delete-all] result:", result, "checkpoint done");
@@ -349,19 +418,19 @@ export function registerIpcHandlers() {
     memory.rebuildIndex();
     return { ok: true };
   });
-  ipcMain.handle("memory:read-project", async () => memory.readProjectMemory());
+  ipcMain.handle("memory:read-project", async () => memory.readProjectMemory({ workspace: getWorkspace() }));
   ipcMain.handle("memory:write-project", async (_e, content) => {
     memory.writeProjectMemory(content);
     memory.rebuildIndex();
     return { ok: true };
   });
   ipcMain.handle("memory:append-project", async (_e, content) => {
-    memory.appendProjectMemory(content);
+    memory.appendProjectMemory(content, { workspace: getWorkspace() });
     memory.rebuildIndex();
     return { ok: true };
   });
-  ipcMain.handle("memory:search", async (_e, query) => memory.searchMemory(query || "", 10));
-  ipcMain.handle("memory:check-dup", async (_e, type, text) => memory.checkDuplicate(type, text));
+  ipcMain.handle("memory:search", async (_e, query) => memory.searchMemory(query || "", 10, { workspace: getWorkspace() }));
+  ipcMain.handle("memory:check-dup", async (_e, type, text) => memory.checkDuplicate(type, text, { workspace: getWorkspace() }));
   ipcMain.handle("memory:index", async () => { memory.rebuildIndex(); return { ok: true }; });
 
   // ── Workspace IPC ────────────────────────────────────────
@@ -380,6 +449,7 @@ export function registerIpcHandlers() {
       if (!st.isDirectory()) return { error: "not a directory" };
     } catch { return { error: "path does not exist" }; }
     setWorkspace(newPath);
+    resetPromptCache(); // rebuild AGENTS.md / workspace instructions for the new root
     return { ok: true, workspace: getWorkspace() };
   });
   ipcMain.handle("workspace:pick", async () => {
@@ -391,27 +461,28 @@ export function registerIpcHandlers() {
     });
     if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
     setWorkspace(result.filePaths[0]);
+    resetPromptCache(); // rebuild AGENTS.md / workspace instructions for the new root
     return { ok: true, workspace: getWorkspace() };
   });
 
   // ── Multi-file memory API ────────────────────────────────
   ipcMain.handle("memory:list-all", async () => {
-    try { return memory.listMemories(); } catch { return []; }
+    try { return memory.listMemories({ workspace: getWorkspace() }); } catch { return []; }
   });
   ipcMain.handle("memory:read-one", async (_e, filename) => {
-    return memory.readMemory(filename);
+    return memory.readMemory(filename, { workspace: getWorkspace() });
   });
   ipcMain.handle("memory:create", async (_e, { name, description, type, content }) => {
-    return memory.createMemory(name, description, type, content);
+    return memory.createMemory(name, description, type, content, { workspace: getWorkspace() });
   });
   ipcMain.handle("memory:update", async (_e, { filename, content, name, description, type }) => {
-    return memory.updateMemory(filename, content, name, description, type);
+    return memory.updateMemory(filename, content, name, description, type, { workspace: getWorkspace() });
   });
   ipcMain.handle("memory:delete", async (_e, filename) => {
-    return memory.deleteMemory(filename);
+    return memory.deleteMemory(filename, { workspace: getWorkspace() });
   });
   ipcMain.handle("memory:purge-by-type", async (_e, type) => {
-    return memory.purgeByType(type);
+    return memory.purgeByType(type, { workspace: getWorkspace() });
   });
 
   // ── Prompts API (Stage 2 — user-defined reusable prompts) ──
@@ -612,6 +683,19 @@ export function registerIpcHandlers() {
     const resolve = _askResolvers.get(id) as ((v: any) => void) | undefined;
     if (resolve) { resolve({ answers: answers || {} }); _askResolvers.delete(id); }
   });
+
+  // ── Permission config IPC ─────────────────────────────────
+  // Settings UI can read/update ~/.aideagent/permissions.json without the
+  // user editing JSON by hand. `mode` is the global default; rules are
+  // evaluated deny → allow → built-in defaults.
+  ipcMain.handle("permissions:get", () => loadPermissionConfig());
+  ipcMain.handle("permissions:set", (_e, cfg) => {
+    try { return { ok: true, config: savePermissionConfig(cfg || {}) }; }
+    catch (e: any) { return { ok: false, error: e.message }; }
+  });
+
+  // ── Usage ledger ──────────────────────────────────────────
+  ipcMain.handle("usage:get", () => ({ ...getActiveAgentSession().usage }));
 
   // ── Plan Mode IPC ───────────────────────────────────────
   ipcMain.handle("plan-mode:set", (_event, enabled) => { setPlanMode(!!enabled); console.log("[plan-mode] setPlanMode:", enabled, "-> planMode =", getPlanMode()); return { planMode: getPlanMode() }; });

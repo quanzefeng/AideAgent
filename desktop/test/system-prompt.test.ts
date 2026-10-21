@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { promptRelevanceTerms, buildSystemPrompt } from "../core/system-prompt.ts";
+import { promptRelevanceTerms, buildSystemPrompt, DEFAULT_PROMPT } from "../core/system-prompt.ts";
 
 describe("promptRelevanceTerms (Phase 3a session ranking)", () => {
   it("returns no terms for empty/whitespace input", () => {
@@ -48,5 +48,48 @@ describe("buildSystemPrompt dynamic/static split (Phase 3)", () => {
     );
     const m = (r.dynamicContextBlock || "").match(/\*\*最近对话：\*\*\n([\s\S]*?)(?=\n\n\*\*|$)/);
     if (m) expect(m[1].length).toBeLessThanOrEqual(1200);
+  }, 30000);
+});
+
+describe("DEFAULT_PROMPT optimized rules", () => {
+  it("drops stale Windows-only and rigid search/skill assumptions", () => {
+    expect(DEFAULT_PROMPT).not.toContain("Get-ChildItem");
+    expect(DEFAULT_PROMPT).not.toContain("Skills Inventory");
+    expect(DEFAULT_PROMPT).not.toContain("claude_skills");
+    expect(DEFAULT_PROMPT).not.toContain("至少 5");
+    expect(DEFAULT_PROMPT).not.toContain("AT LEAST 5");
+    expect(DEFAULT_PROMPT).not.toContain("running on Windows");
+    // keeps the new safety/plan sections
+    expect(DEFAULT_PROMPT).toContain("安全边界");
+    expect(DEFAULT_PROMPT).toContain("工具输出");
+    expect(DEFAULT_PROMPT).toContain("第一个写操作");
+  });
+
+  it("injects local date, timezone, platform and leaves no unresolved placeholders", async () => {
+    const r = await buildSystemPrompt(
+      [], "TestAgent", "hi", false, false, true, false, "deepseek-v4-flash",
+    );
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    expect(r.content).toContain(localDate);
+    expect(r.content).toMatch(/时区：/);
+    expect(r.content).toContain("Platform:");
+    expect(r.content).not.toContain("{{CURRENT_DATE}}");
+    expect(r.content).not.toContain("{{TIMEZONE}}");
+    expect(r.content).not.toContain("{{TRAINING_CUTOFF}}");
+    expect(r.content).not.toContain("{{KB_RULES}}");
+    expect(r.content).not.toContain("{{SKILLS_RULES}}");
+  }, 30000);
+
+  it("injects KB rules only when the knowledge base is enabled", async () => {
+    const off = await buildSystemPrompt(
+      [], "TestAgent", "hi", false, false, true, false, "deepseek-v4-flash",
+    );
+    expect(off.content).not.toContain("**知识库规则**");
+    const on = await buildSystemPrompt(
+      [], "TestAgent", "hi", true, false, true, false, "deepseek-v4-flash",
+    );
+    expect(on.content).toContain("**知识库规则**");
+    expect(on.content).toContain("kb_search");
   }, 30000);
 });

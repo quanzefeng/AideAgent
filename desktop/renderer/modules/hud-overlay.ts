@@ -13,7 +13,7 @@ const HUD_DEFAULT = "on";
 const HUD_VSCAN_KEY = "AideAgent_hud_vscan";
 const HUD_VSCAN_DEFAULT = "off";
 
-// 尽早暴露到 documentElement，供 CSS 动效降级块与 boot 序列读取
+// 尽早暴露到 documentElement，供 CSS 与 HUD 首帧状态读取
 try {
   document.documentElement.dataset.hud = localStorage.getItem(HUD_KEY) === "off" ? "off" : "on";
   document.documentElement.dataset.hudVscan = localStorage.getItem(HUD_VSCAN_KEY) === "on" ? "on" : "off";

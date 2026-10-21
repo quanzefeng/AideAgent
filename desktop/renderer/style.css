@@ -525,6 +525,152 @@ html, body {
   margin-top: 16px;
 }
 
+/* ── Permissions / security panel ─────────────────────── */
+.permission-intro {
+  margin: 6px 0 14px;
+  line-height: 1.55;
+}
+
+.permission-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.permission-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.permission-mode-card:hover {
+  border-color: rgba(65, 118, 230, 0.35);
+  background: var(--bg-hover);
+}
+
+.permission-mode-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.permission-mode-card input[type="radio"] {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.permission-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.permission-mode-title {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.permission-mode-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.permission-mode-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(65, 118, 230, 0.12);
+  border: 1px solid rgba(65, 118, 230, 0.22);
+}
+
+.permission-mode-danger:hover {
+  border-color: rgba(208, 49, 45, 0.4);
+}
+
+.permission-mode-danger:has(input:checked) {
+  border-color: var(--danger);
+  background: rgba(208, 49, 45, 0.07);
+}
+
+.permission-mode-danger input[type="radio"] {
+  accent-color: var(--danger);
+}
+
+.permission-mode-danger:has(input:checked) .permission-mode-title {
+  color: var(--danger);
+}
+
+.permission-mode-badge-danger {
+  color: var(--danger);
+  background: rgba(208, 49, 45, 0.1);
+  border-color: rgba(208, 49, 45, 0.22);
+}
+
+.permission-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(208, 49, 45, 0.28);
+  border-radius: 8px;
+  background: rgba(208, 49, 45, 0.07);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.permission-unattended {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.permission-unattended:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.permission-unattended input[type="checkbox"] {
+  margin: 2px 0 0;
+  accent-color: var(--danger);
+  flex-shrink: 0;
+}
+
+.permission-unattended-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.permission-unattended-title {
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.permission-unattended-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .api-config-form {
   display: flex;
   flex-direction: column;
@@ -3479,6 +3625,33 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
   font-size: 12px;
   color: inherit;
 }
+
+/* Permission mode indicator: a button that opens Settings → Permissions. */
+.permission-mode-pill {
+  color: var(--text-muted);
+}
+
+.permission-mode-pill[data-mode="ask"] {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.permission-mode-pill[data-mode="full"] {
+  color: var(--danger);
+  background: rgba(208, 49, 45, 0.1);
+  border-color: rgba(208, 49, 45, 0.32);
+  font-weight: var(--fw-semibold);
+}
+
+.permission-mode-pill[data-mode="full"] .reasoning-pill-icon {
+  opacity: 1;
+}
+
+.permission-mode-pill:focus-visible {
+  outline: 2px solid rgba(65, 118, 230, 0.35);
+  outline-offset: 1px;
+}
 /* 选中：蓝色点亮 */
 .reasoning-pill:has(.reasoning-pill-input:checked) {
   color: #4176e6;
@@ -4876,143 +5049,6 @@ html[data-hud-state="subagent"] .hud-corner {
   .hud-tag::before,
   .hud-tag::after { animation: none; opacity: 0; }
   .form-input:focus::after { animation: none; opacity: 0; }
-}
-
-/* ════════════════════════════════════════════════
-   Cyberpunk Boot Sequence (Stage 2)
-   ─ 一次性开机画面，覆盖全屏，z-index 高于一切业务层
-   ─ 跟随 HUD 总开关；点击/按键/SKIP 可跳过；fade 后自毁
-   ════════════════════════════════════════════════ */
-
-#boot-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;               /* 高于 modal(1000) 与 HUD overlay(180) */
-  background:
-    radial-gradient(ellipse at 50% 45%, rgba(var(--hud-accent-rgb), 0.07), transparent 70%),
-    #07070b;
-  background-size: 100% 100%, 100% 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 1;
-  transition: opacity 0.4s var(--ease-out);
-  font-family: var(--font-mono);
-}
-/* HUD 关闭时静态 boot 层不出现（HTML 里常驻，必须显式隐藏，
-   否则会永远挡住主界面）。注意不能加 html:not([data-hud="on"])
-   规则——data-hud 由 JS 在 DOM 解析后才设置，paint 时会误伤。 */
-html[data-hud="off"] #boot-screen { display: none !important; }
-#boot-screen.boot-done { opacity: 0; pointer-events: none; }
-
-.boot-inner {
-  width: min(560px, 82vw);
-  color: color-mix(in srgb, var(--hud-accent) 38%, white);
-  text-shadow: 0 0 8px rgba(var(--hud-accent-rgb), 0.35);
-}
-
-.boot-head {
-  font-size: 12px;
-  letter-spacing: 4px;
-  color: rgba(var(--hud-accent-rgb), 0.65);
-  margin-bottom: 26px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.boot-head::before {
-  content: "";
-  width: 34px;
-  height: 1px;
-  background: rgba(var(--hud-accent-rgb), 0.5);
-  box-shadow: 0 0 6px rgba(var(--hud-accent-rgb), 0.6);
-}
-
-.boot-log {
-  min-height: 96px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.boot-line,
-.boot-current {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 15px;
-  letter-spacing: 1.5px;
-  white-space: nowrap;
-}
-.boot-line.hidden,
-.boot-current.hidden { display: none; }
-.boot-arrow { color: var(--hud-accent); text-shadow: 0 0 6px rgba(var(--hud-accent-rgb), 0.8); }
-
-.boot-text { display: inline-block; }
-.boot-text.typing {
-  overflow: hidden;
-  white-space: nowrap;
-  animation: boot-type var(--boot-dur, 400ms) steps(var(--boot-steps, 20)) forwards;
-}
-@keyframes boot-type { from { width: 0; } to { width: 100%; } }
-
-.boot-caret {
-  display: inline-block;
-  width: 9px;
-  height: 18px;
-  margin-left: 3px;
-  background: var(--hud-accent);
-  box-shadow: 0 0 8px rgba(var(--hud-accent-rgb), 0.9);
-  animation: boot-caret-blink 0.9s step-end infinite;
-  vertical-align: text-bottom;
-}
-@keyframes boot-caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-
-.boot-progress {
-  margin-top: 22px;
-  height: 2px;
-  background: rgba(var(--hud-accent-rgb), 0.12);
-  overflow: hidden;
-}
-.boot-progress-bar {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg, var(--hud-accent), color-mix(in srgb, var(--hud-accent) 52%, white));
-  box-shadow: 0 0 10px rgba(var(--hud-accent-rgb), 0.8);
-  transition: width 0.3s var(--ease-out);
-}
-
-.boot-foot {
-  margin-top: 18px;
-  display: flex;
-  justify-content: flex-end;
-  transition: opacity 0.3s;
-}
-.boot-skip {
-  background: transparent;
-  border: 1px solid rgba(var(--hud-accent-rgb), 0.35);
-  color: rgba(var(--hud-accent-rgb), 0.75);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 2px;
-  padding: 5px 14px;
-  cursor: pointer;
-  transition: all 0.15s var(--ease-out);
-}
-.boot-skip:hover {
-  border-color: var(--hud-accent);
-  color: var(--hud-accent-contrast, #0a0a0f);
-  background: var(--hud-accent);
-  box-shadow: 0 0 12px rgba(var(--hud-accent-rgb), 0.5);
-}
-
-/* ── Boot 动效降级 ── */
-@media (prefers-reduced-motion: reduce) {
-  #boot-screen * { animation: none !important; }
-  .boot-caret { display: none; }
-  .boot-progress-bar { transition: none; }
 }
 
 /* ════════════════════════════════════════════════

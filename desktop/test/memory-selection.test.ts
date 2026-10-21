@@ -67,6 +67,15 @@ describe("Memory Selection (P3方案3b/3c)", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it("passes the current workspace scope to listMemories", async () => {
+      listMemoriesSpy.mockReturnValueOnce([]);
+      const out = await selectRelevantMemories(
+        "query", "k", "http://127.0.0.1:1", "m", "openai", "C:\\test\\workspace-a",
+      );
+      expect(out).toBe("");
+      expect(listMemoriesSpy).toHaveBeenCalledWith({ workspace: "C:\\test\\workspace-a" });
+    });
+
     it("truncates long memory bodies on injection and points at read_memory (audit fix P2)", async () => {
       listMemoriesSpy.mockReturnValueOnce([
         { filename: "sel_cap_u.md", name: "sel_cap_u", type: "user", body: "y".repeat(2000), description: "u", mtimeMs: Date.now() },

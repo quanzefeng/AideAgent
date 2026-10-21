@@ -10,25 +10,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Boot Sequence Overlay（静态注入：HTML 解析即存在，先于主界面 paint，
-       避免"闪一下主界面才出现 boot"。由 boot-sequence.mjs 驱动状态机；
-       HUD 关闭时经 CSS html[data-hud="off"] 隐藏） -->
-  <div id="boot-screen" aria-hidden="true">
-    <div class="boot-inner">
-      <div class="boot-head">AIDEAGENT // BOOT SEQUENCE</div>
-      <div class="boot-log" id="boot-log"></div>
-      <div class="boot-current" id="boot-current">
-        <span class="boot-arrow">&gt;</span>
-        <span class="boot-text" id="boot-text"></span>
-        <span class="boot-caret"></span>
-      </div>
-      <div class="boot-progress"><span class="boot-progress-bar" id="boot-progress-bar"></span></div>
-      <div class="boot-foot">
-        <button class="boot-skip" id="boot-skip" type="button" data-i18n="boot.skip">跳过</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Status Banner (shown when no API config) -->
   <div id="config-banner" class="hidden">
     <span data-i18n="banner.api_required">⚙️ 请先在设置中配置 API</span>
@@ -43,6 +24,8 @@
       </div>
       <div class="modal-body">
         <p class="hint" data-i18n="perm.hint">以下命令需要您的批准：</p>
+        <p id="perm-title" style="font-weight:600;color:var(--text-primary);margin:6px 0 2px;"></p>
+        <p id="perm-reason" class="hint" style="margin:0 0 6px;display:none;"></p>
         <pre id="perm-command" style="background:var(--bg-tertiary);padding:12px;border-radius:var(--radius-sm);margin:8px 0 16px;font-family:var(--font-mono);font-size:13px;color:var(--text-primary);white-space:pre-wrap;border:1px solid var(--border);overflow-x:auto;"></pre>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button id="perm-deny" class="btn" style="border-color:var(--danger);color:var(--danger);" data-i18n="perm.deny">拒绝</button>
@@ -138,6 +121,10 @@ brew install opencode</pre>
           <div class="settings-tab active" data-tab="api">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             <span data-i18n="settings.api">API 配置</span>
+          </div>
+          <div class="settings-tab" data-tab="permissions">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span data-i18n="settings.permissions">权限</span>
           </div>
           <div class="settings-tab" data-tab="avatar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -263,6 +250,61 @@ brew install opencode</pre>
               <div id="settings-status" class="settings-status hidden"></div>
               <button id="settings-save-btn" class="btn primary btn-block" data-i18n="common.save">保存</button>
             </div>
+          </div>
+
+          <!-- 权限与安全 Panel -->
+          <div class="settings-panel" id="panel-permissions">
+            <h3 class="section-title" data-i18n="settings.permissions">权限与安全</h3>
+            <p class="hint permission-intro" data-i18n="permissions.hint">此设置全局生效，保存后立即应用到当前和后续会话。</p>
+
+            <div class="permission-mode-list" role="radiogroup" aria-label="权限模式">
+              <label class="permission-mode-card" data-mode="readonly">
+                <input type="radio" name="permission-mode" value="readonly" />
+                <span class="permission-mode-copy">
+                  <span class="permission-mode-title" data-i18n="permissions.mode_readonly">只读</span>
+                  <span class="permission-mode-desc" data-i18n="permissions.mode_readonly_desc">只能读取和搜索，禁止修改文件或执行修改性命令。</span>
+                </span>
+              </label>
+
+              <label class="permission-mode-card" data-mode="ask">
+                <input type="radio" name="permission-mode" value="ask" />
+                <span class="permission-mode-copy">
+                  <span class="permission-mode-title" data-i18n="permissions.mode_ask">逐次确认</span>
+                  <span class="permission-mode-desc" data-i18n="permissions.mode_ask_desc">每次写文件或执行命令都需要手动批准。</span>
+                </span>
+              </label>
+
+              <label class="permission-mode-card" data-mode="auto">
+                <input type="radio" name="permission-mode" value="auto" />
+                <span class="permission-mode-copy">
+                  <span class="permission-mode-title" data-i18n="permissions.mode_auto">智能</span>
+                  <span class="permission-mode-desc" data-i18n="permissions.mode_auto_desc">工作区内自动执行；危险命令、外部路径和 MCP 工具会询问。</span>
+                </span>
+                <span class="permission-mode-badge" data-i18n="permissions.recommended">推荐</span>
+              </label>
+
+              <label class="permission-mode-card permission-mode-danger" data-mode="full">
+                <input type="radio" name="permission-mode" value="full" />
+                <span class="permission-mode-copy">
+                  <span class="permission-mode-title" data-i18n="permissions.mode_full">完全权限</span>
+                  <span class="permission-mode-desc" data-i18n="permissions.mode_full_desc">所有工具、路径和命令都自动执行，不再弹出授权框。</span>
+                </span>
+                <span class="permission-mode-badge permission-mode-badge-danger" data-i18n="permissions.no_approval">不询问</span>
+              </label>
+            </div>
+
+            <div id="permission-full-warning" class="permission-warning hidden" data-i18n="permissions.full_warning">⚠️ 完全权限下，Agent 可以读写任意文件、执行任意命令，包括删除文件和访问网络。仍会遵守 permissions.json 中的 deny 规则；工作区外写入和 bash 副作用无法回滚，请只在信任当前任务时使用。</div>
+
+            <label class="permission-unattended" for="permission-allow-unattended">
+              <input type="checkbox" id="permission-allow-unattended" />
+              <span class="permission-unattended-copy">
+                <span class="permission-unattended-title" data-i18n="permissions.allow_unattended">允许微信/后台会话使用完全权限</span>
+                <span class="permission-unattended-desc" data-i18n="permissions.allow_unattended_desc">默认关闭，避免远程消息触发任意命令。</span>
+              </span>
+            </label>
+
+            <div id="permissions-status" class="settings-status hidden"></div>
+            <button id="permissions-save-btn" class="btn primary btn-block" data-i18n="common.save">保存</button>
           </div>
 
           <!-- 头像 Panel -->
@@ -979,8 +1021,12 @@ brew install opencode</pre>
             <span id="info-model-name"></span>
             <span id="task-indicator" class="task-indicator hidden" data-i18n-title="chat.task_progress" title="当前任务进度"></span>
             <span id="token-budget" class="token-budget hidden"></span>
-            <span id="context-usage" class="context-usage hidden" data-i18n-title="chat.context_usage" title="上下文使用量"><span class="context-usage-bar"></span><span class="context-usage-text">0%</span></span>
+            <span id="context-usage" class="context-usage ok" data-i18n-title="chat.context_usage" title="上下文使用量"><span class="context-usage-bar"></span><span class="context-usage-text">0%</span></span>
             <div class="toggle-group">
+              <button type="button" id="permission-mode-indicator" class="reasoning-pill permission-mode-pill" data-mode="auto" data-i18n-title="permissions.indicator_hint" title="当前权限模式，点击修改">
+                <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                <span class="reasoning-toggle-label" id="permission-mode-indicator-label">智能</span>
+              </button>
               <label class="reasoning-toggle reasoning-pill" data-i18n-title="chat.plan_hint" title="计划模式：只读分析，不修改文件">
                 <input type="checkbox" id="plan-mode-checkbox" class="reasoning-pill-input" />
                 <svg class="reasoning-pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>

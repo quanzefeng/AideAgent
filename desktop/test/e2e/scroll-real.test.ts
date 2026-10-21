@@ -76,10 +76,6 @@ test("scroll-real: latest session behavior + layout", async () => {
   });
   await window.waitForTimeout(600);
 
-  await window.evaluate(() => {
-    document.getElementById("boot-screen")?.remove();
-  });
-
   // ── 0a) 环境探针：localStorage / config-banner 状态 ──
   const env: any = await window.evaluate(() => {
     const banner: any = document.getElementById("config-banner");
