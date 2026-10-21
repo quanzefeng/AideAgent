@@ -16,6 +16,14 @@
  *   --hud-accent-contrast = 按 accent 明暗选出的对比文字色（白/近黑）
  */
 
+import {
+  skinColorPatch,
+  SKIN_CHANGE_EVENT,
+  SKIN_RESET_PROPS,
+  SKIN_SUGGESTED_PRESET,
+} from './skins.ts';
+import type { SkinId } from './skins.ts';
+
 const THEME_KEY = "AideAgent_theme";
 
 // ── Type-safe DOM lookup helpers ──────────────────────────────────
@@ -183,25 +191,33 @@ function deriveTheme(theme: any) {
 /** @param {{ bg: string, brightness: number, accent: string }} theme */
 function applyTheme(theme: any) {
   const vars = deriveTheme(theme);
+  // 皮肤色彩补丁（skins.ts）：玻璃的半透明卡片、粗野的硬边框/直角等。
+  // 先清掉上一皮肤可能留下的非派生内联 token（如 --radius-*），
+  // 再统一写入派生值 + 皮肤覆盖值。
+  const patch = skinColorPatch(theme);
+  const merged: Record<string, string> = { ...vars, ...patch };
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(vars)) {
+  for (const k of SKIN_RESET_PROPS) root.style.removeProperty(k);
+  for (const [k, v] of Object.entries(merged)) {
     root.style.setProperty(k, v);
   }
   // 同步别名（保持设计系统其他引用一致）
-  root.style.setProperty("--text-primary", vars["--text"]);
-  root.style.setProperty("--text-secondary", vars["--text"]);
-  root.style.setProperty("--bg-primary", vars["--bg"]);
-  root.style.setProperty("--bg-secondary", vars["--bg-card"]);
-  root.style.setProperty("--bg-tertiary", vars["--bg-surface"]);
-  // 边框自适应明暗
-  const [hh, ss, ll] = hexToHsl(theme.bg);
-  const finalL = ll * theme.brightness;
-  if (finalL < 0.5) {
-    root.style.setProperty("--border", "rgba(255,255,255,0.12)");
-    root.style.setProperty("--border-hover", "rgba(255,255,255,0.22)");
-  } else {
-    root.style.setProperty("--border", "#d0d5e2");
-    root.style.setProperty("--border-hover", "#b8bfd0");
+  root.style.setProperty("--text-primary", merged["--text"]);
+  root.style.setProperty("--text-secondary", merged["--text"]);
+  root.style.setProperty("--bg-primary", merged["--bg"]);
+  root.style.setProperty("--bg-secondary", merged["--bg-card"]);
+  root.style.setProperty("--bg-tertiary", merged["--bg-surface"]);
+  // 边框自适应明暗（皮肤显式声明了边框则尊重皮肤，不再覆盖）
+  if (!("--border" in patch)) {
+    const [hh, ss, ll] = hexToHsl(theme.bg);
+    const finalL = ll * theme.brightness;
+    if (finalL < 0.5) {
+      root.style.setProperty("--border", "rgba(255,255,255,0.12)");
+      root.style.setProperty("--border-hover", "rgba(255,255,255,0.22)");
+    } else {
+      root.style.setProperty("--border", "#d0d5e2");
+      root.style.setProperty("--border-hover", "#b8bfd0");
+    }
   }
 }
 
@@ -425,6 +441,25 @@ function bindControls(initial: any) {
     });
   }
 }
+
+// ── 皮肤联动 ───────────────────────────────────────
+// 皮肤切换：先按当前色彩重刷（皮肤补丁依赖色彩）。若用户从未自定义
+// 颜色（preset !== "custom"）且该皮肤带推荐预设，则顺势套用推荐预设，
+// 保证 glass→暗色、brutal→高对比浅色这类组合开箱即好看。
+window.addEventListener(SKIN_CHANGE_EVENT, (ev) => {
+  const skin = (ev as CustomEvent).detail?.skin as SkinId | undefined;
+  const theme = loadTheme();
+  const suggest = skin ? SKIN_SUGGESTED_PRESET[skin] : null;
+  if (suggest && theme.preset !== "custom" && theme.preset !== suggest && suggest in PRESETS) {
+    const p = (PRESETS as Record<string, { bg: string; accent: string }>)[suggest];
+    const next = { preset: suggest, bg: p.bg, accent: p.accent, brightness: theme.brightness };
+    saveTheme(next);
+    applyTheme(next);
+    applyToUI(next);
+  } else {
+    applyTheme(theme);
+  }
+});
 
 // ── 自初始化 ────────────────────────────────────
 const theme = loadTheme();

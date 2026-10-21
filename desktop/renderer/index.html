@@ -791,7 +791,14 @@ brew install opencode</pre>
           <!-- 外观 Panel -->
           <div class="settings-panel" id="panel-appearance">
             <div class="bg-settings">
-              <h3 class="section-title" data-i18n="bg.title">主题外观</h3>
+              <h3 class="section-title" data-i18n="skin.title">界面风格</h3>
+
+              <div class="form-row" style="margin-top:10px;">
+                <div id="skin-grid" class="skin-grid"></div>
+                <p class="hint" style="margin-top:10px;" data-i18n="skin.hint">风格决定界面骨架与质感；颜色仍由下方主题控制，可自由组合</p>
+              </div>
+
+              <h3 class="section-title" style="margin-top:22px;" data-i18n="bg.title">主题外观</h3>
 
               <div class="form-row" style="margin-top:14px;">
                 <label class="form-label" data-i18n="bg.preset_label">预设主题</label>
@@ -833,7 +840,7 @@ brew install opencode</pre>
                 </div>
               </div>
 
-              <div class="form-row" style="margin-top:14px;">
+              <div class="form-row" id="hud-vscan-row" style="margin-top:14px;">
                 <label class="reasoning-toggle reasoning-toggle-wide">
                   <span class="reasoning-toggle-label">
                     <span data-i18n="hud.vscan_label">垂直扫描线</span>

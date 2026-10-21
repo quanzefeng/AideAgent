@@ -484,6 +484,18 @@ const translations = {
     "bg.preview_user": "用户消息气泡预览",
     "bg.hint": "点击预设或拖动滑杆实时生效；推荐使用预设以保证文字对比度",
 
+    // ── Skin (界面风格) ──
+    "skin.title": "界面风格",
+    "skin.hint": "风格决定界面骨架与质感；颜色仍由下方主题控制，可自由组合",
+    "skin.classic": "经典",
+    "skin.classic_desc": "原始界面，无装饰",
+    "skin.hud": "赛博 HUD",
+    "skin.hud_desc": "四角括号、glitch 与光晕的赛博装饰层",
+    "skin.glass": "玻璃拟态",
+    "skin.glass_desc": "磨砂半透明卡片与虚化背景，切换后会推荐暗色主题",
+    "skin.brutal": "新粗野主义",
+    "skin.brutal_desc": "粗黑描边、硬位移投影、直角卡片，切换后会推荐高对比主题",
+
     // ── HUD 垂直扫描线 ──
     "hud.vscan_label": "垂直扫描线",
     "hud.vscan_hint": "在对话主界面显示从上往下重复扫描的动效线",
@@ -1255,6 +1267,18 @@ const translations = {
     "bg.preview_msg": "Sample message to preview the theme",
     "bg.preview_user": "User message bubble preview",
     "bg.hint": "Click a preset or drag the slider for instant effect; presets ensure good text contrast",
+
+    // ── Skin ──
+    "skin.title": "Interface Style",
+    "skin.hint": "Style controls the layout skeleton and texture; colors stay under Theme below and mix freely",
+    "skin.classic": "Classic",
+    "skin.classic_desc": "Original interface, no decorations",
+    "skin.hud": "Cyber HUD",
+    "skin.hud_desc": "Corner brackets, glitch and glow cyber deck",
+    "skin.glass": "Glassmorphism",
+    "skin.glass_desc": "Frosted translucent cards over a blurred backdrop; suggests a dark theme",
+    "skin.brutal": "Neo-brutalism",
+    "skin.brutal_desc": "Heavy outlines, hard offset shadows, square corners; suggests a high-contrast theme",
 
     // ── HUD Vertical Scan Line ──
     "hud.vscan_label": "Vertical Scan Line",

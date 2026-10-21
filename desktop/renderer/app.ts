@@ -5,6 +5,7 @@
 /* ── Import modules ───────────────────────────────────── */
 import './modules/font-settings.ts';
 import './modules/bg-settings.ts';
+import './modules/skins.ts';
 import './modules/hud-overlay.ts';
 import './modules/sidebar-collapse.ts';
 import './modules/hud-telemetry.ts';
