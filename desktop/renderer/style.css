@@ -677,6 +677,333 @@ html, body {
   gap: 12px;
 }
 
+/* ── API configuration: providers + custom APIs ─────────── */
+.api-intro {
+  margin: -4px 0 12px;
+}
+
+.api-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.api-profile-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.api-provider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.api-provider-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-provider-group-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em;
+}
+
+.api-provider-group-hint {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.api-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 1px;
+}
+
+.api-profile-empty {
+  padding: 8px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-profile-item {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.api-profile-item:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+}
+
+.api-profile-item.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.api-profile-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px 8px 12px;
+  border: 0;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.api-profile-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.api-profile-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.3;
+  transition: background var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+
+.api-profile-item.active .api-profile-dot {
+  background: var(--success);
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+}
+
+.api-profile-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.api-profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.api-profile-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-profile-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-profile-badge,
+.api-profile-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.api-profile-badge {
+  border: 1px solid var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.api-profile-tag {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+.api-profile-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+  padding-right: 6px;
+}
+
+.api-profile-action {
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.api-profile-action:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.api-profile-action.danger:hover {
+  background: rgba(208, 49, 45, 0.08);
+  color: var(--danger);
+}
+
+.api-add-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.api-add-provider:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.api-add-provider-plus {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.api-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.api-editor.hidden {
+  display: none;
+}
+
+.api-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-editor-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+}
+
+.api-editor-tabs {
+  display: flex;
+  align-self: flex-start;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.api-editor-tabs.hidden {
+  display: none;
+}
+
+.api-editor-tab {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.api-editor-tab:hover {
+  color: var(--text-primary);
+}
+
+.api-editor-tab.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.api-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.api-search-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.api-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .form-row {
   display: flex;
   flex-direction: column;

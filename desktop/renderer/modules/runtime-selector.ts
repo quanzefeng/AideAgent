@@ -14,6 +14,8 @@
 // to run it. For the skeleton, opencode selection is accepted but the query
 // path falls back to the AideAgent agentLoop until the ACP client lands.
 
+import { getActiveApiProfile, loadApiProfileStore } from './api-profiles.ts';
+
 /** @typedef {"aide" | "opencode"} Runtime */
 
 const RUNTIME_KEY = "AideAgent_runtime";
@@ -209,6 +211,16 @@ function switchInputBox(rt: any) {
  * being called when runtime=opencode.
  */
 function loadApiConfig() {
+  try {
+    const profile = getActiveApiProfile(loadApiProfileStore());
+    if (profile) {
+      return {
+        provider: profile.provider,
+        model: profile.model,
+        apiUrl: profile.apiUrl,
+      };
+    }
+  } catch { /* fall through to legacy keys */ }
   try {
     return {
       provider: localStorage.getItem("AideAgent_provider") || "",

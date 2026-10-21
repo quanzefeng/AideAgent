@@ -1,19 +1,46 @@
 ﻿// @ts-check — JSDoc-typed skills panel (L3 + L2 + skill editor).
 // @ts-check — 带 JSDoc 类型注解的技能面板（L3 + L2 + 技能编辑器）。
 import { sanitize } from './helpers.ts';
+import { getActiveApiProfile, loadApiProfileStore } from './api-profiles.ts';
 
 /**
- * Read saved API config (provider, URL, key, model, format) from localStorage.
- * @returns {{ provider: string, apiUrl: string, apiKey: string, model: string, apiFormat: string }}
+ * Read the active API profile (provider preset, URL, model, format) plus the
+ * profile id used to load its encrypted key. Falls back to the legacy flat
+ * keys when the app hasn't migrated yet (early boot / tests).
+ * @returns {{ profileId: string, provider: string, apiUrl: string, apiKey: string, model: string, apiFormat: string }}
  */
 function loadApiConfig() {
+  try {
+    const profile = getActiveApiProfile(loadApiProfileStore());
+    if (profile) {
+      return {
+        profileId: profile.id,
+        provider: profile.provider,
+        apiUrl: profile.apiUrl,
+        apiKey: "",
+        model: profile.model,
+        apiFormat: profile.apiFormat || "openai",
+      };
+    }
+  } catch { /* fall through to legacy keys */ }
   return {
+    profileId: localStorage.getItem("AideAgent_provider") || "",
     provider: localStorage.getItem("AideAgent_provider") || "",
     apiUrl: localStorage.getItem("AideAgent_api_url") || "",
     apiKey: localStorage.getItem("AideAgent_api_key") || "",
     model: localStorage.getItem("AideAgent_model") || "",
     apiFormat: localStorage.getItem("AideAgent_api_format") || "openai",
   };
+}
+
+/** Load the encrypted key for a config returned by `loadApiConfig`. */
+async function resolveApiKey(cfg: any) {
+  if (cfg?.apiKey) return cfg.apiKey;
+  try {
+    return (await (window.aideagent as any).loadApiKey?.(cfg?.profileId)) || "";
+  } catch {
+    return "";
+  }
 }
 
 const SKILLS_KEY = "AideAgent_enabled_skills";
@@ -266,8 +293,8 @@ async function triggerIncrementalTranslation(skills: any) {
     // The key itself is fetched from the encrypted store by the IPC handler
     // if not supplied.
     const cfg = loadApiConfig();
-    if (!cfg.provider || !cfg.apiUrl) return;
-    const apiKey = await (api as any).loadApiKey?.(cfg.provider);
+    if (!cfg.apiUrl) return;
+    const apiKey = await resolveApiKey(cfg);
     if (!apiKey) return;
     (api as any).skillsTranslationsEnsure({ ...cfg, apiKey }).then((r: any) => {
       if (r?.ok && r.translated > 0) {
@@ -617,8 +644,9 @@ export async function refreshSkillsList() {
           // material — the old in-renderer fetch only passed the bare
           // phrase, so the model had to guess what the task looked like.
           const cfg = loadApiConfig();
-                    const api: any = window.aideagent as any;
-          const res = await (api as any).skillsAutoGenerate?.(phrase, cfg);
+          const apiKey = await resolveApiKey(cfg);
+          const api: any = window.aideagent as any;
+          const res = await (api as any).skillsAutoGenerate?.(phrase, { ...cfg, apiKey });
           if (res?.saved) {
             btn.textContent = "✅ " + (t("agent_skills.generated_ok") || "已生成");
             await refreshSkillsList();
@@ -643,9 +671,10 @@ export async function refreshSkillsList() {
       genAllBtn.textContent = t("agent_skills.generating");
       try {
         const cfg = loadApiConfig();
-                const api: any = window.aideagent as any;
+        const apiKey = await resolveApiKey(cfg);
+        const api: any = window.aideagent as any;
         /** @type {any[]} */
-        const results = await (api as any).skillsAutoGenerateAll?.(cfg) || [];
+        const results = await (api as any).skillsAutoGenerateAll?.({ ...cfg, apiKey }) || [];
         const saved = results.filter((r: any) => r.saved).length;
         const existed = results.filter((r: any) => r.alreadyExisted).length;
         const failed = results.length - saved - existed;

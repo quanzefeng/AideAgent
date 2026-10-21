@@ -168,8 +168,12 @@ declare global {
 
       // App-level
       appGetApiConfig(): Promise<any>;
-      fetchModels(baseUrl: string, apiKey: string): Promise<{ models: Array<{ id: string; label: string }>; errors: string[] }>;
+      fetchModels(baseUrl: string, apiKey: string, apiFormat?: string): Promise<{ models: Array<{ id: string; label: string }>; errors: string[] }>;
       appSaveApiConfig(cfg: any): Promise<{ success: boolean; error?: string }>;
+      saveApiKey(provider: string, key: string): Promise<{ ok?: boolean; error?: string }>;
+      loadApiKey(provider: string): Promise<string | null>;
+      deleteApiKey(provider: string): Promise<{ ok?: boolean; error?: string }>;
+      getEnvVar(name: string): Promise<string | null>;
       appGetAvatarConfig(): Promise<any>;
       appSaveAvatarConfig(cfg: any): Promise<void>;
       appSetReasoningEnabled(enabled: boolean): Promise<void>;

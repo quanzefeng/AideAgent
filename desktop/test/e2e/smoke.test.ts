@@ -282,3 +282,109 @@ test("full-site polish applies with hud on and reverts when off", async () => {
 
   await closeApp(app);
 });
+
+// ── 13. API 提供商：第三方/自定义分开 → 编辑 → 切换 → 删除 ──
+test("api providers: split presets and custom APIs, edit, switch, and delete", async () => {
+  const { app, window } = await launchApp();
+
+  await window.locator("#settings-btn").click();
+  await window.waitForTimeout(300);
+  await expect(window.locator("#panel-api")).toHaveClass(/active/);
+  await expect(window.locator("#api-profile-list")).toBeVisible();
+  await expect(window.locator("#api-preset-list .api-profile-empty")).toHaveText("还没有第三方模型提供商");
+  await expect(window.locator("#api-custom-list .api-profile-empty")).toHaveText("还没有自定义模型 API");
+
+  // First profile: built-in provider with preset URL.
+  await window.locator("#api-profile-new").click();
+  await expect(window.locator("#api-editor")).toBeVisible();
+  await window.locator("#settings-profile-name").fill("DeepSeek Main");
+  await expect(window.locator("#settings-url")).toHaveValue("https://api.deepseek.com");
+  await window.locator("#settings-save-btn").click();
+  await window.waitForTimeout(300);
+
+  let store = await window.evaluate(() =>
+    JSON.parse(localStorage.getItem("AideAgent_api_profiles") || "null")
+  );
+  expect(store.profiles).toHaveLength(1);
+  expect(store.profiles[0]).toMatchObject({
+    name: "DeepSeek Main",
+    provider: "deepseek",
+    providerId: "deepseek",
+  });
+  expect(store.activeId).toBe(store.profiles[0].id);
+  await expect(window.locator("#api-preset-list .api-profile-item")).toHaveCount(1);
+  await expect(window.locator("#api-preset-list .api-profile-badge")).toHaveText("当前");
+
+  // Second built-in account (same provider type, different display name).
+  await window.locator("#api-profile-new").click();
+  await window.locator("#settings-profile-name").fill("GLM Secondary");
+  await window.locator("#settings-provider").selectOption("glm");
+  await expect(window.locator("#settings-url")).toHaveValue("https://open.bigmodel.cn/api/paas/v4");
+  await window.locator("#settings-save-btn").click();
+  await window.waitForTimeout(300);
+  await expect(window.locator("#api-preset-list .api-profile-item")).toHaveCount(2);
+
+  // Third profile: custom API uses its own section and requires a Provider ID.
+  await window.locator("#api-profile-new").click();
+  await window.locator("[data-api-kind=\"custom\"]").click();
+  await expect(window.locator("#settings-provider-row")).toHaveClass(/hidden/);
+  await expect(window.locator("#settings-provider-id-row")).not.toHaveClass(/hidden/);
+  await window.locator("#settings-provider-id").fill("my-gateway");
+  await window.locator("#settings-profile-name").fill("My Gateway");
+  await window.locator("#settings-url").fill("https://gateway.test/v1/chat/completions");
+  await window.locator("#settings-model-input").fill("gateway-model");
+  await window.locator("#settings-save-btn").click();
+  await window.waitForTimeout(300);
+
+  store = await window.evaluate(() =>
+    JSON.parse(localStorage.getItem("AideAgent_api_profiles") || "null")
+  );
+  expect(store.profiles).toHaveLength(3);
+  expect(store.profiles[2]).toMatchObject({
+    name: "My Gateway",
+    provider: "",
+    providerId: "my-gateway",
+    model: "gateway-model",
+  });
+  expect(store.activeId).toBe(store.profiles[2].id);
+  await expect(window.locator("#api-custom-list .api-profile-item")).toHaveCount(1);
+  await expect(window.locator("#api-custom-list .api-profile-tag")).toHaveText("自定义");
+
+  // Clicking a card switches the active provider immediately.
+  await window.locator("#api-preset-list .api-profile-main").first().click();
+  await window.waitForTimeout(300);
+  store = await window.evaluate(() =>
+    JSON.parse(localStorage.getItem("AideAgent_api_profiles") || "null")
+  );
+  expect(store.activeId).toBe(store.profiles[0].id);
+
+  // Per-card edit: provider type is locked, name can be changed without
+  // switching the active provider.
+  await window.locator("#api-preset-list .api-profile-item").nth(1).locator("[data-action=\"edit\"]").click();
+  await expect(window.locator("#settings-provider")).toBeDisabled();
+  await window.locator("#settings-profile-name").fill("GLM Backup");
+  await window.locator("#settings-save-btn").click();
+  await window.waitForTimeout(300);
+  store = await window.evaluate(() =>
+    JSON.parse(localStorage.getItem("AideAgent_api_profiles") || "null")
+  );
+  expect(store.profiles[1].name).toBe("GLM Backup");
+  expect(store.activeId).toBe(store.profiles[0].id);
+
+  // Delete the custom profile from its own card.
+  await window.locator("#api-custom-list [data-action=\"delete\"]").click();
+  await expect(window.locator("#confirm-modal")).toHaveClass(/active/);
+  await window.locator("#confirm-modal-ok").click();
+  await window.waitForTimeout(400);
+
+  store = await window.evaluate(() =>
+    JSON.parse(localStorage.getItem("AideAgent_api_profiles") || "null")
+  );
+  expect(store.profiles).toHaveLength(2);
+  expect(store.profiles.some((p: { providerId?: string }) => p.providerId === "my-gateway")).toBe(false);
+  expect(store.activeId).toBe(store.profiles[0].id);
+  await expect(window.locator("#api-custom-list .api-profile-empty")).toBeVisible();
+  await expect(window.locator("#api-preset-list .api-profile-item")).toHaveCount(2);
+
+  await closeApp(app);
+});

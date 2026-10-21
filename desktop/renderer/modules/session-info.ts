@@ -12,17 +12,26 @@
 // applyTheme, setLanguage, etc.) and stays correct as new settings are
 // added — as long as they're prefixed `AideAgent_`, the hook handles it.
 
+import { getActiveApiProfile, loadApiProfileStore } from "./api-profiles.ts";
+
 /**
  * Read every AideAgent_* key from localStorage and return a structured
  * snapshot. Pure function — no side effects, no IPC.
  * @returns {object} snapshot
  */
 export function getSessionInfoSnapshot() {
-  const provider = localStorage.getItem("AideAgent_provider") || "";
+  const profile = getActiveApiProfile(loadApiProfileStore());
+  const provider = profile
+    ? profile.provider
+    : (localStorage.getItem("AideAgent_provider") || "");
   const prefix = provider ? `AideAgent_${provider}_` : "AideAgent_";
-  const model = localStorage.getItem(`${prefix}model`) || "";
-  const apiUrl = localStorage.getItem(`${prefix}api_url`) || "";
-  const apiFormat = localStorage.getItem("AideAgent_api_format") || "openai";
+  const model = profile ? profile.model : (localStorage.getItem(`${prefix}model`) || "");
+  const apiUrl = profile ? profile.apiUrl : (localStorage.getItem(`${prefix}api_url`) || "");
+  const apiFormat = profile
+    ? profile.apiFormat
+    : (localStorage.getItem("AideAgent_api_format") || "openai");
+  const profileId = profile?.id || "";
+  const profileName = profile?.name || "";
   const runtime = localStorage.getItem("AideAgent_runtime") || "aide";
 
   let themePreset = null;
@@ -44,7 +53,7 @@ export function getSessionInfoSnapshot() {
 
   return {
     runtime,
-    api: { provider, model, apiUrl, apiFormat },
+    api: { profileId, profileName, provider, model, apiUrl, apiFormat },
     appearance: {
       lang: localStorage.getItem("AideAgent_lang") || "zh",
       theme_preset: themePreset,

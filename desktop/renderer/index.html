@@ -186,69 +186,146 @@ brew install opencode</pre>
           <!-- API 配置 Panel -->
           <div class="settings-panel active" id="panel-api">
             <h3 class="section-title" data-i18n="settings.api">API 配置</h3>
-            <div class="api-config-form">
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.provider">供应商</label>
-                <select id="settings-provider" class="form-select">
-                  <option value="" data-i18n="api.custom">— 自定义 —</option>
-                  <option value="deepseek" data-i18n="provider.deepseek">DeepSeek</option>
-                  <option value="glm" data-i18n="provider.glm">GLM（智谱）</option>
-                  <option value="qwen" data-i18n="provider.qwen">Qwen（通义千问）</option>
-                  <option value="llamacpp" data-i18n="provider.llamacpp">llama.cpp（本地）</option>
-                  <option value="minimax" data-i18n="provider.minimax">MiniMax</option>
-                  <option value="claude" data-i18n="provider.claude">Claude（Anthropic）</option>
-                  <option value="opencode-go" data-i18n="provider.opencode_go">OpenCode Go（OpenAI）</option>
-                  <option value="opencode-go-ant" data-i18n="provider.opencode_go_ant">OpenCode Go（Anthropic）</option>
-                  <option value="lmstudio" data-i18n="provider.lmstudio">LM Studio（本地）</option>
-                  <option value="ollama" data-i18n="provider.ollama">Ollama（本地）</option>
-                </select>
+            <p class="hint api-intro" data-i18n="api.intro">第三方提供商和自定义 API 分开管理，互不混用。点击卡片即可切换当前配置。</p>
+
+            <div class="api-settings">
+              <div id="api-profile-list" class="api-profile-groups">
+                <section class="api-provider-group">
+                  <div class="api-provider-group-head">
+                    <div>
+                      <h4 class="api-provider-group-title" data-i18n="api.group_preset">第三方模型提供商</h4>
+                      <p class="api-provider-group-hint" data-i18n="api.group_preset_hint">DeepSeek、GLM、Qwen、Claude 等内置服务，可添加多个账号。</p>
+                    </div>
+                  </div>
+                  <div id="api-preset-list" class="api-profile-list"></div>
+                </section>
+
+                <section class="api-provider-group">
+                  <div class="api-provider-group-head">
+                    <div>
+                      <h4 class="api-provider-group-title" data-i18n="api.group_custom">自定义模型 API</h4>
+                      <p class="api-provider-group-hint" data-i18n="api.group_custom_hint">中转站、自部署服务或其他兼容 OpenAI / Anthropic 协议的接口。</p>
+                    </div>
+                  </div>
+                  <div id="api-custom-list" class="api-profile-list"></div>
+                </section>
               </div>
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.url">API URL</label>
-                <input type="text" id="settings-url" class="form-input" placeholder="https://api.deepseek.com/chat/completions" />
-              </div>
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.format">API 协议</label>
-                <select id="settings-format" class="form-select">
-                  <option value="openai" data-i18n="api.format_openai">OpenAI Chat Completions</option>
-                  <option value="anthropic" data-i18n="api.format_anthropic">Anthropic Messages</option>
-                  <option value="responses" data-i18n="api.format_responses">OpenAI Responses</option>
-                </select>
-                <p class="form-hint" data-i18n="api.format_hint">选择接口协议；选供应商时会自动匹配，通常无需手动修改</p>
-              </div>
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.model">Model</label>
-                <div class="form-row-inline-group">
-                  <select id="settings-model" class="form-select" style="flex:1;"></select>
-                  <input type="text" id="settings-model-input" class="form-input" style="flex:1;display:none;" data-i18n-placeholder="api.model_placeholder" placeholder="输入模型名称" />
-                  <button id="settings-fetch-models-btn" class="btn" style="white-space:nowrap;flex-shrink:0;" data-i18n-title="api.fetch_models" title="从 API 获取可用模型列表">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
-                    <span data-i18n="api.fetch_models_btn">获取模型</span>
-                  </button>
+
+              <button id="api-profile-new" type="button" class="api-add-provider">
+                <span class="api-add-provider-plus">＋</span>
+                <span data-i18n="api.add_provider">添加模型提供商</span>
+              </button>
+
+              <div id="api-editor" class="api-editor hidden">
+                <div class="api-editor-head">
+                  <div>
+                    <h4 id="api-editor-title" class="api-editor-title" data-i18n="api.editor_add_preset">添加第三方模型提供商</h4>
+                    <p id="api-editor-subtitle" class="form-hint" data-i18n="api.editor_add_preset_hint">选择内置供应商并填写账号信息。</p>
+                  </div>
+                </div>
+
+                <div id="api-editor-tabs" class="api-editor-tabs" role="tablist">
+                  <button type="button" role="tab" aria-selected="true" class="api-editor-tab active" data-api-kind="preset" data-i18n="api.group_preset">第三方模型提供商</button>
+                  <button type="button" role="tab" aria-selected="false" class="api-editor-tab" data-api-kind="custom" data-i18n="api.group_custom">自定义模型 API</button>
+                </div>
+
+                <div class="api-editor-body">
+                  <div class="form-row" id="settings-provider-row">
+                    <label class="form-label" data-i18n="api.provider">供应商</label>
+                    <select id="settings-provider" class="form-select">
+                      <option value="deepseek" data-i18n="provider.deepseek">DeepSeek</option>
+                      <option value="glm" data-i18n="provider.glm">GLM（智谱）</option>
+                      <option value="qwen" data-i18n="provider.qwen">Qwen（通义千问）</option>
+                      <option value="llamacpp" data-i18n="provider.llamacpp">llama.cpp（本地）</option>
+                      <option value="minimax" data-i18n="provider.minimax">MiniMax</option>
+                      <option value="claude" data-i18n="provider.claude">Claude（Anthropic）</option>
+                      <option value="opencode-go" data-i18n="provider.opencode_go">OpenCode Go（OpenAI）</option>
+                      <option value="opencode-go-ant" data-i18n="provider.opencode_go_ant">OpenCode Go（Anthropic）</option>
+                      <option value="lmstudio" data-i18n="provider.lmstudio">LM Studio（本地）</option>
+                      <option value="ollama" data-i18n="provider.ollama">Ollama（本地）</option>
+                    </select>
+                    <p class="form-hint" data-i18n="api.provider_select_hint">URL 和协议会自动填入，仍可按需修改。</p>
+                  </div>
+
+                  <div class="form-row hidden" id="settings-provider-id-row">
+                    <label class="form-label" data-i18n="api.provider_id">Provider ID</label>
+                    <input type="text" id="settings-provider-id" class="form-input" maxlength="60" placeholder="acme-gateway" />
+                    <p class="form-hint" data-i18n="api.provider_id_hint">以小写字母开头，可包含小写字母、数字、短横线和下划线。</p>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.profile_name">显示名称</label>
+                    <input type="text" id="settings-profile-name" class="form-input" maxlength="40" data-i18n-placeholder="api.profile_name_placeholder" placeholder="例如：DeepSeek 主账号" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.url">API 地址</label>
+                    <input type="text" id="settings-url" class="form-input" placeholder="https://api.deepseek.com/chat/completions" />
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.format">API 协议</label>
+                    <select id="settings-format" class="form-select">
+                      <option value="openai" data-i18n="api.format_openai">OpenAI Chat Completions</option>
+                      <option value="anthropic" data-i18n="api.format_anthropic">Anthropic Messages</option>
+                      <option value="responses" data-i18n="api.format_responses">OpenAI Responses</option>
+                    </select>
+                    <p class="form-hint" data-i18n="api.format_hint">选择接口协议；选供应商时会自动匹配，通常无需手动修改</p>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.model">模型</label>
+                    <div class="form-row-inline-group">
+                      <select id="settings-model" class="form-select" style="flex:1;"></select>
+                      <input type="text" id="settings-model-input" class="form-input" style="flex:1;display:none;" data-i18n-placeholder="api.model_placeholder" placeholder="输入模型名称" />
+                      <button id="settings-fetch-models-btn" class="btn" style="white-space:nowrap;flex-shrink:0;" data-i18n-title="api.fetch_models" title="从 API 获取可用模型列表">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg>
+                        <span data-i18n="api.fetch_models_btn">获取模型</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.key">API Key</label>
+                    <input type="password" id="settings-key" class="form-input" placeholder="sk-..." />
+                    <p class="form-hint" data-i18n="api.key_keep_hint">留空会保留该提供商已保存的密钥；删除提供商会一并删除密钥。</p>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-label" data-i18n="api.context_window">上下文窗口（可选）</label>
+                    <input type="number" id="settings-context-window" class="form-input" min="4096" step="1024" data-i18n-placeholder="api.context_window_placeholder" placeholder="留空自动检测，如 65536" />
+                    <p class="form-hint" data-i18n="api.context_window_hint">手动覆盖上下文窗口大小，优先级高于自动检测</p>
+                  </div>
+
+                  <div id="settings-status" class="settings-status hidden"></div>
+
+                  <div class="api-editor-actions">
+                    <button id="settings-api-cancel" type="button" class="btn" data-i18n="common.cancel">取消</button>
+                    <button id="settings-save-btn" type="button" class="btn primary" data-i18n="common.save">保存</button>
+                  </div>
                 </div>
               </div>
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.key">API Key</label>
-                <input type="password" id="settings-key" class="form-input" placeholder="sk-..." />
+
+              <div class="api-search-settings">
+                <div>
+                  <h4 class="api-provider-group-title" data-i18n="api.search_group">联网搜索</h4>
+                  <p class="api-provider-group-hint" data-i18n="api.search_group_hint">搜索配置对所有模型提供商生效。</p>
+                </div>
+                <div class="form-row">
+                  <label class="form-label" data-i18n="api.search_provider">联网搜索引擎</label>
+                  <select id="settings-search-provider" class="form-select">
+                    <option value="tavily" data-i18n="api.tavily_option">Tavily（推荐，稳定高效，需 API Key）</option>
+                    <option value="metasearch" data-i18n="api.metasearch_option">内置元搜索（免费备选，零配置，多源自动聚合）</option>
+                  </select>
+                </div>
+                <div class="form-row" id="tavily-key-row">
+                  <label class="form-label">Tavily API Key</label>
+                  <input type="text" id="settings-tavily-key" class="form-input" placeholder="tvly-..." />
+                </div>
+                <div class="api-inline-actions">
+                  <button id="api-search-save-btn" type="button" class="btn btn-sm" data-i18n="api.search_save">保存搜索设置</button>
+                </div>
               </div>
-              <div class="form-row">
-                <label class="form-label" data-i18n="api.context_window">上下文窗口（可选）</label>
-                <input type="number" id="settings-context-window" class="form-input" min="4096" step="1024" data-i18n-placeholder="api.context_window_placeholder" placeholder="留空自动检测，如 65536" />
-                <p class="form-hint" data-i18n="api.context_window_hint">手动覆盖上下文窗口大小，优先级高于自动检测</p>
-              </div>
-              <div class="form-row" style="margin-top:12px;">
-                <label class="form-label" data-i18n="api.search_provider">联网搜索引擎</label>
-                <select id="settings-search-provider" class="form-select">
-                  <option value="tavily" data-i18n="api.tavily_option">Tavily（推荐，稳定高效，需 API Key）</option>
-                  <option value="metasearch" data-i18n="api.metasearch_option">内置元搜索（免费备选，零配置，多源自动聚合）</option>
-                </select>
-              </div>
-              <div class="form-row" id="tavily-key-row">
-                <label class="form-label">Tavily API Key</label>
-                <input type="text" id="settings-tavily-key" class="form-input" placeholder="tvly-..." />
-              </div>
-              <div id="settings-status" class="settings-status hidden"></div>
-              <button id="settings-save-btn" class="btn primary btn-block" data-i18n="common.save">保存</button>
             </div>
           </div>
 

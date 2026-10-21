@@ -25,6 +25,19 @@ import { createMcpPanel } from './modules/mcp.ts';
 import { createWechatPanel } from './modules/wechat.ts';
 import { initRuntimeSelector, rebindRuntimeCards, getCurrentRuntime, setRuntime } from './modules/runtime-selector.ts';
 import { installLocalStorageHook, pushSessionInfo } from './modules/session-info.ts';
+import {
+  createApiProfile,
+  ensureApiProfileStore,
+  getActiveApiProfile,
+  getApiProfile,
+  isValidProviderId,
+  normalizeProviderId,
+  removeApiProfile,
+  saveApiProfileStore,
+  setActiveApiProfile,
+  upsertApiProfile,
+} from './modules/api-profiles.ts';
+import type { ApiProfile } from './modules/api-profiles.ts';
 
 /* ── Configure marked.js ──────────────────────────────── */
 marked.setOptions({
@@ -41,15 +54,6 @@ marked.setOptions({
 });
 
 /* ── Constants ────────────────────────────────────────── */
-const STORAGE_KEYS = {
-  PROVIDER: "AideAgent_provider",
-  API_URL: "AideAgent_api_url",
-  MODEL: "AideAgent_model",
-  API_KEY: "AideAgent_api_key",
-  API_FORMAT: "AideAgent_api_format",
-  REASONING_EFFORT: "AideAgent_reasoning_effort",
-};
-
 // Provider presets store i18n KEYS in `name` rather than translated strings,
 // so the labels can be re-translated when the user switches languages. The
 // sole consumer (`updateInfoBar` / settings panel) calls `t(preset.name)` at
@@ -190,6 +194,18 @@ const settingsModal = $("#settings-modal");
 const settingsBtn = $("#settings-btn");
 const settingsCloseBtn = $("#settings-close-btn");
 const settingsTabs = $("#settings-tabs");
+const settingsProfileName = $("#settings-profile-name");
+const apiProfileList = $("#api-profile-list");
+const apiPresetList = $("#api-preset-list");
+const apiCustomList = $("#api-custom-list");
+const apiProfileNewBtn = $("#api-profile-new");
+const apiEditor = $("#api-editor");
+const apiEditorTitle = $("#api-editor-title");
+const apiEditorSubtitle = $("#api-editor-subtitle");
+const apiEditorTabs = $("#api-editor-tabs");
+const settingsProviderRow = $("#settings-provider-row");
+const settingsProviderIdRow = $("#settings-provider-id-row");
+const settingsProviderId = $("#settings-provider-id");
 const settingsProvider = $("#settings-provider");
 const settingsUrl = $("#settings-url");
 const settingsFormat = $("#settings-format");
@@ -201,6 +217,8 @@ const settingsSearchProvider = $("#settings-search-provider");
 const settingsTavilyKey = $("#settings-tavily-key");
 const tavilyKeyRow = $("#tavily-key-row");
 const settingsSaveBtn = $("#settings-save-btn");
+const settingsApiCancel = $("#settings-api-cancel");
+const apiSearchSaveBtn = $("#api-search-save-btn");
 const settingsStatus = $("#settings-status");
 const avatarFileInput = $("#avatar-file-input");
 const changeAvatarBtn = $("#change-avatar-btn");
@@ -641,6 +659,12 @@ function updateInfoBar() {
   // Prefer the model name; the provider is visible in Settings → API and just
   // adds noise here (e.g. "token.sensenova.cn · deepseek-v4.1-flash").
   infoModelName.textContent = model || fallback;
+  // The OpenCode input wrapper has its own model label. Keep it in sync when a
+  // profile switch/save changes the model while that runtime is active.
+  const ocModelEl = document.getElementById("opencode-model-name");
+  if (ocModelEl && getCurrentRuntime() === "opencode") {
+    ocModelEl.textContent = model || "OpenCode";
+  }
 }
 
 /**
@@ -1114,80 +1138,105 @@ function showWelcome() {
 }
 
 /* ── Settings Persistence ─────────────────────────────── */
-// Encrypted API key cache (loaded async from main process)
-const _apiKeyCache = {}; // { provider: key }
+// Encrypted API key cache, keyed by PROFILE id (not provider). A profile is
+// the only thing that can own a key; two profiles may use the same provider.
+const _apiKeyCache = {}; // { [profileId]: key }
+
+// API profile editor state. Profiles are split into built-in providers and
+// custom APIs; the editor is only visible while adding/editing one entry.
+let _selectedProfileId: string | null = null;
+let _apiEditorMode: "new" | "edit" = "new";
+let _apiEditorKind: "preset" | "custom" = "preset";
+let _nameWasAuto = false;
+let _fillingForm = false;
+let _settingsStatusSeq = 0;
+
+function providerLabel(provider) {
+  const preset = PROVIDER_PRESETS[provider];
+  return preset ? t(preset.name) : t("provider.custom");
+}
+
+/** Load profiles, migrating the pre-profile localStorage layout once. */
+function ensureApiProfiles() {
+  return ensureApiProfileStore({
+    storage: localStorage,
+    providers: Object.keys(PROVIDER_PRESETS),
+    labelFor: providerLabel,
+  });
+}
+
+/**
+ * Load a profile's encrypted key, migrating the old plaintext key only for
+ * profiles created by legacy migration (their id is the legacy provider id).
+ */
+async function loadProfileApiKey(profile) {
+  if (!profile?.id) return "";
+  if (_apiKeyCache[profile.id]) return _apiKeyCache[profile.id];
+
+  let key = "";
+  try {
+    key = (await window.aideagent.loadApiKey(profile.id)) || "";
+  } catch { /* ignored */ }
+
+  const legacyId = profile.provider || "_custom";
+  if (!key && profile.id === legacyId) {
+    const legacyKeyId = profile.provider ? `AideAgent_api_key_${profile.provider}` : "AideAgent_api_key";
+    const legacyKey = localStorage.getItem(legacyKeyId) || "";
+    if (legacyKey) {
+      key = legacyKey;
+      try {
+        await window.aideagent.saveApiKey(profile.id, legacyKey);
+        localStorage.removeItem(legacyKeyId);
+      } catch { /* keep plaintext as a fallback until the save succeeds */ }
+    }
+  }
+
+  if (key) {
+    _apiKeyCache[profile.id] = key;
+    // The encrypted store wins; drop any redundant plaintext copy left by the
+    // pre-profile versions.
+    if (profile.id === legacyId) {
+      localStorage.removeItem(profile.provider ? `AideAgent_api_key_${profile.provider}` : "AideAgent_api_key");
+    }
+  }
+  return key;
+}
 
 async function initApiKeys() {
-  const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
-  // NOTE: no `if (provider)` guard — the custom provider is "" and its key
-  // must be loaded too (main process maps "" → "_custom" in the keystore).
-  try {
-    const key = await window.aideagent.loadApiKey(provider);
-    if (key) {
-      _apiKeyCache[provider] = key;
-    } else {
-      // Migrate old plaintext key from localStorage
-      const legacyKey = localStorage.getItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key") || "";
-      if (legacyKey) {
-        _apiKeyCache[provider] = legacyKey;
-        await window.aideagent.saveApiKey(provider, legacyKey);
-        localStorage.removeItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key");
-      }
-    }
-  } catch { /* ignored */ }
+  const store = ensureApiProfiles();
+  const profile = getActiveApiProfile(store);
+  if (profile) await loadProfileApiKey(profile);
 }
 
 function loadApiConfig() {
-  const provider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
-  const prefix = provider ? `AideAgent_${provider}_` : "AideAgent_";
-  const apiKey = _apiKeyCache[provider] || "";
-  // api_format is stored per-provider (same prefix scheme as url/model).
-  // Migration: the legacy global key AideAgent_api_format predates the
-  // per-provider split — fall back to it (and re-save under the new key).
-  let apiFormat = localStorage.getItem(`${prefix}api_format`);
-  if (!apiFormat) {
-    apiFormat = localStorage.getItem(STORAGE_KEYS.API_FORMAT) || "openai";
-    localStorage.setItem(`${prefix}api_format`, apiFormat);
+  const store = ensureApiProfiles();
+  const profile = getActiveApiProfile(store);
+  if (!profile) {
+    return {
+      profileId: "",
+      profileName: "",
+      provider: "",
+      apiUrl: "",
+      model: "",
+      apiKey: "",
+      apiFormat: "openai",
+      contextWindow: "",
+    };
   }
   return {
-    provider,
-    apiUrl: localStorage.getItem(`${prefix}api_url`) || "",
-    model: localStorage.getItem(`${prefix}model`) || "",
-    apiKey,
-    apiFormat,
-    contextWindow: localStorage.getItem(`${prefix}context_window`) || "",
+    profileId: profile.id,
+    profileName: profile.name,
+    provider: profile.provider,
+    apiUrl: profile.apiUrl,
+    model: profile.model,
+    apiKey: _apiKeyCache[profile.id] || "",
+    apiFormat: profile.apiFormat || "openai",
+    contextWindow: profile.contextWindow || "",
   };
 }
 
-async function saveApiConfig(provider, apiUrl, model, apiKey, apiFormat, contextWindow) {
-  const prefix = provider ? `AideAgent_${provider}_` : "AideAgent_";
-  if (apiUrl) localStorage.setItem(`${prefix}api_url`, apiUrl);
-  localStorage.setItem(STORAGE_KEYS.PROVIDER, provider);
-  if (model) localStorage.setItem(`${prefix}model`, model);
-  if (apiFormat) {
-    localStorage.setItem(`${prefix}api_format`, apiFormat);
-    // Keep the legacy global key in sync — session-info / skills-panel still
-    // read it directly, and it doubles as the migration fallback above.
-    localStorage.setItem(STORAGE_KEYS.API_FORMAT, apiFormat);
-  }
-  // Empty string = clear the manual override (auto-detection takes over).
-  if (contextWindow) localStorage.setItem(`${prefix}context_window`, contextWindow);
-  else localStorage.removeItem(`${prefix}context_window`);
-  if (apiKey) {
-    _apiKeyCache[provider] = apiKey;
-    await window.aideagent.saveApiKey(provider, apiKey);
-    // Remove legacy plaintext key
-    localStorage.removeItem(provider ? `AideAgent_api_key_${provider}` : "AideAgent_api_key");
-  }
-}
-
-function clearApiConfig() {
-  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
-}
-
 function hasApiConfig() {
-  const cfg = loadApiConfig();
-  return !!cfg.apiUrl;
+  return !!loadApiConfig().apiUrl;
 }
 
 function updateConfigBanner() {
@@ -1196,6 +1245,150 @@ function updateConfigBanner() {
   } else {
     configBanner.classList.remove("hidden");
   }
+}
+
+function profileDisplayName(profile) {
+  const name = (profile?.name || "").trim();
+  if (name) return name;
+  if (profile?.provider) return providerLabel(profile.provider);
+  return profile?.providerId || t("api.custom_untitled");
+}
+
+/**
+ * Card subtitle shows the provider TYPE, never a mix of provider + model.
+ * The model belongs in the editor/card tooltip.
+ */
+function profileSubtitle(profile) {
+  if (!profile) return "";
+  const title = profileDisplayName(profile);
+  if (profile.provider) {
+    const label = providerLabel(profile.provider);
+    return label === title ? "" : label;
+  }
+  const id = profile.providerId || "";
+  // "custom" is only the fallback id for legacy custom profiles; showing it
+  // next to the 自定义 badge is pure noise.
+  return id && id !== title && id !== "custom" ? id : "";
+}
+
+function profileTooltip(profile) {
+  const parts = [profileDisplayName(profile)];
+  if (profile?.provider) parts.push(providerLabel(profile.provider));
+  if (profile?.model) parts.push(profile.model);
+  if (profile?.apiUrl) parts.push(profile.apiUrl);
+  return parts.join(" · ");
+}
+
+function buildApiProfileCard(profile, activeId) {
+  const active = profile.id === activeId;
+  const card = document.createElement("div");
+  card.className = "api-profile-item";
+  card.dataset.profileId = profile.id;
+  card.classList.toggle("active", active);
+
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "api-profile-main";
+  main.setAttribute("aria-pressed", active ? "true" : "false");
+  main.title = `${profileTooltip(profile)}\n${active ? t("api.profile_is_active") : t("api.profile_activate")}`;
+  main.addEventListener("click", () => { selectApiProfile(profile.id); });
+
+  const dot = document.createElement("span");
+  dot.className = "api-profile-dot";
+  dot.setAttribute("aria-hidden", "true");
+
+  const copy = document.createElement("span");
+  copy.className = "api-profile-copy";
+  const nameRow = document.createElement("span");
+  nameRow.className = "api-profile-name-row";
+  const name = document.createElement("span");
+  name.className = "api-profile-name";
+  name.textContent = profileDisplayName(profile);
+  nameRow.appendChild(name);
+
+  if (!profile.provider) {
+    const customTag = document.createElement("span");
+    customTag.className = "api-profile-tag";
+    customTag.setAttribute("data-i18n", "api.custom_badge");
+    customTag.textContent = t("api.custom_badge");
+    nameRow.appendChild(customTag);
+  }
+  if (active) {
+    const badge = document.createElement("span");
+    badge.className = "api-profile-badge";
+    badge.setAttribute("data-i18n", "api.profile_active");
+    badge.textContent = t("api.profile_active");
+    nameRow.appendChild(badge);
+  }
+  copy.appendChild(nameRow);
+
+  const subtitle = profileSubtitle(profile);
+  if (subtitle) {
+    const sub = document.createElement("span");
+    sub.className = "api-profile-meta";
+    sub.textContent = subtitle;
+    copy.appendChild(sub);
+  }
+
+  main.appendChild(dot);
+  main.appendChild(copy);
+
+  const actions = document.createElement("div");
+  actions.className = "api-profile-actions";
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "api-profile-action";
+  editBtn.setAttribute("data-action", "edit");
+  editBtn.setAttribute("data-i18n", "common.edit");
+  editBtn.textContent = t("common.edit");
+  editBtn.title = t("api.profile_edit");
+  editBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openApiEditor(profile);
+  });
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "api-profile-action danger";
+  deleteBtn.setAttribute("data-action", "delete");
+  deleteBtn.setAttribute("data-i18n", "common.delete");
+  deleteBtn.textContent = t("common.delete");
+  deleteBtn.title = t("api.profile_delete_title");
+  deleteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteApiProfile(profile.id);
+  });
+  actions.appendChild(editBtn);
+  actions.appendChild(deleteBtn);
+
+  card.appendChild(main);
+  card.appendChild(actions);
+  return card;
+}
+
+function renderApiProfileGroup(container, profiles, emptyKey, activeId) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (profiles.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "api-profile-empty";
+    empty.setAttribute("data-i18n", emptyKey);
+    empty.textContent = t(emptyKey);
+    container.appendChild(empty);
+    return;
+  }
+  for (const profile of profiles) {
+    container.appendChild(buildApiProfileCard(profile, activeId));
+  }
+}
+
+/** Render the split provider lists. Clicking a card makes it active. */
+function renderApiProfileList() {
+  if (!apiProfileList) return;
+  const store = ensureApiProfiles();
+  const presets = store.profiles.filter((p) => !!p.provider);
+  const customs = store.profiles.filter((p) => !p.provider);
+  renderApiProfileGroup(apiPresetList, presets, "api.empty_preset", store.activeId);
+  renderApiProfileGroup(apiCustomList, customs, "api.empty_custom", store.activeId);
 }
 
 function getCurrentModelValue() {
@@ -1220,24 +1413,15 @@ function populateModelDropdown(preset, selectedModel) {
     if (selectedModel && !preset.models.some(m => m.id === selectedModel)) {
       const customOpt = document.createElement("option");
       customOpt.value = selectedModel;
-      customOpt.textContent = selectedModel + " (自定义)";
+      customOpt.textContent = selectedModel + t("api.model_custom_suffix");
       customOpt.selected = true;
       settingsModel.insertBefore(customOpt, settingsModel.firstChild);
     }
-    // Add "自定义" option at the bottom
+    // Add "custom model" option at the bottom.
     const customEntry = document.createElement("option");
     customEntry.value = "__custom__";
-    customEntry.textContent = "✏️ 手动输入模型名称...";
+    customEntry.textContent = t("api.model_custom_option");
     settingsModel.appendChild(customEntry);
-    // Toggle to input when "自定义" is selected
-    settingsModel.addEventListener("change", () => {
-      if (settingsModel.value === "__custom__") {
-        settingsModel.style.display = "none";
-        settingsModelInput.style.display = "";
-        settingsModelInput.value = "";
-        settingsModelInput.focus();
-      }
-    });
     settingsModel.style.display = "";
     if (settingsModelInput) settingsModelInput.style.display = "none";
   } else {
@@ -1249,102 +1433,324 @@ function populateModelDropdown(preset, selectedModel) {
   }
 }
 
-function fillSettingsForm() {
+function defaultPresetKey() {
+  if (PROVIDER_PRESETS.deepseek) return "deepseek";
+  return Object.keys(PROVIDER_PRESETS).find((key) => !!key) || "";
+}
+
+/** Apply editor title/tab/row visibility for the current mode + kind. */
+function setApiEditorChrome() {
+  const editing = _apiEditorMode === "edit";
+  const custom = _apiEditorKind === "custom";
+  apiEditorTabs?.classList.toggle("hidden", editing);
+  apiEditorTabs?.querySelectorAll("[data-api-kind]").forEach((el: any) => {
+    const active = el.dataset.apiKind === _apiEditorKind;
+    el.classList.toggle("active", active);
+    el.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  settingsProviderRow?.classList.toggle("hidden", custom);
+  settingsProviderIdRow?.classList.toggle("hidden", !custom);
+  // Provider TYPE is immutable after creation. This prevents accidental mixes
+  // such as a profile named "llama.cpp" silently pointing at DeepSeek.
+  if (settingsProvider) settingsProvider.disabled = editing;
+  const providerHint = settingsProviderRow?.querySelector(".form-hint");
+  if (providerHint) {
+    const hintKey = editing ? "api.provider_locked_hint" : "api.provider_select_hint";
+    providerHint.setAttribute("data-i18n", hintKey);
+    providerHint.textContent = t(hintKey);
+  }
+
+  // Editor placeholders depend on the provider type.
+  const namePlaceholderKey = custom ? "api.profile_name_placeholder_custom" : "api.profile_name_placeholder_preset";
+  if (settingsProfileName) {
+    settingsProfileName.setAttribute("data-i18n-placeholder", namePlaceholderKey);
+    settingsProfileName.placeholder = t(namePlaceholderKey);
+  }
+  const urlPlaceholderKey = custom ? "api.url_placeholder_custom" : "api.url_placeholder_preset";
+  if (settingsUrl) {
+    settingsUrl.setAttribute("data-i18n-placeholder", urlPlaceholderKey);
+    settingsUrl.placeholder = t(urlPlaceholderKey);
+  }
+  const formatHint = settingsFormat?.closest(".form-row")?.querySelector(".form-hint");
+  if (formatHint) {
+    const formatHintKey = custom ? "api.format_hint_custom" : "api.format_hint";
+    formatHint.setAttribute("data-i18n", formatHintKey);
+    formatHint.textContent = t(formatHintKey);
+  }
+
+  const kindKey = custom ? "custom" : "preset";
+  const action = editing ? "edit" : "add";
+  const titleKey = `api.editor_${action}_${kindKey}`;
+  const hintKey = `${titleKey}_hint`;
+  if (apiEditorTitle) {
+    apiEditorTitle.setAttribute("data-i18n", titleKey);
+    apiEditorTitle.textContent = t(titleKey);
+  }
+  if (apiEditorSubtitle) {
+    apiEditorSubtitle.setAttribute("data-i18n", hintKey);
+    apiEditorSubtitle.textContent = t(hintKey);
+  }
+}
+
+function fillApiEditorFields(profile: ApiProfile | null) {
   _fillingForm = true;
   try {
-    const cfg = loadApiConfig();
-    if (settingsProvider) settingsProvider.value = cfg.provider;
-    const preset = PROVIDER_PRESETS[cfg.provider];
-    if (settingsUrl) settingsUrl.value = cfg.apiUrl || (preset?.url ?? "");
-    if (settingsFormat) settingsFormat.value = cfg.apiFormat || preset?.format || "openai";
-    if (settingsModel || settingsModelInput) {
-      const selectedModel = cfg.model || preset?.model || "";
-      populateModelDropdown(preset, selectedModel);
+    const kind = _apiEditorKind;
+    const presetKey = kind === "preset" ? (profile?.provider || defaultPresetKey()) : "";
+    const preset = PROVIDER_PRESETS[presetKey];
+
+    if (settingsProvider) settingsProvider.value = presetKey;
+    if (settingsProviderId) settingsProviderId.value = profile?.providerId || "";
+    if (settingsProfileName) {
+      settingsProfileName.value = profile?.name || (kind === "preset" ? providerLabel(presetKey) : "");
     }
+    if (settingsUrl) settingsUrl.value = profile?.apiUrl || preset?.url || "";
+    if (settingsFormat) settingsFormat.value = profile?.apiFormat || preset?.format || "openai";
+    if (settingsModel || settingsModelInput) {
+      populateModelDropdown(preset || null, profile?.model || preset?.model || "");
+    }
+    if (settingsContextWindow) settingsContextWindow.value = profile?.contextWindow || "";
+
+    _nameWasAuto = !profile
+      || !profile.name
+      || (!!profile.provider && profile.name === providerLabel(profile.provider));
+
     if (settingsKey) {
-      settingsKey.value = cfg.apiKey;
-      // Fallback: cache may be empty if initApiKeys is still in flight (or
-      // this provider's key was never loaded). Pull it from the encrypted
-      // store so the field isn't blank. Works for the custom provider ("")
-      // too — main process maps "" → "_custom".
-      if (!cfg.apiKey) {
-        window.aideagent.loadApiKey(cfg.provider).then(k => {
-          if (k) {
-            _apiKeyCache[cfg.provider] = k;
-            // Only fill if the user hasn't switched provider in the meantime.
-            if ((settingsProvider?.value || "") === cfg.provider) settingsKey.value = k;
+      const cached = profile ? (_apiKeyCache[profile.id] || "") : "";
+      settingsKey.value = cached;
+      settingsKey.placeholder = cached ? t("api.key_saved_placeholder") : "sk-...";
+      if (profile && !cached) {
+        loadProfileApiKey(profile).then((key) => {
+          if (!key || _apiEditorMode !== "edit" || _selectedProfileId !== profile.id) return;
+          _apiKeyCache[profile.id] = key;
+          if (settingsKey && !settingsKey.value) {
+            settingsKey.value = key;
+            settingsKey.placeholder = t("api.key_saved_placeholder");
           }
         }).catch(() => {});
       }
-    }
-    if (settingsContextWindow) settingsContextWindow.value = cfg.contextWindow || "";
-    // Load search provider + Tavily key
-    if (settingsSearchProvider) {
-      const saved = localStorage.getItem("AideAgent_search_provider") || "tavily";
-      settingsSearchProvider.value = saved;
-      if (tavilyKeyRow) tavilyKeyRow.style.display = saved === "tavily" ? "block" : "none";
-    }
-    if (settingsTavilyKey) {
-      // Try encrypted store first, then env var
-      window.aideagent.loadApiKey("tavily").then(k => {
-        if (k) { settingsTavilyKey.value = k; return; }
-        // Auto-detect from environment
-        window.aideagent.getEnvVar("TAVILY_API_KEY").then(envKey => {
-          if (envKey) settingsTavilyKey.value = envKey;
-        }).catch(() => {});
-      }).catch(() => {});
     }
   } finally {
     _fillingForm = false;
   }
 }
 
-// Tracks the provider currently shown in the settings form, so that when the
-// user switches providers we can stash any not-yet-saved key they typed for
-// the outgoing provider (a memory-only draft — nothing hits disk until Save).
-// Without this, typing a custom key and switching away wiped the input.
-let _activeSettingsProvider = localStorage.getItem(STORAGE_KEYS.PROVIDER) || "";
+function hideApiEditor() {
+  apiEditor?.classList.add("hidden");
+  _apiEditorMode = "new";
+  _selectedProfileId = null;
+  apiEditorTabs?.classList.remove("hidden");
+}
+
+/**
+ * Open the add/edit panel. `profile = null` starts a new provider of `kind`.
+ * Editing keeps the profile's existing type; switching types requires a new
+ * provider so built-in and custom configs never get mixed by accident.
+ */
+function openApiEditor(profile: ApiProfile | null = null, kind?: "preset" | "custom") {
+  _apiEditorMode = profile ? "edit" : "new";
+  _apiEditorKind = profile
+    ? (profile.provider ? "preset" : "custom")
+    : (kind === "custom" ? "custom" : "preset");
+  _selectedProfileId = profile?.id || null;
+  if (settingsStatus) settingsStatus.className = "settings-status hidden";
+  setApiEditorChrome();
+  fillApiEditorFields(profile);
+  apiEditor?.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    apiEditor?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!profile) {
+      if (_apiEditorKind === "custom") settingsProviderId?.focus();
+      else settingsProfileName?.focus();
+    }
+  });
+}
+
+function closeApiEditor() {
+  hideApiEditor();
+  if (settingsStatus) settingsStatus.className = "settings-status hidden";
+  renderApiProfileList();
+}
+
+/** Tab switch while adding. Keeps the key/context, resets type-specific fields. */
+function switchApiEditorKind(kind: "preset" | "custom") {
+  if (_apiEditorMode !== "new" || kind === _apiEditorKind) return;
+  const previousName = (settingsProfileName?.value || "").trim();
+  const nameWasAuto = _nameWasAuto;
+  _apiEditorKind = kind;
+  setApiEditorChrome();
+  if (settingsStatus) settingsStatus.className = "settings-status hidden";
+
+  _fillingForm = true;
+  try {
+    if (kind === "preset") {
+      const presetKey = defaultPresetKey();
+      const preset = PROVIDER_PRESETS[presetKey];
+      if (settingsProvider) settingsProvider.value = presetKey;
+      if (settingsUrl) settingsUrl.value = preset?.url || "";
+      if (settingsFormat) settingsFormat.value = preset?.format || "openai";
+      if (settingsModel || settingsModelInput) populateModelDropdown(preset || null, preset?.model || "");
+      if (settingsProviderId) settingsProviderId.value = "";
+      if (settingsProfileName) {
+        settingsProfileName.value = (nameWasAuto || !previousName) ? providerLabel(presetKey) : previousName;
+      }
+      _nameWasAuto = nameWasAuto || !previousName;
+    } else {
+      if (settingsUrl) settingsUrl.value = "";
+      if (settingsFormat) settingsFormat.value = "openai";
+      if (settingsModel || settingsModelInput) populateModelDropdown(null, "");
+      if (settingsProviderId) settingsProviderId.value = "";
+      if (settingsProfileName && nameWasAuto) settingsProfileName.value = "";
+      _nameWasAuto = nameWasAuto;
+    }
+  } finally {
+    _fillingForm = false;
+  }
+
+  requestAnimationFrame(() => {
+    if (kind === "custom") settingsProviderId?.focus();
+    else settingsProfileName?.focus();
+  });
+}
+
+/** Search provider/key are global, so they save independently of a profile. */
+function loadSearchSettings() {
+  if (settingsSearchProvider) {
+    const saved = localStorage.getItem("AideAgent_search_provider") || "tavily";
+    settingsSearchProvider.value = saved;
+    if (tavilyKeyRow) tavilyKeyRow.style.display = saved === "tavily" ? "block" : "none";
+  }
+  if (settingsTavilyKey) {
+    window.aideagent.loadApiKey("tavily").then(k => {
+      if (k) { settingsTavilyKey.value = k; return; }
+      window.aideagent.getEnvVar("TAVILY_API_KEY").then(envKey => {
+        if (envKey) settingsTavilyKey.value = envKey;
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+}
+
+function showSettingsStatus(message: string, kind: "success" | "error" = "success", timeout = 3000) {
+  if (!settingsStatus) return;
+  const seq = ++_settingsStatusSeq;
+  settingsStatus.textContent = message;
+  settingsStatus.className = `settings-status ${kind}`;
+  if (timeout > 0) {
+    setTimeout(() => {
+      if (seq === _settingsStatusSeq) settingsStatus.className = "settings-status hidden";
+    }, timeout);
+  }
+}
+
+async function saveSearchSettings() {
+  try {
+    const provider = settingsSearchProvider?.value || "tavily";
+    localStorage.setItem("AideAgent_search_provider", provider);
+    await window.aideagent.saveApiKey("_search_provider", provider);
+    const tavilyKey = (settingsTavilyKey?.value || "").trim();
+    if (tavilyKey) await window.aideagent.saveApiKey("tavily", tavilyKey);
+    showToast(t("api.search_saved"));
+  } catch (e) {
+    showToast(t("api.search_save_failed", { error: e?.message || String(e) }), "error");
+  }
+}
+
+function syncProfileToWechat(profile, apiKey) {
+  if (!profile?.apiUrl || !apiKey) return;
+  window.aideagent.syncApiToWechat?.({
+    apiUrl: profile.apiUrl,
+    apiKey,
+    model: profile.model,
+    apiFormat: profile.apiFormat || "openai",
+  }).catch(() => {});
+}
+
+/** Switch the active provider immediately. */
+async function selectApiProfile(id) {
+  if (apiEditor && !apiEditor.classList.contains("hidden")) hideApiEditor();
+  const store = ensureApiProfiles();
+  const profile = getApiProfile(store, id);
+  if (!profile) return;
+  if (!setActiveApiProfile(store, id)) return;
+  if (!saveApiProfileStore(store)) {
+    showSettingsStatus(t("api.profile_save_failed"), "error", 0);
+    return;
+  }
+
+  renderApiProfileList();
+  if (settingsStatus) settingsStatus.className = "settings-status hidden";
+  updateConfigBanner();
+  updateInfoBar();
+  if (cwdDisplay) cwdDisplay.textContent = providerLabel(profile.provider);
+  showToast(t("api.profile_activated", { name: profileDisplayName(profile) }));
+
+  const key = await loadProfileApiKey(profile);
+  if (getActiveApiProfile(ensureApiProfiles())?.id !== profile.id) return;
+  syncProfileToWechat(profile, key);
+}
+
+async function deleteApiProfile(id) {
+  const store = ensureApiProfiles();
+  const profile = getApiProfile(store, id);
+  if (!profile) return;
+  const name = profileDisplayName(profile);
+  if (!await showConfirmDialog(t("api.profile_delete_confirm", { name }))) return;
+
+  // Remove the encrypted key first. If this fails, keep the profile so the
+  // user can retry instead of leaving an orphaned secret in the keystore.
+  try {
+    const result = await window.aideagent.deleteApiKey?.(profile.id);
+    if (result?.error) throw new Error(result.error);
+  } catch (e) {
+    showToast(t("api.profile_delete_failed", { error: e?.message || String(e) }), "error");
+    return;
+  }
+
+  delete _apiKeyCache[profile.id];
+  // Migrated profiles also own the old plaintext key slot. New profiles use a
+  // unique `prof_*` id and must not touch another profile's legacy key.
+  const legacyId = profile.provider || "_custom";
+  if (profile.id === legacyId) {
+    localStorage.removeItem(profile.provider ? `AideAgent_api_key_${profile.provider}` : "AideAgent_api_key");
+  }
+  const wasActive = store.activeId === id;
+  removeApiProfile(store, id);
+  if (!saveApiProfileStore(store)) {
+    showToast(t("api.profile_save_failed"), "error");
+    return;
+  }
+
+  if (_selectedProfileId === id) hideApiEditor();
+  const next = getActiveApiProfile(store);
+  renderApiProfileList();
+  updateConfigBanner();
+  updateInfoBar();
+  if (cwdDisplay) cwdDisplay.textContent = next ? providerLabel(next.provider) : t("misc.unconfigured");
+
+  if (wasActive && next) {
+    loadProfileApiKey(next).then((key) => {
+      if (getActiveApiProfile(ensureApiProfiles())?.id === next.id) syncProfileToWechat(next, key);
+    }).catch(() => {});
+  }
+  showToast(t("api.profile_deleted", { name }));
+}
 
 function onProviderChange() {
   const key = settingsProvider?.value || "";
-  // Stash the outgoing provider's unsaved key input as a draft so switching
-  // away and back doesn't lose what the user typed.
-  if (settingsKey && key !== _activeSettingsProvider) {
-    const draft = settingsKey.value.trim();
-    if (draft) _apiKeyCache[_activeSettingsProvider] = draft;
-  }
-  _activeSettingsProvider = key;
+  if (!key) return;
   const preset = PROVIDER_PRESETS[key];
-  const prefix = key ? `AideAgent_${key}_` : "AideAgent_";
-  const savedUrl = localStorage.getItem(`${prefix}api_url`) || "";
-  const savedModel = localStorage.getItem(`${prefix}model`) || "";
-  // Protocol: saved per-provider value wins; otherwise preselect the
-  // preset's format (user can still override before saving).
-  if (settingsFormat) {
-    settingsFormat.value = localStorage.getItem(`${prefix}api_format`) || preset?.format || "openai";
+
+  if (settingsUrl) settingsUrl.value = preset?.url || "";
+  if (settingsFormat) settingsFormat.value = preset?.format || "openai";
+  populateModelDropdown(preset, preset?.model || "");
+  if (preset && preset.models.length === 0 && preset.url) {
+    setTimeout(fetchModels, 300);
   }
-  if (preset && key) {
-    settingsUrl.value = savedUrl || preset.url;
-    populateModelDropdown(preset, savedModel || preset.model);
-    if (preset.models.length === 0 && preset.url) {
-      setTimeout(fetchModels, 300);
-    }
-  } else {
-    settingsUrl.value = savedUrl;
-    populateModelDropdown(null, savedModel);
-  }
-  // Context-window override is stored per-provider, same prefix scheme.
-  if (settingsContextWindow) settingsContextWindow.value = localStorage.getItem(`${prefix}context_window`) || "";
-  // Load from encrypted key store (not localStorage — keys were migrated).
-  // No `&& key` guard: the custom provider ("") has a real stored key too —
-  // the main process maps "" → "_custom" in the keystore.
-  if (settingsKey) {
-    settingsKey.value = _apiKeyCache[key] || "";
-    if (!_apiKeyCache[key]) {
-      window.aideagent.loadApiKey(key).then(k => {
-        if (k) { _apiKeyCache[key] = k; settingsKey.value = k; }
-      }).catch(() => {});
-    }
+
+  // Only replace an auto-generated name. A name the user typed is preserved.
+  if (settingsProfileName && (_nameWasAuto || !settingsProfileName.value.trim())) {
+    settingsProfileName.value = providerLabel(key);
+    _nameWasAuto = true;
   }
 }
 
@@ -1381,30 +1787,46 @@ function normalizeResponsesUrl(url) {
 }
 
 async function saveSettingsForm() {
-  const provider = settingsProvider?.value || "";
+  const isCustom = _apiEditorKind === "custom";
+  const provider = isCustom ? "" : (settingsProvider?.value || "");
+  const preset = PROVIDER_PRESETS[provider];
+  const providerId = isCustom
+    ? normalizeProviderId(settingsProviderId?.value)
+    : provider;
+  const name = (settingsProfileName?.value || "").trim();
   const rawUrl = (settingsUrl?.value || "").trim();
   const model = getCurrentModelValue().trim();
   const apiKey = (settingsKey?.value || "").trim();
   const contextWindow = (settingsContextWindow?.value || "").trim();
-  const preset = PROVIDER_PRESETS[provider];
-  // Protocol comes from the dropdown; the preset only seeds the default
-  // (set on provider change / form fill) — the user can override it.
+  // Protocol comes from the dropdown; the preset only seeds the default.
   const apiFormat = settingsFormat?.value || preset?.format || "openai";
 
+  if (!isCustom && !provider) {
+    showSettingsStatus(t("api.provider_required"), "error", 0);
+    return;
+  }
+  if (isCustom && !providerId) {
+    showSettingsStatus(t("api.provider_id_required"), "error", 0);
+    return;
+  }
+  if (isCustom && !isValidProviderId(providerId)) {
+    showSettingsStatus(t("api.provider_id_invalid"), "error", 0);
+    return;
+  }
   if (!rawUrl) {
-    if (settingsStatus) {
-      settingsStatus.textContent = t("api.fill_url");
-      settingsStatus.className = "settings-status error";
-    }
+    showSettingsStatus(t("api.fill_url"), "error", 0);
+    return;
+  }
+  // Manual context-window override: empty (auto) or a sane integer.
+  if (contextWindow && (!/^\d+$/.test(contextWindow) || Number(contextWindow) < 4096)) {
+    showSettingsStatus(t("api.context_window_invalid"), "error", 0);
     return;
   }
 
-  // Manual context-window override: empty (auto) or a sane integer.
-  if (contextWindow && (!/^\d+$/.test(contextWindow) || Number(contextWindow) < 4096)) {
-    if (settingsStatus) {
-      settingsStatus.textContent = t("api.context_window_invalid");
-      settingsStatus.className = "settings-status error";
-    }
+  const store = ensureApiProfiles();
+  const existing = getApiProfile(store, _selectedProfileId);
+  if (isCustom && store.profiles.some((p) => p.id !== existing?.id && p.providerId === providerId)) {
+    showSettingsStatus(t("api.provider_id_duplicate"), "error", 0);
     return;
   }
 
@@ -1413,33 +1835,60 @@ async function saveSettingsForm() {
     : normalizeApiUrl(rawUrl);
 
   // Show the normalized URL to user
-  if (apiUrl !== rawUrl) {
-    settingsUrl.value = apiUrl;
+  if (apiUrl !== rawUrl && settingsUrl) settingsUrl.value = apiUrl;
+
+  const profile = createApiProfile({
+    id: existing?.id,
+    name: name || (isCustom ? providerId : providerLabel(provider)),
+    provider,
+    providerId,
+    apiUrl,
+    model,
+    apiFormat,
+    contextWindow,
+    createdAt: existing?.createdAt,
+  }, providerLabel);
+
+  const wasActive = !!existing && store.activeId === existing.id;
+  const shouldActivate = !existing || wasActive || !store.activeId;
+  upsertApiProfile(store, profile);
+  if (shouldActivate) setActiveApiProfile(store, profile.id);
+  if (!saveApiProfileStore(store)) {
+    showSettingsStatus(t("api.profile_save_failed"), "error", 0);
+    return;
+  }
+  _selectedProfileId = profile.id;
+
+  // Empty key means "keep the existing secret" — deleting a provider is the
+  // explicit path that removes a key.
+  let effectiveKey = apiKey || _apiKeyCache[profile.id] || "";
+  if (!effectiveKey && existing) effectiveKey = await loadProfileApiKey(existing);
+  if (apiKey) {
+    try {
+      await window.aideagent.saveApiKey(profile.id, apiKey);
+      _apiKeyCache[profile.id] = apiKey;
+      effectiveKey = apiKey;
+      // Only a migrated profile owns the old plaintext key slot.
+      if (profile.id === (profile.provider || "_custom")) {
+        const legacyKeyId = profile.provider ? `AideAgent_api_key_${profile.provider}` : "AideAgent_api_key";
+        localStorage.removeItem(legacyKeyId);
+      }
+    } catch (e) {
+      showSettingsStatus(t("api.profile_key_save_failed", { error: e?.message || String(e) }), "error", 0);
+      return;
+    }
   }
 
-  await saveApiConfig(provider, apiUrl, model, apiKey, apiFormat, contextWindow);
-  // Save search provider preference (localStorage for UI + config file for main process)
-  if (settingsSearchProvider) {
-    localStorage.setItem("AideAgent_search_provider", settingsSearchProvider.value);
-    window.aideagent.saveApiKey("_search_provider", settingsSearchProvider.value).catch(() => {});
+  const isActiveNow = getActiveApiProfile(store)?.id === profile.id;
+  hideApiEditor();
+  renderApiProfileList();
+  if (isActiveNow) {
+    syncProfileToWechat(profile, effectiveKey);
+    updateInfoBar();
+    if (cwdDisplay) cwdDisplay.textContent = providerLabel(profile.provider);
   }
-  // Save Tavily key if provided
-  const tavilyKey = (settingsTavilyKey?.value || "").trim();
-  if (tavilyKey) {
-    await window.aideagent.saveApiKey("tavily", tavilyKey);
-  }
-  // Sync to WeChat bot config so WeChat uses updated API
-  window.aideagent.syncApiToWechat?.({ apiUrl, apiKey, model, apiFormat }).catch(() => {});
   updateConfigBanner();
-  updateInfoBar();
-  if (settingsStatus) {
-    settingsStatus.textContent = t("api.saved", { name: preset?.name || provider || t("provider.custom") });
-    settingsStatus.className = "settings-status success";
-  }
-  // Show connection status in sidebar
-  const providerLabel = preset?.name || provider || apiUrl.replace(/https?:\/\//, "").split("/")[0];
-  if (cwdDisplay) cwdDisplay.textContent = providerLabel;
-  setTimeout(() => settingsStatus.className = "settings-status hidden", 3000);
+  showToast(t("api.profile_saved", { name: profileDisplayName(profile) }));
 }
 
 /* ── Fetch Models ─────────────────────────────────────── */
@@ -1450,7 +1899,6 @@ async function fetchModels() {
   btn.classList.add("fetching");
   btn.textContent = t("api.fetching");
 
-  const settingsStatus = document.getElementById("settings-status");
   const rawUrl = (document.getElementById("settings-url")?.value || "").trim();
   const apiKey = (document.getElementById("settings-key")?.value || "").trim();
   const apiFormat = settingsFormat?.value || "openai";
@@ -1466,10 +1914,7 @@ async function fetchModels() {
     .replace(/\/+$/, "");
 
   if (!baseUrl) {
-    if (settingsStatus) {
-      settingsStatus.textContent = t("api.fill_url");
-      settingsStatus.className = "settings-status error";
-    }
+    showToast(t("api.fill_url"), "error");
     btn.disabled = false;
     btn.classList.remove("fetching");
     btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M21 3v5h-5"/></svg> ' + t("api.fetch_models_btn");
@@ -1510,22 +1955,19 @@ async function fetchModels() {
       // Add custom entry at bottom
       const customEntry = document.createElement("option");
       customEntry.value = "__custom__";
-      customEntry.textContent = "✏️ 手动输入模型名称...";
+      customEntry.textContent = t("api.model_custom_option");
       settingsModel.appendChild(customEntry);
       if (models.length > 0) settingsModel.value = models[0].id;
     }
     if (settingsModelInput) settingsModelInput.style.display = "none";
-    if (settingsStatus) {
-      settingsStatus.textContent = t("api.fetch_success", { count: models.length });
-      settingsStatus.className = "settings-status success";
-    }
+    showToast(t("api.fetch_success", { count: models.length }), "success");
   } else {
-    if (settingsStatus) {
-      settingsStatus.textContent = errors.length > 0
+    showToast(
+      errors.length > 0
         ? t("api.fetch_error", { detail: errors.join(" | ") })
-        : t("api.fetch_empty");
-      settingsStatus.className = "settings-status error";
-    }
+        : t("api.fetch_empty"),
+      "error",
+    );
   }
 
   btn.disabled = false;
@@ -1560,6 +2002,14 @@ async function submitQuery() {
   if (runtime !== "opencode" && !cfg.apiUrl) {
     addErrorMessage(t("api.config_first"));
     return;
+  }
+
+  // Startup/profile-switch race: the encrypted key is loaded asynchronously.
+  // Resolve it here so the first query after a switch still carries the key.
+  if (cfg.profileId && !cfg.apiKey) {
+    const store = ensureApiProfiles();
+    const profile = getApiProfile(store, cfg.profileId);
+    if (profile) cfg.apiKey = await loadProfileApiKey(profile);
   }
 
   // Fallback: use currently selected model in settings dropdown if not yet persisted
@@ -3016,17 +3466,44 @@ settingsModal.addEventListener("click", (e) => {
 /* ── Event Listeners ──────────────────────────────────── */
 
 // Provider dropdown change — auto-fill URL + model (skip during programmatic fill)
-let _fillingForm = false;
 settingsProvider?.addEventListener("change", () => { if (!_fillingForm) onProviderChange(); });
 
-// Fetch models button
-document.getElementById("settings-fetch-models-btn")?.addEventListener("click", fetchModels);
+// Model preset dropdown → manual input mode. Bound once (it used to be added
+// on every populateModelDropdown call, stacking duplicate listeners).
+settingsModel?.addEventListener("change", () => {
+  if (settingsModel.value !== "__custom__") return;
+  settingsModel.style.display = "none";
+  if (settingsModelInput) {
+    settingsModelInput.style.display = "";
+    settingsModelInput.value = "";
+    settingsModelInput.focus();
+  }
+});
 
-// Settings save
+// Provider editor actions
+apiProfileNewBtn?.addEventListener("click", () => openApiEditor(null, "preset"));
+settingsApiCancel?.addEventListener("click", closeApiEditor);
 settingsSaveBtn?.addEventListener("click", saveSettingsForm);
+apiEditorTabs?.addEventListener("click", (e) => {
+  const tab = (e.target as HTMLElement | null)?.closest("[data-api-kind]") as HTMLElement | null;
+  const kind = tab?.dataset.apiKind;
+  if (kind === "preset" || kind === "custom") switchApiEditorKind(kind);
+});
+settingsProfileName?.addEventListener("input", () => {
+  _nameWasAuto = !(settingsProfileName.value || "").trim();
+});
+settingsProviderId?.addEventListener("input", () => {
+  if (settingsProviderId) settingsProviderId.value = normalizeProviderId(settingsProviderId.value);
+});
+
+// Search settings save independently from the provider editor.
+apiSearchSaveBtn?.addEventListener("click", saveSearchSettings);
 settingsSearchProvider?.addEventListener("change", () => {
   if (tavilyKeyRow) tavilyKeyRow.style.display = settingsSearchProvider.value === "tavily" ? "block" : "none";
 });
+
+// Fetch models button
+document.getElementById("settings-fetch-models-btn")?.addEventListener("click", fetchModels);
 
 // Delete all sessions
 const deleteAllBtn = $("#delete-all-sessions-btn");
@@ -3052,9 +3529,11 @@ deleteAllBtn?.addEventListener("click", async () => {
   }
 });
 
-// Settings modal: fill form when opened
+// Settings modal: refresh the provider list when opened
 settingsBtn?.addEventListener("click", () => {
-  fillSettingsForm();
+  hideApiEditor();
+  renderApiProfileList();
+  loadSearchSettings();
   settingsPreview.src = sidebarAvatar.src;
   settingsStatus.className = "settings-status hidden";
   switchSettingsTab("api"); // Always open to API config first
@@ -3146,6 +3625,9 @@ initRuntimeSelector();
 if (typeof window.__refreshOpencodeModels === "function") {
   window.__refreshOpencodeModels();
 }
+// Migrate the pre-profile config (one slot per provider) before the initial
+// session-info snapshot so the main process never sees a half-migrated state.
+ensureApiProfiles();
 updateConfigBanner();
 // ── 底部带滚轮转发 ──
 // #input-area 是 #chat-area(overflow:hidden) 内的普通块：光标停在输入框或
@@ -3185,7 +3667,7 @@ if (cfg.apiUrl && cfg.apiKey) {
   window.aideagent.syncApiToWechat?.({ apiUrl: cfg.apiUrl, apiKey: cfg.apiKey, model: cfg.model, apiFormat: cfg.apiFormat || "openai" }).catch(() => {});
 }
 if (cfg.provider) {
-  if (cwdDisplay) cwdDisplay.textContent = cfg.provider;
+  if (cwdDisplay) cwdDisplay.textContent = providerLabel(cfg.provider);
 } else if (cfg.apiUrl) {
   if (cwdDisplay) cwdDisplay.textContent = cfg.apiUrl.replace(/https?:\/\//, "").split("/")[0];
 } else {
