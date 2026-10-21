@@ -495,6 +495,13 @@ const translations = {
     "skin.glass_desc": "磨砂半透明卡片与虚化背景，切换后会推荐暗色主题",
     "skin.brutal": "新粗野主义",
     "skin.brutal_desc": "粗黑描边、硬位移投影、直角卡片，切换后会推荐高对比主题",
+    "skin.paper": "暖纸风",
+    "skin.paper_desc": "米白纸感底色与暖色描边，长对话最舒适，切换后推荐暖米主题",
+    "skin.neu": "拟态",
+    "skin.neu_desc": "同色浮雕卡片与内凹输入区，切换后推荐冷灰主题（阴影更有层次）",
+    "skin.terminal": "复古终端",
+    "skin.terminal_desc": "磷光绿 + 琥珀强调 + 扫描线，配色强制为深色 CRT 终端",
+    "skin.theme_locked": "该风格使用固定配色，下方主题设置暂不生效；切换回其他风格即可恢复",
 
     // ── HUD 垂直扫描线 ──
     "hud.vscan_label": "垂直扫描线",
@@ -1279,6 +1286,13 @@ const translations = {
     "skin.glass_desc": "Frosted translucent cards over a blurred backdrop; suggests a dark theme",
     "skin.brutal": "Neo-brutalism",
     "skin.brutal_desc": "Heavy outlines, hard offset shadows, square corners; suggests a high-contrast theme",
+    "skin.paper": "Warm Paper",
+    "skin.paper_desc": "Rice-paper tones and warm borders; easiest on the eyes for long chats, suggests the cream theme",
+    "skin.neu": "Neumorphism",
+    "skin.neu_desc": "Same-tone embossed cards and a recessed input well; suggests the cool gray theme",
+    "skin.terminal": "Retro Terminal",
+    "skin.terminal_desc": "Phosphor green, amber accents and scanlines; forces a dark CRT palette",
+    "skin.theme_locked": "This style uses a fixed palette; the theme settings below are inactive. Switch to another style to restore them.",
 
     // ── HUD Vertical Scan Line ──
     "hud.vscan_label": "Vertical Scan Line",

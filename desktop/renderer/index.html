@@ -796,8 +796,11 @@ brew install opencode</pre>
               <div class="form-row" style="margin-top:10px;">
                 <div id="skin-grid" class="skin-grid"></div>
                 <p class="hint" style="margin-top:10px;" data-i18n="skin.hint">风格决定界面骨架与质感；颜色仍由下方主题控制，可自由组合</p>
+                <p class="hint skin-theme-note" data-i18n="skin.theme_locked">该风格使用固定配色，下方主题设置暂不生效；切换回其他风格即可恢复</p>
               </div>
 
+              <!-- 主题外观（terminal 皮肤会整体禁用此区域，见 style.css） -->
+              <div id="theme-controls">
               <h3 class="section-title" style="margin-top:22px;" data-i18n="bg.title">主题外观</h3>
 
               <div class="form-row" style="margin-top:14px;">
@@ -868,6 +871,7 @@ brew install opencode</pre>
               <div style="margin-top:18px;display:flex;justify-content:flex-end;">
                 <button id="bg-reset-btn" class="btn" data-i18n="bg.reset">恢复默认</button>
               </div>
+              </div><!-- /#theme-controls -->
             </div>
           </div>
 

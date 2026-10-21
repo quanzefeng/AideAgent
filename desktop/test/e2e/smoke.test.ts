@@ -97,7 +97,7 @@ const openAppearance = async (window: any) => {
 test("settings: appearance tab shows 7 preset swatches", async () => {
   const { app, window } = await launchApp();
   await openAppearance(window);
-  await expect(window.locator(".bg-preset-swatch")).toHaveCount(7);
+  await expect(window.locator("#bg-preset-grid .bg-preset-swatch")).toHaveCount(7);
   await closeApp(app);
 });
 
@@ -127,6 +127,10 @@ test("2D color picker: click → preview → apply writes --bg", async () => {
   const square = window.locator("#bg-color-square");
   await expect(square).toBeVisible();
 
+  // 外观面板新增皮肤卡片后变高，色板可能滚出可视区；
+  // 先滚到可见位置，否则 mouse.click 的坐标会落在视口外。
+  await square.scrollIntoViewIfNeeded();
+  await window.waitForTimeout(200);
   const box = await square.boundingBox();
   if (!box) throw new Error("bg-color-square has no bounding box");
   await window.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.2);
@@ -184,33 +188,39 @@ test("cyberpunk preset applies dark bg and neon accent", async () => {
   await closeApp(app);
 });
 
-// ── 8. HUD overlay：默认注入且不拦截交互 ────────────
-test("hud overlay injects by default and ignores pointer events", async () => {
+// ── 8. 默认皮肤 = 拟态；HUD 覆盖层默认关闭 ────────
+test("default skin is neu and the HUD overlay is off; hud skin injects it", async () => {
   const { app, window } = await launchApp();
 
-  const overlay = window.locator("#hud-overlay");
-  await expect(overlay).toBeVisible();
-  const corner = await window.locator(".hud-corner-tl").count();
-  expect(corner).toBe(1);
+  expect(await window.evaluate(() => document.documentElement.dataset.skin)).toBe("neu");
+  expect(await window.locator("#hud-overlay").isVisible()).toBe(false);
 
+  // 显式切到 hud 皮肤：覆盖层注入且不拦截交互
+  await window.evaluate(() => localStorage.setItem("AideAgent_skin", "hud"));
+  await window.reload();
+  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+  await window.waitForTimeout(500);
+
+  await expect(window.locator("#hud-overlay")).toBeVisible();
+  expect(await window.locator(".hud-corner-tl").count()).toBe(1);
   const pointerEvents = await window.evaluate(() =>
     getComputedStyle((document as any)!.getElementById("hud-overlay")).pointerEvents
   );
   expect(pointerEvents).toBe("none");
-
-  // 默认开启（localStorage 未显式关闭）
   const on = await window.evaluate(() => document.documentElement.dataset.hud);
   expect(on).toBe("on");
   await closeApp(app);
 });
 
-// ── 9. HUD 开关：data-hud="off" 隐藏覆盖层 ──────────
-test("hud overlay hides when data-hud is off", async () => {
+// ── 9. HUD 随皮肤联动：非 hud 皮肤关闭覆盖层 ──────────
+test("hud overlay hides when the active skin is not hud", async () => {
   const { app, window } = await launchApp();
 
+  // 旧 hud 键故意写成 on：新的皮肤模型以 AideAgent_skin 为准，
+  // 启动时应关闭覆盖层并把旧键对齐为 off（防止陈旧键残留 HUD）。
   await window.evaluate(() => {
-    localStorage.setItem("AideAgent_hud", "off");
-    document.documentElement.dataset.hud = "off";
+    localStorage.setItem("AideAgent_skin", "classic");
+    localStorage.setItem("AideAgent_hud", "on");
   });
   await window.reload();
   await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
@@ -218,6 +228,8 @@ test("hud overlay hides when data-hud is off", async () => {
 
   const visible = await window.locator("#hud-overlay").isVisible();
   expect(visible).toBe(false);
+  const hud = await window.evaluate(() => document.documentElement.dataset.hud);
+  expect(hud).toBe("off");
   await closeApp(app);
 });
 
@@ -255,6 +267,10 @@ test("hud telemetry fills HUD from IPC events", async () => {
 // ── 12. 阶段4 全站精修：HUD 开启时有切角+弹窗括号，关闭即还原 ──
 test("full-site polish applies with hud on and reverts when off", async () => {
   const { app, window } = await launchApp();
+  // 默认皮肤已改为 neu：先切到 hud 皮肤再验证 HUD 精修样式
+  await window.evaluate(() => localStorage.setItem("AideAgent_skin", "hud"));
+  await window.reload();
+  await window.waitForLoadState("domcontentloaded", { timeout: 10_000 });
   await window.waitForTimeout(500);
 
   // HUD 默认开启 → 按钮应有 clip-path 切角（无圆角）

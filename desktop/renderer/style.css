@@ -2810,17 +2810,27 @@ html[data-sidebar="collapsed"] .sidebar-expand-btn {
      #message-list（overflow-y:auto）内。 */
   min-height: 0;
   overflow: hidden;
-  /* 背景：DeepSeek 首页风 —— 浅蓝灰渐变基底 + 断线网格纹理 + 弥散光晕。
+  /* 背景：DeepSeek 首页风 —— 底色跟随主题（--bg）+ 断线网格纹理 + 弥散光晕。
      grid: 72px 方形网格，用 SVG 瓷砖绘制 —— 每条边只画中间一段、
      四角留空，交叉点无交叉线（"浅到看不见相交"，同 DeepSeek 粒子连线效果）；
-     光晕：右上 + 左下两团柔和浅蓝白。
-     注：HUD on/off 均为浅色背景（HUD overlay 是纯装饰层，不换底色），
-     网格对两种模式通用。 */
+     光晕：右上 + 左下两团，取主题强调色（--hud-accent-rgb），随主题变色。
+     暗色主题由 html[data-theme-mode="dark"] 分支提高光晕强度、减小渐变提亮，
+     避免浅色底/浅色字（bg-settings 在 applyTheme 时写入 data-theme-mode）。
+     注意选择器用 html[...] 而非 :root[...]：与皮肤规则同特异性 (1,1,1)，
+     靠"皮肤样式在后"取胜，否则会盖掉各皮肤的定制聊天区背景。 */
   background:
-    radial-gradient(52rem 34rem at 72% 18%, rgba(191, 219, 254, 0.55), transparent 62%),
-    radial-gradient(44rem 30rem at 18% 82%, rgba(219, 234, 254, 0.50), transparent 60%),
+    radial-gradient(52rem 34rem at 72% 18%, rgba(var(--hud-accent-rgb), 0.10), transparent 62%),
+    radial-gradient(44rem 30rem at 18% 82%, rgba(var(--hud-accent-rgb), 0.07), transparent 60%),
     url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Cpath%20d='M20%200H52M20%2072H52M0%2020V52M72%2020V52'%20stroke='rgba(120,140,180,0.10)'%20stroke-width='1'%20fill='none'/%3E%3C/svg%3E"),
-    linear-gradient(100deg, #edf2fa 0%, #f5f7fb 48%, #fcfcfd 100%);
+    linear-gradient(100deg, var(--bg) 0%, color-mix(in srgb, var(--bg), #ffffff 6%) 48%, color-mix(in srgb, var(--bg), #ffffff 10%) 100%);
+  background-size: auto, auto, 72px 72px, auto;
+}
+html[data-theme-mode="dark"] #chat-area {
+  background:
+    radial-gradient(52rem 34rem at 72% 18%, rgba(var(--hud-accent-rgb), 0.18), transparent 62%),
+    radial-gradient(44rem 30rem at 18% 82%, rgba(var(--hud-accent-rgb), 0.13), transparent 60%),
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Cpath%20d='M20%200H52M20%2072H52M0%2020V52M72%2020V52'%20stroke='rgba(150,170,210,0.10)'%20stroke-width='1'%20fill='none'/%3E%3C/svg%3E"),
+    linear-gradient(100deg, var(--bg) 0%, color-mix(in srgb, var(--bg), #ffffff 3%) 48%, color-mix(in srgb, var(--bg), #ffffff 5%) 100%);
   background-size: auto, auto, 72px 72px, auto;
 }
 
@@ -5675,15 +5685,15 @@ html:not([data-skin="hud"]) #hud-vscan-row {
    ════════════════════════════════════════ */
 html[data-skin="glass"] body {
   background:
-    radial-gradient(60rem 40rem at 88% -6%, rgba(var(--hud-accent-rgb), 0.16), transparent 62%),
-    radial-gradient(52rem 38rem at -10% 106%, rgba(var(--hud-accent-rgb), 0.12), transparent 60%),
+    radial-gradient(60rem 40rem at 88% -6%, rgba(var(--hud-accent-rgb), 0.22), transparent 62%),
+    radial-gradient(52rem 38rem at -10% 106%, rgba(var(--hud-accent-rgb), 0.16), transparent 60%),
     var(--bg);
 }
 
 html[data-skin="glass"] #chat-area {
   background:
-    radial-gradient(52rem 34rem at 72% 18%, rgba(var(--hud-accent-rgb), 0.10), transparent 62%),
-    radial-gradient(44rem 30rem at 18% 82%, rgba(var(--hud-accent-rgb), 0.08), transparent 60%),
+    radial-gradient(52rem 34rem at 72% 18%, rgba(var(--hud-accent-rgb), 0.16), transparent 62%),
+    radial-gradient(44rem 30rem at 18% 82%, rgba(var(--hud-accent-rgb), 0.12), transparent 60%),
     transparent;
 }
 
@@ -5737,16 +5747,24 @@ html[data-skin="brutal"] #input-wrapper:focus-within {
   box-shadow: 4px 4px 0 var(--accent);
 }
 
-html[data-skin="brutal"] .btn {
+html[data-skin="brutal"] .btn:not(.btn-icon-only):not(.icon-btn):not(.sidebar-icon-btn) {
   border: 2px solid var(--border-hover);
 }
-html[data-skin="brutal"] .btn:hover {
+html[data-skin="brutal"] .btn:not(.btn-icon-only):not(.icon-btn):not(.sidebar-icon-btn):hover {
   box-shadow: 3px 3px 0 var(--border-hover);
   transform: translate(-1px, -1px);
 }
-html[data-skin="brutal"] .btn:active {
+html[data-skin="brutal"] .btn:not(.btn-icon-only):not(.icon-btn):not(.sidebar-icon-btn):active {
   box-shadow: 0 0 0 var(--border-hover);
   transform: translate(2px, 2px);
+}
+
+/* 粗野的聊天区：去掉柔和的蓝色光晕，换成纯底色 + 墨色网格 */
+html[data-skin="brutal"] #chat-area {
+  background:
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Cpath%20d='M20%200H52M20%2072H52M0%2020V52M72%2020V52'%20stroke='rgba(20,22,31,0.07)'%20stroke-width='1'%20fill='none'/%3E%3C/svg%3E"),
+    var(--bg);
+  background-size: 72px 72px, auto;
 }
 
 html[data-skin="brutal"] .message-bubble {
@@ -5760,4 +5778,168 @@ html[data-skin="brutal"] .session-item.active {
 
 html[data-skin="brutal"] .bg-preset-swatch {
   box-shadow: 3px 3px 0 var(--border);
+}
+
+/* ════════════════════════════════════════
+   Skin · 暖纸风 (paper)
+   暖白卡片 / 暖棕描边 / 纸墨投影由 skins.ts patch，
+   此处把聊天区换成暖色纸纹，代码块与标题换成暖色 + 衬线。
+   ════════════════════════════════════════ */
+html[data-skin="paper"] #chat-area {
+  background:
+    radial-gradient(52rem 34rem at 72% 18%, rgba(214, 186, 140, 0.16), transparent 62%),
+    radial-gradient(44rem 30rem at 18% 82%, rgba(214, 186, 140, 0.10), transparent 60%),
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Cpath%20d='M20%200H52M20%2072H52M0%2020V52M72%2020V52'%20stroke='rgba(150,125,80,0.10)'%20stroke-width='1'%20fill='none'/%3E%3C/svg%3E"),
+    var(--bg);
+  background-size: auto, auto, 72px 72px, auto;
+}
+
+html[data-skin="paper"] .message-text pre code,
+html[data-skin="paper"] .message-bubble pre code {
+  background: var(--bg-surface);
+  border-color: var(--border);
+}
+
+html[data-skin="paper"] .message-text code,
+html[data-skin="paper"] .message-bubble code {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+html[data-skin="paper"] .message-text h1,
+html[data-skin="paper"] .message-text h2,
+html[data-skin="paper"] .message-text h3,
+html[data-skin="paper"] .message-text h4 {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, serif;
+}
+
+/* ════════════════════════════════════════
+   Skin · 拟态 (neu)
+   双阴影色 --neu-hl/--neu-sh 与同色卡片/钳制亮度由 skins.ts patch，
+   此处定义凸起/内凹的结构：输入区内凹、按钮凸起、卡片无描边。
+   ════════════════════════════════════════ */
+html[data-skin="neu"] #chat-area {
+  background: var(--bg);
+}
+
+html[data-skin="neu"] #sidebar {
+  background: var(--bg);
+  border-right-color: transparent;
+}
+
+html[data-skin="neu"] #input-wrapper {
+  border-color: transparent;
+  box-shadow: inset 3px 3px 9px var(--neu-sh), inset -3px -3px 9px var(--neu-hl);
+}
+html[data-skin="neu"] #input-wrapper:focus-within {
+  border-color: var(--accent);
+  box-shadow:
+    inset 3px 3px 9px var(--neu-sh),
+    inset -3px -3px 9px var(--neu-hl),
+    0 0 0 2px var(--accent-dim);
+}
+
+html[data-skin="neu"] .modal-content {
+  border-color: transparent;
+}
+
+html[data-skin="neu"] .btn {
+  border-color: transparent;
+  box-shadow: 3px 3px 8px var(--neu-sh), -3px -3px 8px var(--neu-hl);
+}
+html[data-skin="neu"] .btn:hover {
+  background: var(--bg-hover);
+}
+html[data-skin="neu"] .btn:active {
+  box-shadow: inset 2px 2px 6px var(--neu-sh), inset -2px -2px 6px var(--neu-hl);
+  transform: none;
+}
+
+html[data-skin="neu"] .session-item.active {
+  background: var(--bg);
+  box-shadow: inset 2px 2px 6px var(--neu-sh), inset -2px -2px 6px var(--neu-hl);
+}
+
+html[data-skin="neu"] .message-bubble {
+  border-color: transparent;
+  box-shadow: 4px 4px 10px var(--neu-sh), -4px -4px 10px var(--neu-hl);
+}
+
+/* 拟态：新对话按钮与推理胶囊同样去描边、走双阴影浮雕 */
+html[data-skin="neu"] #new-chat {
+  border-color: transparent;
+  box-shadow: 3px 3px 8px var(--neu-sh), -3px -3px 8px var(--neu-hl);
+}
+html[data-skin="neu"] .reasoning-pill {
+  border-color: transparent;
+  box-shadow: 2px 2px 6px var(--neu-sh), -2px -2px 6px var(--neu-hl);
+}
+
+/* ════════════════════════════════════════
+   Skin · 复古终端 (terminal)
+   CRT 外观：扫描线 + 磷光字体微光 + 虚线描边。
+   配色（强制深色、绿字、琥珀强调）全部由 skins.ts patch 完成。
+   ════════════════════════════════════════ */
+html[data-skin="terminal"] #chat-area {
+  background:
+    repeating-linear-gradient(0deg, rgba(143, 214, 164, 0.035) 0 1px, transparent 1px 3px),
+    radial-gradient(60rem 40rem at 50% -10%, rgba(143, 214, 164, 0.06), transparent 65%),
+    var(--bg);
+}
+
+html[data-skin="terminal"] .message-text,
+html[data-skin="terminal"] .message-bubble {
+  text-shadow: 0 0 8px rgba(143, 214, 164, 0.28);
+}
+
+html[data-skin="terminal"] .message-bubble {
+  border: 1px dashed var(--border);
+}
+
+html[data-skin="terminal"] #input-wrapper {
+  border-radius: 2px;
+  border-width: 1px;
+}
+
+html[data-skin="terminal"] .btn:not(.btn-icon-only):not(.icon-btn):not(.sidebar-icon-btn) {
+  border-style: dashed;
+}
+
+html[data-skin="terminal"] .message-text pre code,
+html[data-skin="terminal"] .message-bubble pre code {
+  background: #0d150e;
+  border-color: var(--border);
+}
+
+html[data-skin="terminal"] .hljs {
+  background: transparent;
+  color: #8fd6a4;
+}
+html[data-skin="terminal"] .hljs-comment,
+html[data-skin="terminal"] .hljs-quote { color: #4c7f60; font-style: italic; }
+html[data-skin="terminal"] .hljs-keyword,
+html[data-skin="terminal"] .hljs-selector-tag,
+html[data-skin="terminal"] .hljs-type { color: #ffb000; }
+html[data-skin="terminal"] .hljs-string,
+html[data-skin="terminal"] .hljs-addition { color: #7ee787; }
+html[data-skin="terminal"] .hljs-number,
+html[data-skin="terminal"] .hljs-literal,
+html[data-skin="terminal"] .hljs-attr { color: #ffc73d; }
+html[data-skin="terminal"] .hljs-title,
+html[data-skin="terminal"] .hljs-name,
+html[data-skin="terminal"] .hljs-section { color: #d7ffdf; font-weight: 600; }
+
+/* 拟态：侧栏搜索框也做成内凹凹槽，与输入区一致 */
+html[data-skin="neu"] #session-search-input {
+  border-color: transparent;
+  background: var(--bg);
+  box-shadow: inset 2px 2px 6px var(--neu-sh), inset -2px -2px 6px var(--neu-hl);
+}
+
+/* 固定配色的皮肤（terminal）：提示可见，主题外观整体置灰并禁用交互 */
+.skin-theme-note { display: none; }
+html[data-skin="terminal"] .skin-theme-note { display: block; }
+html[data-skin="terminal"] #theme-controls {
+  opacity: 0.4;
+  pointer-events: none;
+  user-select: none;
 }

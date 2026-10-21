@@ -23,6 +23,7 @@ import {
   SKIN_SUGGESTED_PRESET,
 } from './skins.ts';
 import type { SkinId } from './skins.ts';
+import { loadChatFont } from './font-settings.ts';
 
 const THEME_KEY = "AideAgent_theme";
 
@@ -174,13 +175,20 @@ function deriveTheme(theme: any) {
   const [h, s, l] = hexToHsl(theme.bg);
   const adjL = Math.max(0, Math.min(1, l * theme.brightness));
   const isDark = adjL < 0.5;
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
   return {
     "--bg": hslToHex(h, s, adjL),
-    "--bg-surface": hslToHex(h, Math.max(0, s * 0.9), Math.max(0, Math.min(1, adjL - (isDark ? 0.03 : 0.025)))),
+    "--bg-surface": hslToHex(h, Math.max(0, s * 0.9), clamp(adjL - (isDark ? 0.03 : 0.025))),
     "--bg-card": isDark
       ? hslToHex(h, s, Math.min(1, adjL + 0.08))
       : "#ffffff",
+    // 抬升面（弹窗/浮层）与悬停底色也必须随明暗派生：
+    // 否则暗色主题会沿用浅色默认值（悬停闪浅蓝块、次要文字看不清）。
+    "--bg-elevated": hslToHex(h, Math.max(0, s * 0.9), clamp(adjL + (isDark ? 0.05 : 0.015))),
+    "--bg-hover": hslToHex(h, Math.max(0, s * 0.9), clamp(adjL + (isDark ? 0.09 : -0.045))),
     "--text": isDark ? "#e8e8f0" : "#1a1a2e",
+    "--text-light": isDark ? "#a5a5c2" : "#555570",
+    "--text-muted": isDark ? "#7f7f9a" : "#7e7e94",
     "--accent": theme.accent,
     "--hud-accent": theme.accent,
     "--hud-accent-rgb": hexToRgb(theme.accent).join(", "),
@@ -197,9 +205,18 @@ function applyTheme(theme: any) {
   const patch = skinColorPatch(theme);
   const merged: Record<string, string> = { ...vars, ...patch };
   const root = document.documentElement;
+  // 明暗标记：CSS 用 html[data-theme-mode="dark"] 做分支配色（聊天区光晕等）。
+  // 取主题亮度的最终值；皮肤强制深色时由皮肤自己的规则覆盖背景。
+  const [, , ll] = hexToHsl(theme.bg);
+  const finalL = ll * theme.brightness;
+  root.dataset.themeMode = finalL < 0.5 ? "dark" : "light";
   for (const k of SKIN_RESET_PROPS) root.style.removeProperty(k);
   for (const [k, v] of Object.entries(merged)) {
     root.style.setProperty(k, v);
+  }
+  // 皮肤未接管聊天字体（如 terminal）时，恢复「设置 → 字体」的用户选择
+  if (!("--chat-font" in merged)) {
+    root.style.setProperty("--chat-font", loadChatFont());
   }
   // 同步别名（保持设计系统其他引用一致）
   root.style.setProperty("--text-primary", merged["--text"]);
@@ -209,8 +226,6 @@ function applyTheme(theme: any) {
   root.style.setProperty("--bg-tertiary", merged["--bg-surface"]);
   // 边框自适应明暗（皮肤显式声明了边框则尊重皮肤，不再覆盖）
   if (!("--border" in patch)) {
-    const [hh, ss, ll] = hexToHsl(theme.bg);
-    const finalL = ll * theme.brightness;
     if (finalL < 0.5) {
       root.style.setProperty("--border", "rgba(255,255,255,0.12)");
       root.style.setProperty("--border-hover", "rgba(255,255,255,0.22)");
@@ -336,7 +351,7 @@ function initColorPicker() {
   if (applyBtn) {
     applyBtn.addEventListener("click", () => {
       const hex = (hslToHex as any)(...pendingBgHSL);
-      const theme = { ...loadTheme(), preset: "custom", bg: hex };
+      const theme = { ...loadTheme(), preset: "custom", bg: hex, auto: false };
       saveTheme(theme);
       applyTheme(theme);
       applyToUI(theme);
@@ -381,7 +396,7 @@ function renderPresets(currentTheme: any) {
       '</div>' +
       '<span>' + (t("bg.preset." + key) || key) + '</span>';
     el.addEventListener("click", () => {
-      const theme = { preset: key, bg: p.bg, accent: p.accent, brightness: currentTheme.brightness };
+      const theme = { preset: key, bg: p.bg, accent: p.accent, brightness: currentTheme.brightness, auto: false };
       saveTheme(theme);
       applyTheme(theme);
       applyToUI(theme);
@@ -400,7 +415,7 @@ function bindControls(initial: any) {
 
   /** @param {Object} patch */
   const update = (patch: any) => {
-    const theme = { ...loadTheme(), ...patch };
+    const theme = { ...loadTheme(), ...patch, auto: false };
     saveTheme(theme);
     applyTheme(theme);
     applyToUI(theme);
@@ -443,16 +458,22 @@ function bindControls(initial: any) {
 }
 
 // ── 皮肤联动 ───────────────────────────────────────
-// 皮肤切换：先按当前色彩重刷（皮肤补丁依赖色彩）。若用户从未自定义
-// 颜色（preset !== "custom"）且该皮肤带推荐预设，则顺势套用推荐预设，
-// 保证 glass→暗色、brutal→高对比浅色这类组合开箱即好看。
+// 皮肤切换：先按当前色彩重刷（皮肤补丁依赖色彩）。若当前主题仍是"默认"
+// 或"上一次由皮肤自动套用"（auto: true），且该皮肤带推荐预设，则顺势套用
+// 推荐预设，保证 glass→暗色、brutal→高对比浅色这类组合开箱即好看。
+// 用户手动选过预设 / 调过亮度或强调色后（auto: false），不再擅自替换其配色。
 window.addEventListener(SKIN_CHANGE_EVENT, (ev) => {
   const skin = (ev as CustomEvent).detail?.skin as SkinId | undefined;
   const theme = loadTheme();
   const suggest = skin ? SKIN_SUGGESTED_PRESET[skin] : null;
-  if (suggest && theme.preset !== "custom" && theme.preset !== suggest && suggest in PRESETS) {
+  const isDefaultTheme =
+    theme.preset === DEFAULT_THEME.preset &&
+    theme.bg === DEFAULT_THEME.bg &&
+    theme.accent === DEFAULT_THEME.accent;
+  const mayAutoApply = theme.auto === true || isDefaultTheme;
+  if (suggest && mayAutoApply && theme.preset !== suggest && suggest in PRESETS) {
     const p = (PRESETS as Record<string, { bg: string; accent: string }>)[suggest];
-    const next = { preset: suggest, bg: p.bg, accent: p.accent, brightness: theme.brightness };
+    const next = { preset: suggest, bg: p.bg, accent: p.accent, brightness: theme.brightness, auto: true };
     saveTheme(next);
     applyTheme(next);
     applyToUI(next);
