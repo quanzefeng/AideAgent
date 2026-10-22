@@ -44,7 +44,7 @@ export const SKIN_SUGGESTED_PRESET: Record<SkinId, string | null> = {
   glass: "dark_purple",
   brutal: "white",
   paper: "cream",
-  neu: "gray",
+  neu: "cream",
   // terminal 强制磷光配色（patch 覆盖色彩），推荐预设无意义
   terminal: null,
 };

@@ -72,11 +72,9 @@ test("skin grid: 7 styles, switching sets data-skin and persists after reload", 
   await window.waitForTimeout(350);
   expect(await window.evaluate(() => document.documentElement.dataset.skin)).toBe("paper");
   expect(await window.evaluate(() => localStorage.getItem("AideAgent_skin"))).toBe("paper");
-  // 默认主题下切到暖纸风 → 自动套用推荐预设 cream
-  const stored = JSON.parse(
-    await window.evaluate(() => localStorage.getItem("AideAgent_theme") || "{}")
-  );
-  expect(stored.preset).toBe("cream");
+  // 默认主题已是暖米，暖纸的推荐预设同为 cream → 无需改写主题
+  expect(await readVar(window, "--bg")).toBe("#faf6ef");
+  expect(await window.evaluate(() => localStorage.getItem("AideAgent_theme"))).toBeNull();
 
   await window.reload();
   await window.waitForLoadState("domcontentloaded");
@@ -104,7 +102,7 @@ test("terminal skin forces CRT palette and locks theme controls", async () => {
   // 切回经典风格：恢复主题配色与可交互状态
   await window.locator('.skin-card[data-skin="classic"]').click();
   await window.waitForTimeout(350);
-  expect(await readVar(window, "--bg")).toBe("#eef2f9");
+  expect(await readVar(window, "--bg")).toBe("#faf6ef");
   expect(await window.locator(".skin-theme-note").isVisible()).toBe(false);
   const unlocked = await window.evaluate(() => {
     const el = document.getElementById("theme-controls");

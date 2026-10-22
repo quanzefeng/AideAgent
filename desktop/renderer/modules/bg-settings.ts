@@ -46,7 +46,7 @@ const PRESETS = {
   cyberpunk:   { bg: "#0a0a0f", accent: "#00e5ff" },
 };
 
-const DEFAULT_THEME = { preset: "light_blue", bg: "#eef2f9", brightness: 1.0, accent: "#6366f1" };
+const DEFAULT_THEME = { preset: "cream", bg: "#faf6ef", brightness: 1.0, accent: "#f59e0b" };
 
 // ── HSL 数学 ─────────────────────────────────────
 /** @param {string} hex @returns {[number, number, number]} */
