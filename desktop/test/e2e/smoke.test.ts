@@ -93,11 +93,11 @@ const openAppearance = async (window: any) => {
   await window.waitForTimeout(400);
 };
 
-// ── 3. 设置面板 + 外观 tab + 7 个预设 ──────────────
-test("settings: appearance tab shows 7 preset swatches", async () => {
+// ── 3. 设置面板 + 外观 tab + 10 个预设 ──────────────
+test("settings: appearance tab shows 10 preset swatches", async () => {
   const { app, window } = await launchApp();
   await openAppearance(window);
-  await expect(window.locator("#bg-preset-grid .bg-preset-swatch")).toHaveCount(7);
+  await expect(window.locator("#bg-preset-grid .bg-preset-swatch")).toHaveCount(10);
   await closeApp(app);
 });
 
