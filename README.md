@@ -6,7 +6,7 @@
 
 > A desktop assistant that puts AI on your machine. Not just chat — it actually does the work.
 
-![AideAgent home screen — sidebar with new chat and settings, centered welcome avatar, prompt box with model picker and capability toggles](docs/screenshots/00-首页.png)
+![AideAgent home screen in the default warm cream neumorphic theme — sidebar with new chat and settings, centered welcome avatar, prompt box with model picker and capability toggles](docs/screenshots/00-首页.png)
 
 ## Contents
 
