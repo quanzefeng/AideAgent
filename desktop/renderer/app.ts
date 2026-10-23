@@ -1980,12 +1980,202 @@ async function fetchModels() {
 // ── Message queue for multi-conversation ──────────────────
 const _queryQueue = [];
 
+// ── Mid-turn steering (AideAgent runtime) ─────────────────
+// These chips live above the composer. They are deliberately NOT appended to
+// the transcript: the steered message is metadata until the agent folds it
+// into the live context at a tool boundary.
+// IPC ordering between the `query:steer` invoke reply and a `steer:discarded`
+// push is not guaranteed. These sets let the renderer notice that a steer was
+// already cancelled/requeued before its chip was ever created.
+const _discardedSteerIds = new Set<string>();
+const _appliedSteerIds = new Set<string>();
+const _requeuedSteerIds = new Set<string>();
+
+function rememberSteerId(set: Set<string>, id: string) {
+  set.add(id);
+  // Keep these dedupe sets bounded for a long-lived window.
+  if (set.size > 200) {
+    const first = set.values().next().value;
+    if (first) set.delete(first);
+  }
+}
+
+function steerQueueEl(): HTMLElement | null {
+  return document.getElementById("steer-queue");
+}
+
+function setSteerPlaceholder(active: boolean) {
+  const input = document.getElementById("prompt-input") as HTMLTextAreaElement | null;
+  if (!input) return;
+  input.placeholder = active
+    ? t("steer.placeholder")
+    : t("chat.input_placeholder", { name: loadAgentName() });
+}
+
+function findSteerChip(id: string): HTMLElement | null {
+  const box = steerQueueEl();
+  if (!box) return null;
+  for (const child of Array.from(box.children)) {
+    const el = child as HTMLElement;
+    if (el.dataset.steerId === id) return el;
+  }
+  return null;
+}
+
+function refreshSteerQueueVisibility() {
+  const box = steerQueueEl();
+  if (!box) return;
+  box.classList.toggle("hidden", box.childElementCount === 0);
+}
+
+function addSteerChip(id: string, text: string) {
+  if (!id || findSteerChip(id)) return;
+  const box = steerQueueEl();
+  if (!box) return;
+
+  const chip = document.createElement("div");
+  chip.className = "steer-chip";
+  chip.dataset.steerId = id;
+
+  const label = document.createElement("span");
+  label.className = "steer-chip-text";
+  label.textContent = text;
+  label.title = text;
+
+  const status = document.createElement("span");
+  status.className = "steer-chip-status";
+  status.textContent = t("steer.waiting");
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "steer-chip-cancel";
+  cancel.textContent = "×";
+  cancel.title = t("steer.cancel");
+  cancel.addEventListener("click", () => {
+    cancel.disabled = true;
+    window.aideagent.cancelSteer(id).catch(() => { cancel.disabled = false; });
+  });
+
+  chip.append(label, status, cancel);
+  box.appendChild(chip);
+  refreshSteerQueueVisibility();
+  scrollToBottom();
+}
+
+function markSteerApplied(id: string) {
+  const chip = findSteerChip(id);
+  if (!chip || chip.classList.contains("applied")) return;
+  chip.classList.add("applied");
+  const status = chip.querySelector(".steer-chip-status");
+  if (status) status.textContent = t("steer.applied");
+  chip.querySelector(".steer-chip-cancel")?.remove();
+  // Keep applied chips visible for the rest of the run: they are the only
+  // live-chat record of what was sent (the transcript is persisted later).
+}
+
+function removeSteerChip(id: string) {
+  findSteerChip(id)?.remove();
+  refreshSteerQueueVisibility();
+}
+
+function clearSteerChips() {
+  const box = steerQueueEl();
+  if (box) box.innerHTML = "";
+  refreshSteerQueueVisibility();
+}
+
+function restoreSteerText(text: string) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return;
+  const input = activePromptInput();
+  input.value = input.value.trim()
+    ? `${input.value.replace(/\s+$/, "")}\n${trimmed}`
+    : trimmed;
+  autoResize(input);
+  updateSendButton();
+  input.focus();
+  showToast(t("steer.restored"), "info");
+}
+
+function requeueSteerText(text: string, id?: string) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return;
+  if (id) {
+    if (_requeuedSteerIds.has(id)) return;
+    rememberSteerId(_requeuedSteerIds, id);
+  }
+  _queryQueue.push({ text: trimmed, files: [] });
+  showToast(t("steer.requeued"), "info");
+  // stream:done normally drives the queue; if it already fired (or the run
+  // ended while this event was in flight), send immediately instead of
+  // leaving the message stranded. During an explicit Stop, wait for the
+  // matching stream:done so we never overlap two runs' UI lifecycles.
+  if (!state.isStreaming && !_awaitingStreamDone) processQueryQueue();
+}
+
+async function trySteer(text: string): Promise<boolean> {
+  try {
+    const res = await window.aideagent.steerQuery(text, []);
+    if (res?.ok && res.id) {
+      // A discard may have raced ahead of the invoke reply. The message has
+      // already been handled (queued or explicitly cancelled) — don't create
+      // a chip for a dead inbox item.
+      if (_discardedSteerIds.delete(res.id)) return true;
+      if (_appliedSteerIds.delete(res.id)) {
+        // Applied at a tool boundary before the invoke reply made it back.
+        addSteerChip(res.id, text);
+        markSteerApplied(res.id);
+        return true;
+      }
+      addSteerChip(res.id, text);
+      setStatus(t("steer.waiting"));
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Ctrl+Enter while streaming: abort the current turn, then send the draft. */
+function sendNowWhileStreaming() {
+  const input = activePromptInput();
+  const text = input.value.trim();
+  const files = state.attachedFiles;
+  if (!text && files.length === 0) return;
+
+  // Put the new message at the front of the local queue before aborting.
+  // onStreamDone -> processQueryQueue() will submit it after the old run
+  // has finished unwinding.
+  _queryQueue.unshift({ text, files: [...files] });
+  input.value = "";
+  autoResize(input);
+  state.attachedFiles = [];
+  renderFilePreviews();
+  updateSendButton();
+  showToast(t("steer.sending_now"), "info");
+  abortQuery();
+}
+
 async function submitQuery() {
   const input = activePromptInput();
   const text = input.value.trim();
   const files = state.attachedFiles;
   if ((!text && files.length === 0)) return;
   if (state.isStreaming) {
+    // AideAgent runtime supports real mid-turn steering: the message goes to
+    // the main-process inbox and is folded in after the current tool batch.
+    // Attachments and the OpenCode runtime still use the old "queue until
+    // this turn ends" path.
+    const canSteer = files.length === 0 && getCurrentRuntime() !== "opencode";
+    if (canSteer && await trySteer(text)) {
+      input.value = "";
+      autoResize(input);
+      state.attachedFiles = [];
+      renderFilePreviews();
+      updateSendButton();
+      return;
+    }
     // Queue the message for later
     _queryQueue.push({ text, files: [...files] });
     input.value = "";
@@ -1993,7 +2183,22 @@ async function submitQuery() {
     state.attachedFiles = [];
     renderFilePreviews();
     updateSendButton();
-    setStatus(t("status.queued") || "已排队，等待当前对话完成...");
+    setStatus(
+      getCurrentRuntime() === "opencode"
+        ? t("steer.unsupported")
+        : files.length > 0
+          ? t("steer.files_fallback")
+          : t("status.queued"),
+    );
+    if (!canSteer) {
+      showToast(
+        getCurrentRuntime() === "opencode" ? t("steer.unsupported") : t("steer.files_fallback"),
+        "info",
+      );
+    }
+    // The steer raced the end of the run: stream:done may have fired while
+    // this submit was awaiting the IPC reply. Drain the local queue now.
+    if (!state.isStreaming && !_awaitingStreamDone) processQueryQueue();
     return;
   }
 
@@ -2105,6 +2310,7 @@ async function submitQuery() {
 }
 
 function abortQuery() {
+  _awaitingStreamDone = true;
   window.aideagent.abortQuery();
   // Close dialogs the main process just auto-denied (its abort handler
   // resolves pendingPermission/AskUserQuestion promises) — otherwise the
@@ -2166,6 +2372,7 @@ function stopQuery() {
     if (sb) sb.classList.add("hidden");
   }
   setStatus(t("status.ready"));
+  setSteerPlaceholder(false);
   // Final paint pin after buttons/status settle (info-bar height can change
   // message-list's flex slot).
   requestAnimationFrame(() => scrollToBottom());
@@ -2185,6 +2392,7 @@ function processQueryQueue() {
 }
 
 function resetChat() {
+  clearSteerChips();
   if (state.isStreaming) {
     // Don't abort — hold streaming DOM, show welcome.
     // The stream continues updating the held DOM in the background.
@@ -2250,6 +2458,11 @@ function resetChat() {
 
   /* ── Session List ──────────────────────────────────────────── */
 let _loadedSessionId = null;
+
+// True between a local Stop/Ctrl+Enter abort and the matching stream:done.
+// Queued steers must not auto-start a new turn during this window: the old
+// run's stream:done would otherwise arrive and stop the new run's UI state.
+let _awaitingStreamDone = false;
 
 // True when user clicked "+新对话" during streaming — stream continues in
 // the hidden holder, and a fresh backend session is created after it finishes.
@@ -2366,6 +2579,7 @@ function loadChat(sessionId) {
 
   // If streaming, hold current DOM before loading a different session
   if (state.isStreaming) {
+    clearSteerChips();
     holdStreamingDom();
     // Load with readOnly to avoid overwriting backend state
     window.aideagent.loadSession(sessionId, { readOnly: true }).then(data => {
@@ -2382,6 +2596,7 @@ function loadChat(sessionId) {
 
   window.aideagent.loadSession(sessionId).then(data => {
     if (!data) return;
+    clearSteerChips();
     resetContextUsage();
     _loadedSessionId = data.sessionId;
     state.sessionId = data.sessionId;
@@ -2897,6 +3112,37 @@ function setupIPC() {
     state._streamActiveMs = 0;
     state._streamLastActivity = 0;
     state._cacheMetrics = null;
+    if (getCurrentRuntime() !== "opencode") setSteerPlaceholder(true);
+  });
+
+  // Mid-turn steering lifecycle: queued -> applied (folded into the live
+  // context) or discarded (aborted / turn ended before it was consumed).
+  onIpc("onSteerQueued", (data) => {
+    if (!data?.id) return;
+    // Ignore a push that lost the race against a terminal state; the
+    // `query:steer` invoke reply reconciles the chip.
+    if (_discardedSteerIds.has(data.id) || _appliedSteerIds.has(data.id)) return;
+    addSteerChip(data.id, data.text || "");
+  });
+  onIpc("onSteerApplied", (data) => {
+    if (!data?.id) return;
+    rememberSteerId(_appliedSteerIds, data.id);
+    markSteerApplied(data.id);
+  });
+  onIpc("onSteerDiscarded", (data) => {
+    if (!data?.id) return;
+    rememberSteerId(_discardedSteerIds, data.id);
+    removeSteerChip(data.id);
+    // User clicked the chip's × — stay withdrawn.
+    if (data.reason === "cancelled" || data.reason === "session_switch") return;
+    // Stop without a pending follow-up: give the text back to the composer,
+    // don't start a new turn behind the user's back. Ctrl+Enter puts a draft
+    // in _queryQueue first, so those steers are re-queued after the draft.
+    if (data.reason === "aborted" && _queryQueue.length === 0) {
+      restoreSteerText(data.text || "");
+      return;
+    }
+    requeueSteerText(data.text || "", data.id);
   });
 
   // OpenCode model picker — main process forwards ACP `session/new`
@@ -3006,6 +3252,7 @@ function setupIPC() {
   });
 
   onIpc("onStreamDone", () => {
+    _awaitingStreamDone = false;
     hideRetryBanner();
     // Always stop + pin even if finish throws — a mid-finish exception
     // previously skipped stopQuery/scroll (intermittent stuck bottom).
@@ -3039,6 +3286,9 @@ function setupIPC() {
       refreshSessionList();
       // Process queued queries
       processQueryQueue();
+      // Applied steers are now part of the saved turn; let the "applied"
+      // state stay readable for a moment, then clear the composer area.
+      setTimeout(clearSteerChips, 600);
     }
   });
 
@@ -3553,6 +3803,14 @@ promptInput.addEventListener("input", () => {
 });
 
 promptInput.addEventListener("keydown", (e) => {
+  // Ctrl/Cmd+Enter: send immediately. While streaming this aborts the current
+  // turn first; otherwise it behaves like a normal send.
+  if (e.key === "Enter" && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (state.isStreaming) sendNowWhileStreaming();
+    else if (!sendBtn.disabled) submitQuery();
+    return;
+  }
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     if (!sendBtn.disabled) submitQuery();
@@ -3579,6 +3837,12 @@ if (ocInput) {
   };
   ocInput.addEventListener("input", () => { autoResize(ocInput); syncOcSend(); });
   ocInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (state.isStreaming) sendNowWhileStreaming();
+      else if (ocSend && !ocSend.disabled) submitQuery();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (ocSend && !ocSend.disabled) submitQuery();

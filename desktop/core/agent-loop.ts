@@ -27,7 +27,7 @@ import {
   detectModelContextWindow, setContextWindow,
   getAllAgentSessions,
 } from "./state.ts";
-import { currentAgentSession, recordUsage } from "./agent-session.ts";
+import { currentAgentSession, recordUsage, type InboxItem } from "./agent-session.ts";
 
 // ── Prompt caching: freeze system prompt & contextBlock base after first turn ──
 // The cache lives on the AgentSession (not module scope) so two concurrent
@@ -78,6 +78,8 @@ export function buildTurnHistory(opts: {
   tools?: Array<{ id: string; name: string; args?: any; result?: any }>;
   assistantContent: string;
   assistantReasoning?: string;
+  /** Mid-turn user messages, persisted as their own user rows. */
+  interjections?: Array<{ content: string }>;
 }): LoopMessage[] {
   const userContent = opts.prompt
     || (opts.files && opts.files.length > 0
@@ -111,6 +113,12 @@ export function buildTurnHistory(opts: {
         function: { name: tc.name, arguments: rawArgs.slice(0, 500) + argsNote },
       }],
     });
+  }
+  // Mid-turn messages are separate user rows. The DB schema stores one
+  // assistant row per turn, so exact tool/interjection interleaving is not
+  // preserved; content and ordering relative to the final answer are.
+  for (const it of opts.interjections || []) {
+    if (it.content) out.push({ role: "user", content: it.content });
   }
   const asst: LoopMessage = { role: "assistant", content: opts.assistantContent || "" };
   if (opts.assistantReasoning) asst.reasoning_content = opts.assistantReasoning;
@@ -456,6 +464,9 @@ export async function agentLoop(
   // using it as priorTurns would DELETE-all every previous tool row on save.
   let priorTurnsSnapshot: LoopMessage[] = [];
   let partialTurnPersisted = false;
+  // User messages injected while this run was already in progress. Kept for
+  // persistence so a reload still shows the mid-turn instruction.
+  const appliedSteers: Array<{ id: string; text: string; content: string; turn: number }> = [];
   /**
    * Best-effort persist of the current (possibly partial) turn:
    * prior DB history + this user prompt + tools so far + partial assistant text.
@@ -478,12 +489,14 @@ export async function agentLoop(
         tools: mainToolCalls,
         assistantContent: partialBody,
         assistantReasoning: partialReasoning || undefined,
+        interjections: appliedSteers.map(s => ({ content: s.text })),
       });
       await saveSession(sid, saveHistory, getHistoryTitle(saveHistory));
       partialTurnPersisted = true;
       const histNow = getHistory();
       histNow.push(
         { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") },
+        ...appliedSteers.map(s => ({ role: "user", content: s.text })),
         {
           role: "assistant",
           content: partialBody,
@@ -807,6 +820,29 @@ export async function agentLoop(
   let continuation = 0;
   let agentFinished = false;
   const mainToolCalls: Array<{ id: string, name: string, args?: any, result?: any }> = [];
+  /**
+   * Fold steered user messages into the live context at a safe boundary.
+   * We never mutate an in-flight provider request — this is only called
+   * between model calls. Returns true when at least one message was applied.
+   */
+  const drainSteeringMessages = (turn: number): boolean => {
+    const session = currentAgentSession();
+    if (!session.interactive || !Array.isArray(session.inbox) || session.inbox.length === 0) {
+      return false;
+    }
+    const keep: InboxItem[] = [];
+    let applied = false;
+    for (const item of session.inbox) {
+      if (item.mode !== "steer") { keep.push(item); continue; }
+      const content = `[用户在你工作期间补充，请优先考虑并调整后续行动]\n${item.text}`;
+      msgs.push({ role: "user", content });
+      appliedSteers.push({ id: item.id, text: item.text, content, turn });
+      sdr("steer:applied", { id: item.id, text: item.text, turn });
+      applied = true;
+    }
+    session.inbox = keep;
+    return applied;
+  };
   // ── P0 fix: rebuild context block from LIVE state on every continuation. ──
   // Previously this was a single-shot snapshot, so any task/todo changes that
   // happened mid-conversation were lost when the context was rebuilt.
@@ -873,6 +909,10 @@ export async function agentLoop(
 
     while (turns < MAX_TURNS) {
       turns++;
+      // Mid-turn steering: messages typed while the previous tool batch was
+      // running are injected before the next model request. This is the
+      // "Claude Code" boundary behavior — never interrupt an in-flight call.
+      drainSteeringMessages(turns);
       // P3方案3(c): bump the global turn counter so memory-selection.mjs
       // can expire old surfaced memories. Without this, a memory surfaced
       // in turn 1 stays locked out for the entire session.
@@ -1037,6 +1077,11 @@ export async function agentLoop(
       // calls but also doesn't look like a final answer (i.e. still has unverified
       // tasks), push back a reminder instead of accepting the reply as done.
       if (tcs.length === 0) {
+        // A steer may have arrived while the model was producing what looked
+        // like a final answer. Inject it before accepting the answer so the
+        // model can course-correct inside the same run instead of ending and
+        // leaving the message for the next turn.
+        if (drainSteeringMessages(turns)) continue;
         // B1: finish_reason="length" means the API hit max_tokens mid-stream
         // before the model could finish (or call tools). The truncated tail
         // is NOT a final answer — push a "please continue" reminder so the
@@ -1404,7 +1449,7 @@ export async function agentLoop(
   }
   const historyUser = { role: "user", content: prompt || (files && files.length > 0 ? `[${files.map(f => f.name).join(", ")}]` : "") };
   const hist = getHistory();
-  hist.push(historyUser, historyAsst);
+  hist.push(historyUser, ...appliedSteers.map(s => ({ role: "user", content: s.text })), historyAsst);
 
   // ── Session Compression (AI-driven) ──
   if (hist.length > 40) {
@@ -1525,6 +1570,7 @@ ${convText}
       tools: mainToolCalls,
       assistantContent: bodyText,
       assistantReasoning: combinedReasoning || undefined,
+      interjections: appliedSteers.map(s => ({ content: s.text })),
     });
     const title = getHistoryTitle(saveHistory);
     saveSession(finalSessionId, saveHistory, title).catch(() => {});

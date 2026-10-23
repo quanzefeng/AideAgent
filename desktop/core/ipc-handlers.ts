@@ -48,6 +48,23 @@ function currentLockKey(): string {
   return getActiveAgentSession().id || "__draft__";
 }
 
+/**
+ * Drop every not-yet-applied steer from a session. The renderer is told why
+ * so it can either restore the text to the composer or queue it as the next
+ * turn — a message typed mid-run must never disappear silently.
+ */
+function flushSessionInbox(session: any, reason: "aborted" | "turn_ended" | "session_switch") {
+  if (!session || !Array.isArray(session.inbox) || session.inbox.length === 0) return;
+  const items = session.inbox.splice(0);
+  for (const item of items) {
+    sendToRenderer("steer:discarded", {
+      id: item.id,
+      text: item.text,
+      reason,
+    });
+  }
+}
+
 async function acquireRunLock(onWait: () => void): Promise<() => void> {
   const key = currentLockKey();
   while (_runLocks.has(key)) {
@@ -181,6 +198,47 @@ export function registerIpcHandlers() {
     }
   });
 
+  // ── Mid-turn steering ───────────────────────────────────
+  // The renderer calls this when the user presses Enter while a run is
+  // active. The message is NOT submitted as a new query: it goes into the
+  // session inbox and agentLoop folds it in after the current tool batch.
+  // No new run lock, no abort — the running loop keeps its work.
+  ipcMain.handle("query:steer", async (_event, { text, files = [] } = {}) => {
+    const session = getActiveAgentSession();
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return { ok: false, reason: "empty" };
+    if (Array.isArray(files) && files.length > 0) {
+      return { ok: false, reason: "files_not_supported" };
+    }
+    if (session.runtime === "opencode") {
+      return { ok: false, reason: "unsupported_runtime" };
+    }
+    const ctrl = session.abortCtrl;
+    if (!ctrl || ctrl.signal.aborted) {
+      return { ok: false, reason: "not_running" };
+    }
+    const item = { id: genId(), text: trimmed, mode: "steer" as const, createdAt: Date.now() };
+    session.inbox.push(item);
+    sendToRenderer("steer:queued", {
+      id: item.id,
+      text: item.text,
+      position: session.inbox.length,
+    });
+    return { ok: true, id: item.id, position: session.inbox.length };
+  });
+
+  // Withdraw a steer that has not been folded into the model context yet.
+  // Once agentLoop emits `steer:applied` the item is out of the inbox and
+  // cannot be cancelled (it is already part of the conversation).
+  ipcMain.handle("query:steer-cancel", async (_event, id) => {
+    const session = getActiveAgentSession();
+    const idx = session.inbox.findIndex((item) => item.id === id);
+    if (idx === -1) return { ok: false, reason: "already_applied" };
+    const [item] = session.inbox.splice(idx, 1);
+    sendToRenderer("steer:discarded", { id: item.id, text: item.text, reason: "cancelled" });
+    return { ok: true };
+  });
+
   ipcMain.handle("query:submit", async (event, { prompt, apiKey, apiUrl, model, apiFormat = "openai", files = [], enabledSkills, reasoningEffort = "medium", agentName, kbEnabled = false, planMode: pm, webSearchEnabled = true, runtime = "aide", opencodeModelId = null, contextWindowOverride }) => {
     const session = getActiveAgentSession();
     // Assign the id BEFORE taking the lock: the lock key is the session id,
@@ -220,11 +278,21 @@ export function registerIpcHandlers() {
       }
     } finally {
       release();
+      // Close the steering window before announcing completion: a steer
+      // arriving after this point must become a normal follow-up turn, not
+      // sit in an inbox with no loop left to drain it. Assign on the captured
+      // session so a concurrent session switch cannot clear another session.
+      session.abortCtrl = null;
       sendToRenderer("stream:done", {});
+      // Anything that arrived too late to be folded (e.g. during the final
+      // save) is handed back instead of silently staying in the inbox.
+      flushSessionInbox(session, "turn_ended");
     }
   });
 
   ipcMain.handle("query:abort", () => {
+    const session = getActiveAgentSession();
+    flushSessionInbox(session, "aborted");
     const abortCtrl = getAbortCtrl();
     if (abortCtrl) { abortCtrl.abort(); setAbortCtrl(null); }
     for (const ctrl of _subAgentCtrls.values()) { ctrl.abort(); }
@@ -234,6 +302,7 @@ export function registerIpcHandlers() {
   ipcMain.handle("session:reset", async () => {
     // P1: abort the main agent loop before clearing state — otherwise a
     // ghost agent keeps running in the background consuming tokens.
+    flushSessionInbox(getActiveAgentSession(), "session_switch");
     const mainAbortCtrl = getAbortCtrl();
     if (mainAbortCtrl) { mainAbortCtrl.abort(); setAbortCtrl(null); }
     // Wait for the in-flight run (if any) to finish unwinding before the
@@ -301,6 +370,7 @@ export function registerIpcHandlers() {
     if (!opts?.readOnly) {
       // Switching away from a running conversation: stop it and wait for it
       // to settle before rebinding the active session object.
+      flushSessionInbox(getActiveAgentSession(), "session_switch");
       const prevKey = getSessionId();
       getAbortCtrl()?.abort();
       const inflight = prevKey ? _runLocks.get(prevKey) : null;
@@ -350,6 +420,7 @@ export function registerIpcHandlers() {
       console.log("[session:delete-all] starting...");
       // Stop the in-flight run first: otherwise it can persist a session
       // after the DB has been cleared, making "delete all" only partial.
+      flushSessionInbox(getActiveAgentSession(), "session_switch");
       getAbortCtrl()?.abort();
       setAbortCtrl(null);
       for (const ctrl of _subAgentCtrls.values()) ctrl.abort();

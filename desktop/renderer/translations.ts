@@ -573,8 +573,20 @@ const translations = {
     "status.thinking": "思考中...",
     "status.stopped": "已停止",
     "status.ready": "就绪",
+    "status.queued": "已排队，等待当前对话完成...",
     "status.tasks": "{count} 个任务",
     "status.todos": "{count} 个 todo",
+
+    // ── Mid-turn steering ──
+    "steer.waiting": "等待当前工具调用结束…",
+    "steer.applied": "已注入当前轮",
+    "steer.cancel": "撤回这条插话",
+    "steer.sending_now": "正在中断当前任务并立即发送…",
+    "steer.requeued": "插话已转入下一轮发送",
+    "steer.unsupported": "当前引擎暂不支持中途插话，已排队到本轮结束",
+    "steer.files_fallback": "带附件的插话会排队到本轮结束",
+    "steer.placeholder": "运行中 — 输入消息按 Enter 插话，Ctrl+Enter 立即发送",
+    "steer.restored": "已停止，插话已放回输入框（未发送）",
 
     // ── Thinking Section ──
     "thinking.title": "🧠 推理过程",
@@ -1368,8 +1380,20 @@ const translations = {
     "status.thinking": "Thinking...",
     "status.stopped": "Stopped",
     "status.ready": "Ready",
+    "status.queued": "Queued until the current turn finishes...",
     "status.tasks": "{count} tasks",
     "status.todos": "{count} todos",
+
+    // ── Mid-turn steering ──
+    "steer.waiting": "Waiting for the current tool call to finish…",
+    "steer.applied": "Applied to this turn",
+    "steer.cancel": "Withdraw this steer",
+    "steer.sending_now": "Interrupting the current task and sending now…",
+    "steer.requeued": "Steer moved to the next turn",
+    "steer.unsupported": "This runtime does not support mid-turn steering yet; queued until the turn ends",
+    "steer.files_fallback": "Steers with attachments are queued until the turn ends",
+    "steer.placeholder": "Working — type to steer with Enter, Ctrl+Enter to send now",
+    "steer.restored": "Stopped; steer returned to the composer (not sent)",
 
     // ── Thinking Section ──
     "thinking.title": "🧠 Reasoning",

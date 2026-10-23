@@ -206,6 +206,13 @@ declare global {
       chatCancel(messageId: string): Promise<{ success: boolean }>;
       chatConfirmAction(actionId: string, choice: string): Promise<void>;
 
+      // Mid-turn steering (AideAgent runtime)
+      steerQuery(text: string, files?: any[]): Promise<{ ok: boolean; id?: string; position?: number; reason?: string }>;
+      cancelSteer(id: string): Promise<{ ok: boolean; reason?: string }>;
+      onSteerQueued(cb: (data: { id: string; text: string; position?: number }) => void): void;
+      onSteerApplied(cb: (data: { id: string; text: string; turn?: number }) => void): void;
+      onSteerDiscarded(cb: (data: { id: string; text: string; reason?: string }) => void): void;
+
       // Sub-agent & tasks
       agentLaunch(opts: any): Promise<{ success: boolean; agentId?: string; error?: string }>;
       taskList(): Promise<any[]>;

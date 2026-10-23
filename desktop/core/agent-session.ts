@@ -23,6 +23,21 @@ import type { OpencodeAcpClient } from "./opencode-acp-client.ts";
 
 export type AgentRuntime = "aide" | "opencode";
 
+/**
+ * A message the user sent while the agent was already working.
+ *
+ * `steer` is folded into the running loop at the next safe boundary (after a
+ * tool batch / before the next model call). `next` is deliberately left in the
+ * inbox for the caller to start as a follow-up turn. We only use `steer` for
+ * now; the extra mode keeps the queue shape ready for send-later semantics.
+ */
+export interface InboxItem {
+  id: string;
+  text: string;
+  mode: "steer" | "next";
+  createdAt: number;
+}
+
 export interface SessionUsage {
   /** Number of LLM requests that returned usage data. */
   requests: number;
@@ -42,6 +57,8 @@ export interface AgentSession {
   title: string;
   history: any[];
   abortCtrl: AbortController | null;
+  /** Messages typed while a run is active; drained at tool boundaries. */
+  inbox: InboxItem[];
   taskStore: Map<string, any>;
   todoList: any[];
   planMode: boolean;
@@ -88,6 +105,7 @@ export function createAgentSession(opts: Partial<AgentSession> & { id?: string |
     title: opts.title ?? "新对话",
     history: opts.history ?? [],
     abortCtrl: opts.abortCtrl ?? null,
+    inbox: opts.inbox ?? [],
     taskStore: opts.taskStore ?? new Map(),
     todoList: opts.todoList ?? [],
     planMode: opts.planMode ?? false,
@@ -186,6 +204,7 @@ export function runInAgentSession<T>(session: AgentSession, fn: () => T): T {
 export function clearAgentSession(session: AgentSession): void {
   session.history = [];
   session.abortCtrl = null;
+  session.inbox = [];
   session.taskStore = new Map();
   session.todoList = [];
   session.episodicSearched = false;
